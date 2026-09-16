@@ -35,6 +35,10 @@ Plugins enabled only through `enabledPlugins` in the repository's
 installs the plugin directly, which is why the repository no longer keeps a
 `settings.json`.
 
+The script does not pin a version of the plugin. The installed version is
+the latest available in the marketplace when the session starts (6.3.0 as
+of 2026-09-16).
+
 ### Why playwright is pinned to 1.56.0
 
 It is the version of the Python package compatible with the Chromium
