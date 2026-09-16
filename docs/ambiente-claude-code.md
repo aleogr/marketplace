@@ -10,10 +10,23 @@ Roda a cada nova sessão na nuvem:
 
 ```bash
 #!/bin/bash
-pip install "playwright==1.56.0" || pip install --break-system-packages "playwright==1.56.0" || true
-claude plugin marketplace add anthropics/claude-plugins-official || true
-claude plugin install superpowers@claude-plugins-official || true
+LOG=/var/log/setup-ambiente.log
+
+pip install --retries 5 --timeout 60 "playwright==1.56.0" >> "$LOG" 2>&1 \
+  || pip install --break-system-packages --retries 5 --timeout 60 "playwright==1.56.0" >> "$LOG" 2>&1 \
+  || echo "FALHA: playwright nao instalado" >> "$LOG"
+
+claude plugin marketplace add anthropics/claude-plugins-official >> "$LOG" 2>&1 \
+  || echo "FALHA: marketplace oficial nao adicionado" >> "$LOG"
+
+claude plugin install superpowers@claude-plugins-official >> "$LOG" 2>&1 \
+  || echo "FALHA: superpowers nao instalada" >> "$LOG"
+
+exit 0
 ```
+
+Toda a saída dos comandos vai para `/var/log/setup-ambiente.log`. Falhas de
+instalação ficam registradas nesse arquivo em linhas que começam com `FALHA`.
 
 ### Por que a Superpowers é instalada pelo script
 
@@ -30,7 +43,8 @@ Outras versões tentariam baixar um Chromium diferente.
 O pacote Python não publica patch releases: a série 1.56 no PyPI tem apenas
 a 1.56.0, que corresponde ao pacote Node `playwright@1.56.1` e usa a mesma
 revisão de Chromium. Fixar em `1.56.1` faz o `pip install` falhar com
-"No matching distribution found", e o `|| true` do script esconde o erro.
+"No matching distribution found"; no script atual, isso aparece em
+`/var/log/setup-ambiente.log` como a linha `FALHA: playwright nao instalado`.
 
 ## Skills em `.claude/skills/`
 
