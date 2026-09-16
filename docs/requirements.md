@@ -9,7 +9,7 @@
 > - Items listed under [Open topics](#29-open-topics-for-design) must be explored and decided during design.
 > - Legal topics (terms of use, privacy, consumer law, marketplace regulations) must be reviewed by a qualified lawyer before launch.
 >
-> **Related documents:** `docs/research/competitive-analysis.md`
+> **Related documents:** `docs/research/competitive-analysis.md` (to be created).
 
 ---
 
@@ -28,7 +28,7 @@
 - Two marketplaces: electronics and vehicles.
 - Sales and payments operate **in Brazil only**.
 - Focus on the core end-to-end transaction: **a store lists a product, a buyer finds it, pays, and the store receives the payout**.
-- Two fully working languages: **en-US** and **pt-BR**.
+- Two fully working languages: **en-US** and **pt-BR**. "Fully working" refers to the platform's user interface; content written by stores (listings) is displayed in its original language in the MVP (see [section 6](#6-internationalization)).
 
 ### 2.2 Foundations that are expensive to retrofit
 
@@ -37,7 +37,7 @@ The following must be designed from the start and implemented in realistic phase
 ### 2.3 Later phases (the design must not prevent them)
 
 - Paid listings and featured placement.
-- Custom domains per marketplace.
+- Custom domains per marketplace (depends on re-evaluating Cloud Run domain mapping before production; see [section 7](#7-tenancy-and-domains)).
 - New niches and a generalist marketplace.
 - Other markets and cross-border sales.
 - Automatic translation of listings.
@@ -61,7 +61,7 @@ The following must be designed from the start and implemented in realistic phase
 - Platform revenue:
   - **Commission** on each sale.
   - **Paid listings / featured placement** (later phase).
-- Buyer and seller **accounts are separate per marketplace**. Data from one marketplace must never be visible in another.
+- Buyer and seller **accounts are separate per marketplace**. Data from one marketplace must never be visible to buyers or sellers of another. Platform staff belong to the platform, not to a marketplace; their access to each marketplace's data is governed by roles and permissions (see [section 19](#19-administration-roles-and-permissions)).
 
 ## 5. Markets
 
@@ -76,7 +76,7 @@ The following must be designed from the start and implemented in realistic phase
 - The official and default language is **English (en-US)**.
 - MVP languages: **en-US and pt-BR**, both fully working from the start. pt-BR exists from day one to validate the translation mechanism throughout development.
 - New languages must be addable **without code changes**, only by adding translation files.
-- Visitors accessing from **Brazil receive pt-BR automatically**. Visitors can **always** switch language manually, and that choice is remembered on later visits. (The owner already implements this logic in another project.)
+- **A URL with an explicit language always wins.** Automatic detection by country acts only when the address contains no language (for example the home page), redirecting to the appropriate version: visitors accessing from **Brazil are redirected to pt-BR**. A visitor from Brazil who opens `/en-US/...` sees English. Visitors can **always** switch language manually, and that choice is remembered on later visits. (The owner already implements the detection logic in another project.)
 - Country detection uses an **IP geolocation database** (such as MaxMind GeoLite2), complying with its attribution requirement and its requirement to keep the data up to date.
 - The **language is part of the URL**, for per-language SEO. Automatic detection must not prevent search engines from indexing pages in any language.
 - **No hard-coded user-facing text**: everything goes through translation keys. Claude Code produces and maintains all translations.
@@ -133,11 +133,11 @@ The following must be designed from the start and implemented in realistic phase
 
 ### 8.4 Media
 
-- Products accept **photos and videos**.
+- Products accept **photos and videos**. **(proposed)** In the MVP, videos are **links to externally hosted videos** (such as YouTube). Self-hosted video is a later phase (see [section 2.3](#23-later-phases-the-design-must-not-prevent-them)).
 - Files are stored in **Cloud Storage**, not in the database.
 - Limits on file count and size are **configurable in the console**.
 - Images are resized and converted to efficient formats.
-- Videos are a cost risk (storage, egress and transcoding). **(proposed)** The MVP accepts links to externally hosted videos (such as YouTube); self-hosted video comes later.
+- Videos are a cost risk (storage, egress and transcoding), which is why self-hosted video is deferred.
 
 ### 8.5 Listing moderation
 
@@ -153,11 +153,11 @@ The following must be designed from the start and implemented in realistic phase
 - **Persistent cart**, including for visitors who are not signed in, **merged** into the account's cart on sign-in.
 - **One cart per marketplace**, since accounts are separate per marketplace.
 - A cart with items from several stores is split into **one shipment per store**, each with its own shipping cost, but paid with **a single payment**.
-- **No stock reservation while items are in the cart.** Stock is reserved only during checkout, for a short period.
+- **No stock reservation while items are in the cart.** Stock is reserved only during checkout, for a short period. This also applies to **unique items** such as vehicles, where the reservation is most critical: a unique item must never be sold to two buyers.
 - Price, stock and availability are **revalidated at checkout**, and the buyer is clearly informed of any change.
 - A **shipping estimate is shown early**, before the final checkout step.
 - A **"save for later"** list is available.
-- Abandoned-cart reminders by email are only sent to buyers who consented to that kind of communication.
+- Abandoned-cart reminders by email are **marketing notifications** and are only sent to buyers who consented to that kind of communication (see [section 17](#17-notifications)).
 - The checkout model for vehicles is an open topic.
 
 ## 11. Payments
@@ -170,7 +170,7 @@ The following must be designed from the start and implemented in realistic phase
   - This keeps the platform out of the heaviest PCI DSS scope.
   - Saved cards are bound to the gateway that issued the token.
 - **(proposed)** Store payouts are held until delivery is confirmed.
-- **Gateway migration:** switching gateways would require stores to register again with the new gateway, while the old gateway remains active for pending payouts, refunds and chargebacks. The data model must allow **two gateways to coexist** during a migration.
+- **Gateway migration:** switching gateways would require stores to register again with the new gateway, while the old gateway remains active for pending payouts, refunds and chargebacks. The data model must allow **two gateways to coexist** during a migration. This is a requirement on the data model, not on the initial implementation, which has a single gateway (see [section 25](#25-external-integrations)).
 
 ## 12. Shipping
 
@@ -223,7 +223,7 @@ Who funds a discount (platform or store) and whether commission is calculated be
   - MVP: **in-app** and **email**.
   - Later: web push, SMS and WhatsApp (the last two have per-message costs).
 - Users choose which notifications they receive on each channel.
-- **Transactional** notifications (about the user's own orders) can always be sent; **marketing** notifications require consent.
+- **Transactional** notifications (about the user's own orders) can always be sent; **marketing** notifications (including abandoned-cart reminders) require consent.
 - Notification templates follow the translation rules.
 
 ## 18. Accounts, authentication and privacy
@@ -236,7 +236,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Managing delivery addresses (buyers): multiple addresses, one of them marked as default.
 - Managing saved cards (buyers): multiple cards (see [section 11](#11-payments)).
 - **(proposed)** Viewing active sessions and devices, and signing them out remotely.
-- Full privacy self-service (see 18.3).
+- Full privacy self-service (see [section 18.3](#183-privacy)).
 
 ### 18.2 Two-factor authentication
 
@@ -263,7 +263,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
   - The system defines **granular permissions** (for example: moderate listings, view orders, suspend stores).
   - The owner creates **roles** in the console by combining permissions.
   - Roles are assigned to staff members.
-  - **(proposed)** Roles can be scoped to specific marketplaces.
+  - Roles can be scoped to specific marketplaces. This is how staff access to each marketplace's data is restricted, complementing the isolation between marketplaces defined in [section 4](#4-business-model).
 - Management must be flexible and easy, since more staff members will join in the future.
 - All role and permission changes are audited.
 
@@ -278,7 +278,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **Layered prevention** (the preferred approach, with suspension as a last resort):
   - identity verification through the payment gateway;
   - lower limits for new stores;
-  - payout hold until delivery confirmation **(proposed)**;
+  - payout hold until delivery confirmation (see [section 11](#11-payments));
   - reputation based on reviews and complaint rates;
   - automated alerts for suspicious patterns.
 - Future markets: platform-specific regulations (for example the European Union's requirements for statements of reasons and notice before terminating a business user) must be reviewed.
@@ -363,25 +363,27 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Indexing and querying complex filters over flexible attributes at low cost (PostgreSQL features versus a dedicated search engine).
 - Modeling markets so that Brazil is the first market, not a special case.
 - Checkout model for vehicles: full payment, deposit/reservation or another model, considering high values, fraud prevention and document transfer.
+- Whether the Brazilian consumer right of withdrawal applies to vehicles, and its impact on the checkout model and on the payout hold (to be validated with a lawyer).
 - Card installments: who pays the interest, impact on store payouts and interaction with split payments.
 - Payment gateway selection for split payments, sub-accounts, PIX and installments, considering future markets and currencies.
 - Shipping scope in the MVP: quotes only, or labels and tracking as well; provider selection.
 - Coupon funding (platform or store) and the commission base (before or after discounts).
-- Isolation between marketplaces and authorization between stores.
+- How to enforce isolation between marketplaces (the rule is decided; see [section 4](#4-business-model)) and authorization between stores.
 - Auditing versus privacy: retention periods, anonymization and legal retention obligations.
 - Storage and querying of metrics and behavior events without high fixed costs.
 - Which behaviors become console parameters.
 - Mandatory 2FA methods per user type, and recovery flows.
 - Marketplace creation flow, including the infrastructure step (domain mapping and DNS).
-- Keeping the IP geolocation database up to date (embedded in the binary or downloaded at startup) and reading the visitor's IP correctly on Cloud Run.
-- Language in the URL, compatible with automatic detection and SEO.
+- Re-evaluation of Cloud Run domain mapping (a preview feature) before production traffic and before adopting custom domains per marketplace (see [section 7](#7-tenancy-and-domains)).
+- How to keep the IP geolocation database up to date (using such a database is decided; see [section 6](#6-internationalization)): embedded in the binary or downloaded at startup; and how to read the visitor's IP correctly on Cloud Run.
+- Exact URL format for the language (the language being part of the URL is decided; see [section 6](#6-internationalization)), compatible with automatic detection and SEO.
 - Currencies and price conversion.
 - Phases and risks for future markets and cross-border sales.
 - CI/CD pipeline structure, keyless GitHub-to-GCP authentication, secret detection and environments.
 - Language and execution of end-to-end tests in CI.
-- Listing moderation for third-party stores.
+- How listing moderation for third-party stores works (moderation itself is decided; see [section 8.5](#85-listing-moderation)).
 - Messaging rules: masking contact information, moderation and retention.
-- Rich dashboard interactions with HTMX + Alpine.js.
+- How to implement rich dashboard interactions with HTMX + Alpine.js (the stack is decided; see [section 24](#24-architecture-and-technology)).
 - Media limits, image processing and the video strategy.
 - Fixed costs and how to keep them minimal.
 - MVP boundary: what is in, what is out, and the order of implementation phases.
