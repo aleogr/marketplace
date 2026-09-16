@@ -42,7 +42,7 @@ The following must be designed from the start and implemented in realistic phase
 - Other markets and cross-border sales.
 - Automatic translation of listings.
 - Discount coupons (the data model must be ready from the start; see [section 13](#13-coupons-and-discounts)).
-- Self-hosted product videos **(proposed)**.
+- Self-hosted product videos (the MVP is proposed to use external links only; see [section 8.4](#84-media)).
 - Additional notification channels (web push, SMS, WhatsApp).
 - Advanced recommendations.
 
@@ -51,6 +51,7 @@ The following must be designed from the start and implemented in realistic phase
 - **Language:** Claude Code always talks to the owner in **Portuguese**. All versioned content is written in **English**: code, comments, commit messages, pull request descriptions and documentation. The only exception is translation files for other languages.
 - **Branches and pull requests:** each topic is developed in its own branch and merged through a pull request, which is always opened by Claude Code.
 - **Manual steps:** when the owner must act outside a Claude Code session (GCP console, GitHub, Cloudflare or any other service), instructions are given **one at a time**. The owner executes, reports the result, and only then receives the next instruction.
+- **Confirmation before acting:** when the owner asks to see something before an action (commit, push, merge, configuration change), Claude Code shows it and waits for the owner's explicit confirmation before executing.
 - **Secrets:** the repository is public. No secret may ever be committed.
 - **Definition of done:** a feature is only done when all of its user-facing texts exist in **both en-US and pt-BR**, tests pass, and there is verification evidence (test output, screenshots or equivalent).
 - **UI principles:** immediate visual feedback when an element is pressed; respect the operating system's reduced-motion preference; animations only when they serve a purpose.
@@ -76,7 +77,9 @@ The following must be designed from the start and implemented in realistic phase
 - The official and default language is **English (en-US)**.
 - MVP languages: **en-US and pt-BR**, both fully working from the start. pt-BR exists from day one to validate the translation mechanism throughout development.
 - New languages must be addable **without code changes**, only by adding translation files.
-- **A URL with an explicit language always wins.** Automatic detection by country acts only when the address contains no language (for example the home page), redirecting to the appropriate version: visitors accessing from **Brazil are redirected to pt-BR**. A visitor from Brazil who opens `/en-US/...` sees English. Visitors can **always** switch language manually, and that choice is remembered on later visits. (The owner already implements the detection logic in another project.)
+- **A URL with an explicit language always wins.** A visitor from Brazil who opens `/en-US/...` sees English.
+- Visitors can **always** switch language manually, and that choice is remembered on later visits. **A remembered choice always wins over detection by country.**
+- Automatic detection by country acts only when there is no remembered choice and the address contains no language (for example the home page), redirecting to the appropriate version: visitors accessing from **Brazil are redirected to pt-BR**. (The owner already implements the detection logic in another project.)
 - Country detection uses an **IP geolocation database** (such as MaxMind GeoLite2), complying with its attribution requirement and its requirement to keep the data up to date.
 - The **language is part of the URL**, for per-language SEO. Automatic detection must not prevent search engines from indexing pages in any language.
 - **No hard-coded user-facing text**: everything goes through translation keys. Claude Code produces and maintains all translations.
@@ -122,7 +125,7 @@ The following must be designed from the start and implemented in realistic phase
   - A pan in 127V and 220V, each voltage in several colors.
   - A garment in several sizes, each size in several colors.
 - Each variant has its own **SKU, stock, price** and, optionally, its own photos.
-- A unique item (such as a vehicle) is simply a product with a single variant and no stock management.
+- A unique item (such as a vehicle) is simply a product with a single variant. It has no stock quantity, but it is still subject to **availability control** (available, reserved, sold), because it is reserved during checkout (see [section 10](#10-cart-and-checkout)).
 - The model separates the **product** (the catalog item, for example a book identified by ISBN) from the **offer** (a store's price, condition and stock), so that several stores can sell the same product. How much of this the MVP implements is an open topic.
 - **Physical products require weight and dimensions**, because shipping quotes depend on them. Vehicles are exempt.
 
@@ -135,7 +138,7 @@ The following must be designed from the start and implemented in realistic phase
 
 - Products accept **photos and videos**. **(proposed)** In the MVP, videos are **links to externally hosted videos** (such as YouTube). Self-hosted video is a later phase (see [section 2.3](#23-later-phases-the-design-must-not-prevent-them)).
 - Files are stored in **Cloud Storage**, not in the database.
-- Limits on file count and size are **configurable in the console**.
+- Limits on file count and size are **configurable in the console**. In the MVP, the limit for videos is by **number of links**, also configurable in the console.
 - Images are resized and converted to efficient formats.
 - Videos are a cost risk (storage, egress and transcoding), which is why self-hosted video is deferred.
 
