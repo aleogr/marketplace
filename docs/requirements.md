@@ -368,9 +368,9 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **CI** on every pull request: tests, lint, build, secret detection, **static security analysis** of the Go code and **vulnerability scanning** of dependencies (Go modules and container base image).
 - Dependency updates are proposed automatically (for example by Dependabot) and go through the same CI.
 - **Versioning:** the project follows **Semantic Versioning (SemVer)**. Versions are `0.y.z` during development; `1.0.0` marks the first production launch. Each version is a git tag `vMAJOR.MINOR.PATCH` on `main`.
-- **Releases:** Claude Code creates a release, **only when the owner asks for one**, by pushing the version tag to `main`. The tag push triggers the CD pipeline, which builds the binary, creates the GitHub Release with generated notes, and deploys to Cloud Run. Merging a pull request does not deploy by itself.
-- The version is embedded in the binary at build time and recorded in the start-up log.
-- **CD**: deployment to Cloud Run triggered by a release.
+- **Releases:** Claude Code creates a release, **only when the owner asks for one**, by pushing the version tag to `main`. The tag push triggers the CD pipeline, which builds the binary, creates the GitHub Release with generated notes, and deploys to production. Releases mark milestones, not individual changes; a long development cycle may have many merges and no release.
+- **CD with two triggers:** every merge into `main` deploys automatically to the **lab** environment, without a tag or release; a release deploys to **production**.
+- **Build identifier:** every build embeds an identifier derived from git (`git describe`): the clean version on a tagged commit (`v0.3.0`), or the version plus the distance and commit after it (`v0.3.0-12-gabc1234`); before the first tag, the short commit hash and build date. The identifier is recorded in the start-up log, shown in the footer of the administrative console and exposed on a version endpoint restricted to staff, so that the deployed build can always be verified, in the lab as well as in production.
 - **(proposed)** GitHub authenticates to GCP without stored keys (Workload Identity Federation).
 - Environments: lab now; production in the future.
 - **End-to-end tests** of real flows (sign-up, search, checkout) run in CI. Language and runner are open topics.
@@ -410,7 +410,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Exact URL format for the language (the language being part of the URL is decided; see [section 6](#6-internationalization)), compatible with automatic detection and SEO.
 - Currencies and price conversion.
 - Phases and risks for future markets and cross-border sales.
-- CI/CD pipeline structure, keyless GitHub-to-GCP authentication, secret detection, security scanning tools and environments; whether merges into `main` also deploy automatically to the lab environment, in addition to releases.
+- CI/CD pipeline structure, keyless GitHub-to-GCP authentication, secret detection, security scanning tools and environments; whether the container image built on merge is promoted to production on release without rebuilding.
 - Backup retention periods, restore test frequency and recovery targets.
 - Language and execution of end-to-end tests in CI.
 - How listing moderation for third-party stores works (moderation itself is decided; see [section 8.5](#85-listing-moderation)).
