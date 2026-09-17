@@ -32,7 +32,7 @@
 
 ### 2.2 Foundations that are expensive to retrofit
 
-The following must be designed from the start and implemented in realistic phases, even if parts of them are delivered after the first release: auditing, internationalization, role-based access control, two-factor authentication, privacy compliance, CI/CD.
+The following must be designed from the start and implemented in realistic phases, even if parts of them are delivered after the first release: auditing, internationalization, role-based access control, two-factor authentication, privacy compliance, CI/CD, and the security practices listed in [section 26](#26-infrastructure-and-cost) and [section 27](#27-development-workflow-and-quality).
 
 ### 2.3 Later phases (the design must not prevent them)
 
@@ -316,6 +316,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **A single repository and a single binary**, with static assets embedded via `go:embed`.
 - **Database:** PostgreSQL on Cloud SQL.
 - **Media storage:** Cloud Storage.
+- **Application-level protections:** since there is no load balancer or web application firewall in front of the service, the binary itself applies **rate limiting** on sensitive endpoints (sign-in, sign-up, password recovery, checkout) and sets **security HTTP headers**.
 
 ## 25. External integrations
 
@@ -338,11 +339,14 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **Cloud Run**, scaling to zero.
 - **Cloud SQL** (PostgreSQL) and **Cloud Storage**.
 - **No Kubernetes and no load balancer.**
+- **Least privilege:** separate service accounts for Cloud Run, Cloud SQL and Cloud Storage, each with only the permissions it needs. Buckets are private by default; public access is granted only to what must be public (such as product images).
+- **Backups and recovery:** automatic Cloud SQL backups with a defined retention period, and periodic restore tests. Media in Cloud Storage is covered by a defined retention and recovery approach.
 - **Strong premise: the lowest possible operating cost**, avoiding recurring fees until the platform generates revenue. The design must identify fixed costs and keep them minimal.
 
 ## 27. Development workflow and quality
 
-- **CI** on every pull request: tests, lint, build and secret detection.
+- **CI** on every pull request: tests, lint, build, secret detection, **static security analysis** of the Go code and **vulnerability scanning** of dependencies (Go modules and container base image).
+- Dependency updates are proposed automatically (for example by Dependabot) and go through the same CI.
 - **CD**: deployment to Cloud Run after merge.
 - **(proposed)** GitHub authenticates to GCP without stored keys (Workload Identity Federation).
 - Environments: lab now; production in the future.
@@ -373,6 +377,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Coupon funding (platform or store) and the commission base (before or after discounts).
 - How to enforce isolation between marketplaces (the rule is decided; see [section 4](#4-business-model)) and authorization between stores.
 - Auditing versus privacy: retention periods, anonymization and legal retention obligations.
+- Security incident response: what to do in case of a data breach, including the notification duties and deadlines under LGPD and, for future markets, other privacy laws (to be validated with a lawyer).
 - Storage and querying of metrics and behavior events without high fixed costs.
 - Which behaviors become console parameters.
 - Mandatory 2FA methods per user type, and recovery flows.
@@ -382,7 +387,8 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Exact URL format for the language (the language being part of the URL is decided; see [section 6](#6-internationalization)), compatible with automatic detection and SEO.
 - Currencies and price conversion.
 - Phases and risks for future markets and cross-border sales.
-- CI/CD pipeline structure, keyless GitHub-to-GCP authentication, secret detection and environments.
+- CI/CD pipeline structure, keyless GitHub-to-GCP authentication, secret detection, security scanning tools and environments.
+- Backup retention periods, restore test frequency and recovery targets.
 - Language and execution of end-to-end tests in CI.
 - How listing moderation for third-party stores works (moderation itself is decided; see [section 8.5](#85-listing-moderation)).
 - Messaging rules: masking contact information, moderation and retention.
