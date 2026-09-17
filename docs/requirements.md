@@ -9,7 +9,7 @@
 > - Items listed under [Open topics](#29-open-topics-for-design) must be explored and decided during design.
 > - Legal topics (terms of use, privacy, consumer law, marketplace regulations) must be reviewed by a qualified lawyer before launch.
 >
-> **Related documents:** `docs/research/competitive-analysis.md` (to be created).
+> **Related documents:** `docs/research/competitive-analysis.md` (competitors), `docs/research/payment-providers.md` (payment gateway candidates), `docs/research/shipping-providers.md` (shipping provider candidates, to be created). Decisions below that came from those analyses cite them.
 
 ---
 
@@ -36,7 +36,9 @@ The following must be designed from the start and implemented in realistic phase
 
 ### 2.3 Later phases (the design must not prevent them)
 
-- Paid listings and featured placement.
+- Paid listings and featured placement for goods marketplaces (the vehicles marketplace may launch with them; see [section 4](#4-business-model)).
+- Store subscription plans as a third revenue stream (Mercado Livre, Amazon and eBay sell them).
+- Vehicle trust services around a listing: vehicle history reports, inspection badges with an expiry date, dealer warranties, financing partners with pre-approved credit leads. The listing model must be able to carry badges with an expiry date from the start.
 - Custom domains per marketplace (depends on re-evaluating Cloud Run domain mapping before production; see [section 7](#7-tenancy-and-domains)).
 - New niches and a generalist marketplace.
 - Other markets and cross-border sales.
@@ -59,9 +61,13 @@ The following must be designed from the start and implemented in realistic phase
 ## 4. Business model
 
 - Buyers pay through a **checkout inside the platform**. The platform collects the payment and pays out to the stores (split payment).
-- Platform revenue:
-  - **Commission** on each sale.
-  - **Paid listings / featured placement** (later phase).
+- Platform revenue is defined **per marketplace**:
+  - **Commission** on each sale, the model for goods marketplaces.
+  - **Paid listings / featured placement.** A later phase for goods; for the vehicles marketplace it may be the launch model, since no competitor charges a commission on a vehicle sale (they sell listing tiers with exposure levels and durations, mandatory plans or per-lead pricing to dealers; see `docs/research/competitive-analysis.md`, section 8). The data model must not assume a cost-per-click model: fixed-price highlights with a duration, cost-per-click auctions and cost-per-sale percentages all exist in the market.
+- **Fee schedule:** fees are a versioned schedule per marketplace with effective dates, supporting a percentage by category, a fixed fee per item or per order, a minimum commission and price bands. Competitors combine all of these and change them often. The schedule is a console parameter (see [section 23](#23-parametrization)).
+- **Commission base:** the base (before or after discounts, with or without the shipping charged to the buyer, with or without payment-method discounts) is an open topic. Whatever the rule, the commission of an order is recorded as an explicit split line at payment time, never derived afterwards, and the platform's own stores also have a sub-account at the gateway.
+- **Fee evaluation:** provider fees are compared on the expected ticket distribution of each marketplace, not on a single average; a flat PIX fee and a percentage fee behave in opposite ways for vehicle deposits and for cheap accessories.
+- The vehicles marketplace distinguishes **dealers** (professional sellers) from private sellers, with their own limits and pricing; every competitor treats dealers as a distinct seller type.
 - Buyer and seller **accounts are separate per marketplace**. Data from one marketplace must never be visible to buyers or sellers of another. Platform staff belong to the platform, not to a marketplace; their access to each marketplace's data is governed by roles and permissions (see [section 19](#19-administration-roles-and-permissions)).
 
 ## 5. Markets
@@ -70,7 +76,7 @@ The following must be designed from the start and implemented in realistic phase
 - **Brazil (MVP):**
   - Payment methods: **PIX** and **credit card with installments**.
   - Consumer right of withdrawal for online purchases.
-- **Future markets and cross-border sales:** payments and payouts in other currencies, taxation and import rules, international shipping, and privacy and consumer laws of other jurisdictions (for example GDPR and European Union rules for online platforms). Phases and risks must be mapped; full solutions are not required now.
+- **Future markets and cross-border sales:** payments and payouts in other currencies, taxation and import rules, international shipping, and privacy and consumer laws of other jurisdictions (for example GDPR and European Union rules for online platforms). Phases and risks must be mapped; full solutions are not required now. Two facts from the research shape the design: cross-border buying in Brazil is implemented by charging the buyer's estimated import taxes at checkout, so the order model needs an import-tax line and the rule that the buyer is the importer; and tax rules change (the Brazilian rates changed in May 2026 while competitors' help pages still showed the old ones), so tax rules are data with effective dates, never code. No payment provider offers a Brazilian platform cross-border payouts self-serve; the first foreign market will most likely mean a regional account or a second gateway (see [section 11](#11-payments)).
 
 ## 6. Internationalization
 
@@ -136,6 +142,7 @@ The following must be designed from the start and implemented in realistic phase
   - **comparable** (used in product comparison);
   - **variant-defining** (such as voltage, color or size) or **descriptive** (such as material or capacity).
 - Units of measure are supported, including fractional sales for future niches (for example construction materials).
+- **Vehicle category attributes** observed as mandatory or as filters at every vehicle competitor: licence plate (mandatory, used to pre-fill vehicle data), mileage, fuel, transmission, body type, colour, doors, documentation status, plate ending, around thirty equipment items, and a price reference (FIPE table). The category design includes plate lookup, a FIPE reference and a price-anomaly check: competitors pause or reject listings far from the market price.
 
 ### 8.2 Products, variants and offers
 
@@ -145,29 +152,32 @@ The following must be designed from the start and implemented in realistic phase
   - A garment in several sizes, each size in several colors.
 - Each variant has its own **SKU, stock, price** and, optionally, its own photos.
 - A unique item (such as a vehicle) is simply a product with a single variant. It has no stock quantity, but it is still subject to **availability control** (available, reserved, sold), because it is reserved during checkout (see [section 10](#10-cart-and-checkout)).
-- The model separates the **product** (the catalog item, for example a book identified by ISBN) from the **offer** (a store's price, condition and stock), so that several stores can sell the same product. How much of this the MVP implements is an open topic.
-- **Physical products require weight and dimensions**, because shipping quotes depend on them. Vehicles are exempt.
+- The model separates the **product** (the catalog item, for example a book identified by ISBN) from the **offer** (a store's price, condition and stock), so that several stores can sell the same product. The electronics marketplace implements the separation from the MVP, matching offers to catalog products by GTIN/EAN, with a **Buy Box** that picks the featured offer; the vehicles marketplace keeps one listing per store. The Buy Box criteria (price, interest-free installments, shipping, store reputation, stock, as used by Mercado Livre, Amazon, Magalu and KaBuM) are an open design item.
+- Listings can carry **badges with an expiry date** (for example an inspection badge valid for 120 days).
+- **Physical products require weight and dimensions**, because shipping quotes depend on them. Vehicles are exempt. Carriers bill the greater of the physical weight and the volumetric weight (length × width × height / 6000 at Mercado Livre and Amazon), so the shipping integration computes the volumetric weight, and a listing's measurements can be corrected after a carrier re-measures a parcel.
 
 ### 8.3 Product comparison
 
-- Buyers can **compare products within the same category**.
+- Buyers can **compare products within the same category**, three to four at a time. No Brazilian generalist offers attribute comparison of arbitrary listings; it is a differentiator.
 - Comparison uses the attributes the category marks as comparable. A category can make those attributes required so that comparison is always meaningful (for example number of doors, engine power and transmission type for cars).
 
 ### 8.4 Media
 
 - Products accept **photos and videos**. In the MVP, videos are **links to externally hosted videos** from a closed list of allowed providers (such as YouTube and Vimeo). The player is loaded only after the visitor clicks the thumbnail, using the provider's cookie-free embed where available, so that no third-party cookie is set before consent. The link is stored as provider plus external identifier (see [section 25](#25-external-integrations)). Self-hosted video is a later phase (see [section 2.3](#23-later-phases-the-design-must-not-prevent-them)).
 - Files are stored in **Cloud Storage**, not in the database.
-- Limits on file count and size are **configurable in the console**. In the MVP, the limit for videos is by **number of links**, also configurable in the console.
+- Limits on file count and size are **configurable in the console**. In the MVP, the limit for videos is by **number of links**, also configurable in the console. Reference values in the market: 15 photos with a minimum of 800×600 for vehicles at Mercado Livre, 20 photos for vehicles and 6 for goods at OLX, 500×500 on a white background at KaBuM.
 - Images are resized and converted to efficient formats.
 - Videos are a cost risk (storage, egress and transcoding), which is why self-hosted video is deferred.
 
 ### 8.5 Listing moderation
 
 - Listings from third-party stores are subject to moderation (wrong category, prohibited items).
+- Moderation happens **before publication**, as the direct competitors of both niches do (KaBuM approves products before offers go live, Webmotors analyses every ad in seconds to one business day, OLX within 24 hours), with **automatic pre-checks** (category fit, contact data in the text, price anomaly) and a manual queue. Contact data (phone numbers, e-mail addresses, links) is detected in listing text, questions and reviews, not only in messages (see [section 15](#15-buyerseller-messaging)).
 
 ## 9. Search and filters
 
 - Filters are **complex and functional**, built on top of flexible attributes, and **vary by category**.
+- Standard sort options: relevance, price ascending and descending, best sellers, best rated and newest. The search design accounts for the aggregates they need (sales count, rating average).
 - Good performance with the **lowest possible operating cost**. The choice between PostgreSQL features and a dedicated search engine is an open topic.
 
 ## 10. Cart and checkout
@@ -179,26 +189,33 @@ The following must be designed from the start and implemented in realistic phase
 - Price, stock and availability are **revalidated at checkout**, and the buyer is clearly informed of any change.
 - A **shipping estimate is shown early**, before the final checkout step.
 - A **"save for later"** list is available.
+- The order model reserves a **pickup point** delivery type (agencies, partner shops, lockers), even though pickup is a later phase.
 - Abandoned-cart reminders by email are **marketing notifications** and are only sent to buyers who consented to that kind of communication (see [section 17](#17-notifications)).
-- The checkout model for vehicles is an open topic.
+- **Vehicles checkout:** no Brazilian competitor processes the price of a vehicle; the models are a reservation held by the platform until delivery (Mercado Livre), a deposit with the balance off-platform (eBay) and bank financing embedded in the listing (Webmotors, OLX). In the MVP the buyer pays a **reservation or deposit through the platform**, held until both parties confirm the handover, and the balance is settled outside the platform; full in-platform payment is a later option. The reservation is a **captured payment** (PIX or card) held in escrow or in the platform balance, not a card pre-authorization: providers' pre-authorization windows range from 3 to 29 days. The reservation interacts with the rule that a unique item is reserved during checkout. Amount, deadline and forfeiture rules are open topics.
+- A cart with items from several stores requires a gateway that splits **one payment among several recipients**; gateways limited to single-seller carts (PagBank, as published) are excluded (see `docs/research/payment-providers.md`).
 
 ## 11. Payments
 
 - Brazil (MVP): **PIX** and **credit card with installments**.
-- **Split payments** with a **sub-account per store inside the payment gateway**. Store identity verification (KYC) is performed through the gateway.
+- **Split payments** with a **sub-account per store inside the payment gateway**, including the platform's own stores. Store identity verification (KYC) is performed through the gateway; whether the gateway runs the verification itself is a **selection criterion**, because some providers leave the analysis to the platform (Iugu) or require the store to finish it in the provider's app (PagBank).
+- **Store onboarding** is a state machine (created, documents pending, under review at the provider, active, refused, suspended) fed by the gateway's events. The platform stores the verification **status and the provider's reference, never the documents**, and prefers hosted or link-based document collection over API-only onboarding, which would put sensitive documents on the platform.
 - **Saved cards:**
-  - The platform **never stores the card number or the security code**.
+  - The platform **never stores the card number or the security code**, and the card number **never transits the platform's servers**: tokenization happens in the browser (PCI SAQ A). A gateway whose documented integration tokenizes on the server side keeps the platform in PCI scope and fails this criterion.
   - The gateway stores the card and returns a token. The platform stores only the token, card brand, last four digits and expiry date.
   - This keeps the platform out of the heaviest PCI DSS scope.
   - Saved cards are bound to the gateway that issued the token.
-- **(proposed)** Store payouts are held until delivery is confirmed.
+- **Store payouts are held until delivery is confirmed.** Every competitor does this (48 hours after confirmation at OLX, delivery plus 7 days at Shopee and Amazon, longer for stores without reputation), and every candidate gateway supports it through a named escrow (Asaas, PagBank), disabled automatic payouts with manual transfers (Pagar.me) or a platform-held balance (Stripe, 90-day limit). The order records **who holds the money** (store sub-account under escrow or platform balance) and the **release event**, so the hold survives a gateway change. The hold length is a parameter driven by store reputation, shipping mode (platform label with tracking or own shipping) and delivery confirmation, with a fallback deadline that fits within the provider's maximum (365 days at PagBank, 90 at Stripe). Delivery confirmation comes from the shipping provider's tracking (see [section 12](#12-shipping)).
+- The payment institution may **block balances or impose reserves unilaterally** (every contract reviewed allows it). Store-facing texts about payout timing say so, and provider-side blocks received by webhook are shown on the store's payout screen.
+- **Installments:** the platform owns the installment plan (number of installments, interest-free limit per store or listing, resulting amounts) and treats each provider's cost table as configuration, so the checkout shows the same plans whatever the gateway. Interest-free installments are a **seller-funded, opt-in** feature with an explicit cost (Mercado Livre, Amazon, OLX and Magalu all price it that way); otherwise the buyer pays the interest. Providers differ on who computes buyer interest (PagBank computes it; Asaas and Adyen expect the platform to send the amounts).
+- **Chargebacks** are the store's cost by default, softened by the gateway's protection when the platform's tracked shipping label was used; the allocation rule is written in the terms of use and applied to the split (per-recipient liability flags exist at Pagar.me and PagBank).
 - **Gateway migration:** switching gateways would require stores to register again with the new gateway, while the old gateway remains active for pending payouts, refunds and chargebacks. The data model must allow **two gateways to coexist** during a migration. This is a requirement on the data model, not on the initial implementation, which has a single gateway (see [section 25](#25-external-integrations)).
 
 ## 12. Shipping
 
 - The system **calculates shipping costs** through an external provider (carrier API or shipping aggregator), behind a replaceable integration (see [section 25](#25-external-integrations)).
 - Shipping is quoted **per store shipment**.
-- Scope of label generation and tracking in the MVP is an open topic.
+- The MVP includes **label generation and tracking** through the shipping provider, not quotes only: platform-generated labels with tracking are the norm at every Brazilian marketplace, and the tracking event "delivered" is what releases the store payout (see [section 11](#11-payments)). Provider selection is an open topic.
+- **Free shipping rules** are threshold-based and subsidised in the market (R$ 19 and R$ 79 at Mercado Livre and Amazon, R$ 99 at Magalu). "Free shipping above a threshold" is a rule at marketplace or store level with a defined payer (store, platform or shared), separate from coupons.
 - Future needs: heavy and bulky items, regional delivery, store pickup, international shipping.
 
 ## 13. Coupons and discounts
@@ -209,7 +226,8 @@ Coupon dimensions to support:
 
 - **Type:** percentage, fixed amount, free shipping.
 - **Scope:** whole platform, marketplace, store, category or product.
-- **Conditions:** minimum order value, first purchase, validity period.
+- **Conditions:** minimum order value, first purchase, validity period, payment method (a "PIX discount" is a common promotion; the commission base rule must say whether it applies before or after that discount).
+- **Caps:** a maximum discount amount per coupon (free-shipping coupons at Shopee cover up to R$ 20).
 - **Limits:** total uses and uses per buyer.
 - **Stacking:** whether a coupon can be combined with others.
 
@@ -218,25 +236,31 @@ Who funds a discount (platform or store) and whether commission is calculated be
 ## 14. Orders and post-sale
 
 - Orders store a **snapshot** of the delivery address, prices and relevant product data at purchase time. Later edits to addresses or products must not change past orders.
-- Returns and the Brazilian consumer right of withdrawal are supported.
+- Returns and the Brazilian consumer right of withdrawal are supported. The rules define **who pays return shipping by reason** (the store only when the item is different or defective, as at Mercado Livre and Shopee) and whether the **commission is refunded** on a cancellation or return, and whether a cancellation fee exists (Mercado Livre refunds its fee only on cancellation; KaBuM charges 6,5% on refunded orders).
+- **Processing fees are not returned on refunds** at any gateway reviewed. The terms decide who absorbs the non-refunded fee on a cancellation or return: the store, the platform or the buyer through a deduction.
 - Dispute handling between buyers and stores.
+- **Chargeback evidence:** the order keeps an evidence pack (tracking events, delivery proof, invoice, buyer messages) that can be exported as a single PDF, because gateways ask for evidence through their APIs under per-case deadlines and page limits (10 calendar days at Mercado Pago; single PDF of up to 18 pages at PagBank). A dispute deadline is a notification event.
 
 ## 15. Buyer–seller messaging
 
 - Buyers can **contact stores through messages inside the platform**.
-- **(proposed)** Phone numbers, email addresses and links are detected and masked, to discourage deals outside the platform (which bypass commission and buyer protection).
+- Phone numbers, email addresses and links are detected and masked, to discourage deals outside the platform (which bypass commission and buyer protection). The same detection applies to listing text, questions and reviews (Webmotors blocks contact data in descriptions, Mercado Livre demotes such listings, Shopee bans off-platform contact). Competitors deliberately allow public phone and WhatsApp for vehicles because the transaction happens off-platform; whether the vehicles marketplace keeps masking, given that the reservation is paid on the platform, is an open topic, as is a public question-and-answer section on listings.
 - Users can report abusive messages, subject to moderation.
 - Message retention must balance privacy obligations with the need to keep evidence for disputes.
 
 ## 16. Reviews and reputation
 
 - **Product and purchase reviews:**
-  - Only buyers with a verified purchase can review.
+  - Only buyers with a verified purchase can review, within a review window after delivery (Shopee allows 30 days).
+  - Reviews accept photos and videos.
+  - Reviews attach to the product and are shared by all offers and variants.
+  - Reviews are moderated before publication with explicit rejection reasons (contact data, links, unrelated content), as at Mercado Livre, Amazon and Magalu.
   - Legitimate negative reviews are never hidden.
   - Moderation rules are transparent.
+  - Rewards for reviews (coupons at Mercado Livre, coins at Shopee) exist in the market and are noted, not adopted.
 - **Store reviews:** buyers can review stores, and stores can reply publicly.
-- **Buyer reviews:** **(proposed)** buyers are not rated publicly. Stores can report problems with a buyer internally, feeding the platform's fraud detection.
-- Store reputation is derived from reviews, complaint rates and other signals.
+- **Buyer reviews:** buyers are not rated publicly; no competitor does it (OLX hides buyer ratings, eBay allows only positive feedback). Stores can report problems with a buyer internally, feeding the platform's fraud detection.
+- **Store reputation** is quantitative, derived from defined metrics over defined windows: complaint rate, seller-cancellation rate, late-dispatch rate, valid-tracking rate and response time, measured over 60 or 365 days as at Mercado Livre. Published thresholds in the market cluster around complaints ≤ 2%, seller cancellations ≤ 1,5–2,5%, late dispatch ≤ 3–4%, tracking ≥ 95% and replies within 2 business days. Reputation gates concrete outcomes (payout hold length, Buy Box eligibility, exposure, graded sanctions) and is shown only after a minimum number of completed sales (10 at Mercado Livre and KaBuM). Metrics, windows, thresholds and consequences are console parameters (see [section 23](#23-parametrization)).
 
 ## 17. Notifications
 
@@ -295,11 +319,11 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Legal basis and good practices:
   - Clear **terms of use** defining prohibited conduct and consequences (to be written or reviewed by a lawyer).
   - Every measure records its reason (audited).
-  - The store is notified and has an appeal channel.
+  - The store is notified and has an appeal channel with a response deadline that is a parameter (Shopee: appeal within 30 days, answer in 5 days). Sanctions are graded by score: pause a listing, limit the listing quota, suspend temporarily (15 days at KaBuM), ban.
   - Data needed for legal obligations and to prevent re-registration is retained after a ban.
 - **Layered prevention** (the preferred approach, with suspension as a last resort):
-  - identity verification through the payment gateway;
-  - lower limits for new stores;
+  - identity verification through the payment gateway (biometric liveness is required by Pagar.me, Asaas, Stripe and PagBank);
+  - lower limits for new stores: "new store" is a state that ends after a number of completed sales without complaints, with a longer payout hold, a cap on simultaneous listings and exclusion from the Buy Box as parameters (the instruments competitors actually use); these limits sit on top of the gateway's own ramps (recipients cannot withdraw until active at Pagar.me; 10 sub-accounts of R$ 2.000 for 60 days at Asaas), and the launch plan schedules the provider's homologation;
   - payout hold until delivery confirmation (see [section 11](#11-payments));
   - reputation based on reviews and complaint rates;
   - automated alerts for suspicious patterns.
@@ -309,6 +333,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 
 - The system is **highly auditable**. Every operation by platform staff, stores and buyers is traceable: **who** did it, **what** was done, **when**, **from where**, and the **state before and after** when applicable.
 - Every parameter change is audited.
+- KYC results from the gateway are stored as status and provider reference only (approved, refused, redo), never as documents.
 - Audit records are **append-only** (no updates or deletions, enforced by database permissions) and **tamper-evident** (each record carries the hash of the previous one, and the chain is verified periodically).
 - Audit records reference people by **internal identifiers**, never by name, email or document number. Fields that inherently carry personal data (such as the state before and after, or the origin IP address) are stored **encrypted with a per-user key** kept outside the log. A deletion request is fulfilled by **destroying that key**: the record and the hash chain stay intact, and the content becomes unrecoverable. Keys are retained while a legal retention obligation applies (see [section 18.3](#183-privacy)).
 
@@ -327,7 +352,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - The system is **configurable through the console wherever it makes sense**, so the administrator can change behavior without code changes.
 - Parameters have defaults, validation and change history (audited).
 - Not everything should become a parameter; the design must justify each one.
-- Examples: media limits per product, limits for new stores, moderation rules, notification settings, and the translation provider in the future.
+- Examples: media limits per product, limits for new stores, moderation rules, notification settings, the fee schedule, reputation metrics and thresholds, payout hold lengths, appeal deadlines, and the translation provider in the future.
 
 ## 24. Architecture and technology
 
@@ -349,8 +374,9 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **All of them must allow replaceable providers**, but **only one provider is implemented initially** for each. For translation, the first provider will be **Google Cloud Translation**.
 - Contracts reflect the platform's needs, **not a specific provider's API**.
 - Every external identifier (payment IDs, store sub-account IDs, tracking codes, card tokens) is **stored together with the provider that issued it**.
-- Webhooks are received on provider-specific endpoints and translated into internal events.
-- Tests use **fake implementations** of these interfaces, never real services.
+- Webhooks are received on provider-specific endpoints and translated into internal events. The endpoint verifies the signature where the provider signs (Mercado Pago, Stripe, Adyen, PagBank), always re-reads the object from the provider's API before acting (some providers only send a shared token: Asaas, Iugu), stores the provider's event id for idempotency, and answers immediately while processing asynchronously, because acknowledgement deadlines are short (22 seconds at Mercado Pago, 10 seconds at Asaas).
+- Tests use **fake implementations** of these interfaces, never real services. Provider sandboxes do not cover every flow (Iugu cannot create sub-accounts in sandbox, Pagar.me's PIX simulator does not work with split, Stripe cannot link platform and connected-account sandboxes), so end-to-end validation of split and payout follows a documented manual test plan against real accounts with small amounts (see [section 27](#27-development-workflow-and-quality)).
+- Official Go SDKs exist for some providers (Stripe, Adyen, Mercado Pago, Pagar.me in beta) and not for others (Asaas, Iugu, PagBank); an adapter written against the provider's OpenAPI definition is acceptable and is estimated as extra work.
 - Replacing the payment gateway is a migration project, not just a new adapter (see [section 11](#11-payments)).
 
 ## 26. Infrastructure and cost
@@ -362,7 +388,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **Infrastructure as code with Terraform.** Environment variables of the Cloud Run service are declared there with explicit values (see [section 7.1](#71-search-engine-indexing)).
 - **Least privilege:** separate service accounts for Cloud Run, Cloud SQL and Cloud Storage, each with only the permissions it needs. Buckets are private by default; public access is granted only to what must be public (such as product images).
 - **Backups and recovery:** automatic Cloud SQL backups with a defined retention period, and periodic restore tests. Media in Cloud Storage is covered by a defined retention and recovery approach.
-- **Strong premise: the lowest possible operating cost**, avoiding recurring fees until the platform generates revenue. The design must identify fixed costs and keep them minimal.
+- **Strong premise: the lowest possible operating cost**, avoiding recurring fees until the platform generates revenue. The design must identify fixed costs and keep them minimal. The cost inventory includes provider fees that scale with the number of stores rather than with sales (per sub-account monthly fees, per-payout fees, escrow fees, minimum invoices, dispute fees), which rules out gateways with per-sub-account monthly fees while the marketplace has many small or dormant stores.
 
 ## 27. Development workflow and quality
 
@@ -375,6 +401,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - GitHub authenticates to GCP without stored keys (Workload Identity Federation), configured in Terraform and restricted to this repository.
 - Environments: lab now; production in the future.
 - **End-to-end tests** of real flows (sign-up, search, checkout) run in CI. Language and runner are open topics.
+- A **manual test plan** covers the provider flows that sandboxes cannot reproduce (split, KYC, payout hold and release), executed against real accounts with small amounts before launch and after every gateway change.
 - Claude Code works exclusively through **Claude Code on the web**; the owner has no local development environment.
 - The Claude Code cloud environment already has **Playwright (Python) and Chromium** installed, and the repository includes the **webapp-testing** skill for in-session verification of screens. The environment setup is documented in `docs/`.
 
@@ -393,12 +420,12 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Product model serving every niche and the generalist marketplace, without unnecessary complexity in the MVP and without requiring a redesign later (including how much of the product/offer separation the MVP implements).
 - Indexing and querying complex filters over flexible attributes at low cost (PostgreSQL features versus a dedicated search engine).
 - Modeling markets so that Brazil is the first market, not a special case.
-- Checkout model for vehicles: full payment, deposit/reservation or another model, considering high values, fraud prevention and document transfer.
-- Whether the Brazilian consumer right of withdrawal applies to vehicles, and its impact on the checkout model and on the payout hold (to be validated with a lawyer).
-- Card installments: who pays the interest, impact on store payouts and interaction with split payments.
-- Payment gateway selection for split payments, sub-accounts, PIX and installments, considering future markets and currencies.
-- Shipping scope in the MVP: quotes only, or labels and tracking as well; provider selection.
-- Coupon funding (platform or store) and the commission base (before or after discounts).
+- Vehicles checkout details (the reservation-or-deposit model is decided; see [section 10](#10-cart-and-checkout)): amount, deadline, forfeiture rules, how the handover is confirmed by both parties, and the maximum amount per transaction and per payment method the gateway allows, which is unpublished at most providers.
+- Whether the Brazilian consumer right of withdrawal applies to vehicles, and its impact on the checkout model and on the payout hold (to be validated with a lawyer). Mercado Livre excludes vehicles from its buyer protection and eBay from its money-back guarantee, which supports a separate protection policy for vehicles.
+- Card installments: the plan ownership and the seller-funded opt-in are decided (see [section 11](#11-payments)); open are the provider cost tables and how the seller-funded cost is expressed (a monthly rate at PagBank, tiers at Asaas).
+- Payment gateway selection. `docs/research/payment-providers.md` shortlists Pagar.me and Asaas, with PagBank third if its single-seller-cart restriction can be lifted; Stripe and Adyen do not fit the Brazilian MVP as published but remain candidates for future markets. Selection criteria: sub-account per store created through the API, KYC run by the gateway with status events, payout hold released by the API, one payment split among several recipients, browser-side tokenization (PCI SAQ A), signed webhooks, no fixed cost before revenue, Brazilian card brands beyond Visa and Mastercard. Questions only a commercial proposal answers: marketplace plan costs, escrow and sub-account fees, chargeback fee, anticipation rate, maximum transaction amount, homologation timeline.
+- Shipping provider selection (labels and tracking in the MVP are decided; see [section 12](#12-shipping)); `docs/research/shipping-providers.md` will support it.
+- Coupon funding (platform or store) and the commission base (before or after discounts, with or without the shipping charged to the buyer, with or without payment-method discounts).
 - How to enforce isolation between marketplaces (the rule is decided; see [section 4](#4-business-model)) and authorization between stores.
 - Auditing versus privacy: retention periods and legal retention obligations that delay key destruction (the mechanism is decided; see [section 21](#21-auditing)).
 - Security incident response: what to do in case of a data breach, including the notification duties and deadlines under LGPD and, for future markets, other privacy laws (to be validated with a lawyer).
@@ -415,8 +442,10 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Backup retention periods, restore test frequency and recovery targets.
 - Language and execution of end-to-end tests in CI.
 - How listing moderation for third-party stores works (moderation itself is decided; see [section 8.5](#85-listing-moderation)).
-- Messaging rules: masking contact information, moderation and retention.
+- Messaging rules: moderation and retention (masking is decided; see [section 15](#15-buyerseller-messaging)); whether the vehicles marketplace keeps masking or allows public phone and WhatsApp like every vehicle competitor; whether listings have a public question-and-answer section (Mercado Livre, Amazon and Magalu have one; Shopee, OLX and Webmotors use private chat only).
 - How to implement rich dashboard interactions with HTMX + Alpine.js (the stack is decided; see [section 24](#24-architecture-and-technology)).
 - Media limits, image processing and the video strategy.
+- Buy Box criteria for the electronics marketplace (the product/offer separation with a Buy Box is decided; see [section 8.2](#82-products-variants-and-offers)).
+- Whether a platform-level identity verification and a "verified identity" badge are needed in addition to the gateway's KYC, especially for vehicles, where the gateway does not see the full transaction (Mercado Livre, OLX, Amazon and Webmotors all verify identity themselves).
 - Fixed costs and how to keep them minimal.
 - MVP boundary: what is in, what is out, and the order of implementation phases.
