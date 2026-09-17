@@ -369,7 +369,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Dependency updates are proposed automatically (for example by Dependabot) and go through the same CI.
 - **Versioning:** the project follows **Semantic Versioning (SemVer)**. Versions are `0.y.z` during development; `1.0.0` marks the first production launch. Each version is a git tag `vMAJOR.MINOR.PATCH` on `main`.
 - **Releases:** Claude Code creates a release, **only when the owner asks for one**, by pushing the version tag to `main`. The tag push triggers the CD pipeline, which builds the binary, creates the GitHub Release with generated notes, and deploys to Cloud Run. Merging a pull request does not deploy by itself.
-- **(proposed)** The version is embedded in the binary at build time and recorded in the start-up log.
+- The version is embedded in the binary at build time and recorded in the start-up log.
 - **CD**: deployment to Cloud Run triggered by a release.
 - **(proposed)** GitHub authenticates to GCP without stored keys (Workload Identity Federation).
 - Environments: lab now; production in the future.
