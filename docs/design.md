@@ -238,7 +238,8 @@ Each decision names the §29 topic it closes and the reason.
 
 ## 10. Phases at high level
 
-Input for the roadmap; each phase depends on the previous ones unless stated.
+Input for the roadmap; each phase depends on the previous ones unless stated. The detailed
+roadmap of the phase under way lives in `docs/roadmap.md`.
 
 1. **Foundation:** repository, CI/CD, Terraform, Cloud Run and Cloud SQL in the lab, tenancy with row-level security, identity with two-factor authentication, roles and permissions, auditing, internationalization with both languages, e-mail, outbox and jobs.
 2. **Catalog and search:** categories and attributes, products and offers, media, pre-publication moderation, search and filters, comparison, public questions and answers.
