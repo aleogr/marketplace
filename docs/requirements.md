@@ -103,6 +103,25 @@ The following must be designed from the start and implemented in realistic phase
 - Cloud Run domain mapping is a preview feature not recommended by Google for production. This must be re-evaluated before production traffic and custom domains.
 - In the future, each marketplace will have its **own domain** (for example `marketplace1.com`).
 
+### 7.1 Search engine indexing
+
+- The lab host serves exactly the same pages the real domain will serve. If search engines index the lab first, the same content exists at two addresses and the lab is the one they already know. Redirecting afterwards is slow and lossy, and none of it is visible until months later.
+- Deployments are **not indexable by default**. Indexing is enabled by explicit opt-in through the `INDEXABLE` environment variable, so that enabling it on launch day is a single command. The errors are not symmetric: a real deployment left non-indexable is noticed in days and fixed by flipping a variable; an indexed lab is noticed in months and costs a domain migration. The default makes the cheap mistake.
+- When indexing is off, **every response the process writes** carries the header `X-Robots-Tag: noindex, nofollow`, applied by a middleware mounted once. A `<meta name="robots">` tag is not used for this: it would have to be added to every template and remembered in the next one, and it only reaches HTML, leaving preview images, the sitemap, JSON and any other response silent. Search engines read both the same way.
+- **Crawling stays allowed in both modes.** `robots.txt` keeps `Allow: /` and never uses `Disallow: /`. `robots.txt` answers "may this be fetched"; noindex answers "may this be listed". Blocking crawling hides the noindex, and a page the crawler cannot fetch can still be listed from someone else's link, without a description, because the crawler was never allowed to look. To refuse indexing, crawling must be allowed. When indexing is off, `robots.txt` omits only the `Sitemap:` line, with a comment in its place saying why.
+- **Link previews keep working in both modes:** Open Graph and Twitter tags and the preview image are served normally. That is exactly why crawling stays allowed.
+- **An unreadable value refuses to start.** It is never silently treated as `false`: a typo such as `INDEXABLE=ture` would otherwise leave a real deployment invisible to all search engines with no error, no log and no screen, the only symptom being the absence of traffic. The start-up log records which of the two modes is in effect, on every start.
+- The variable is **declared in the Terraform configuration of the Cloud Run service** with its explicit default value, even while that default changes nothing. A key that exists only as an absence is a key nobody finds on the day it matters.
+- If any page states `<meta name="robots" content="index, follow">`, it contradicts the header. Conflicting directives resolve to the most restrictive one, so the refusal wins. Because this is a claim about other people's crawlers, it is covered by an automated test, not by a sentence.
+- Verification is done in **both modes against the running server**, not only with unit tests: with the variable off, every response carries the header and `robots.txt` offers no sitemap; with it on, no response carries the header and the sitemap is back.
+
+### 7.2 Page descriptions
+
+- `<meta name="description">`, `og:description` and `twitter:description` come from **a single source**. If each came from a different field, the page would describe itself one way to search engines and another way to messaging apps, and the two would diverge without anyone noticing.
+- Descriptions are cut at about **160 characters**, at the end of a sentence, never in the middle of a word. If the platform does not cut, the search engine cuts, and then the ellipsis is theirs.
+- Length is counted in **characters (runes), not bytes**. In Go, `len()` and slicing operate on bytes; in Portuguese that cuts around 150 characters and can split an accented letter, leaving invalid UTF-8 in the description.
+- Compliance is **measured across all pages in the sitemap**, not a sample, and the number of pages over the limit is reported.
+
 ## 8. Catalog
 
 ### 8.1 Categories and attributes
@@ -339,6 +358,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **Cloud Run**, scaling to zero.
 - **Cloud SQL** (PostgreSQL) and **Cloud Storage**.
 - **No Kubernetes and no load balancer.**
+- **Infrastructure as code with Terraform.** Environment variables of the Cloud Run service are declared there with explicit values (see [section 7.1](#71-search-engine-indexing)).
 - **Least privilege:** separate service accounts for Cloud Run, Cloud SQL and Cloud Storage, each with only the permissions it needs. Buckets are private by default; public access is granted only to what must be public (such as product images).
 - **Backups and recovery:** automatic Cloud SQL backups with a defined retention period, and periodic restore tests. Media in Cloud Storage is covered by a defined retention and recovery approach.
 - **Strong premise: the lowest possible operating cost**, avoiding recurring fees until the platform generates revenue. The design must identify fixed costs and keep them minimal.
