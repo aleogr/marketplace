@@ -42,7 +42,7 @@ The following must be designed from the start and implemented in realistic phase
 - Other markets and cross-border sales.
 - Automatic translation of listings.
 - Discount coupons (the data model must be ready from the start; see [section 13](#13-coupons-and-discounts)).
-- Self-hosted product videos (the MVP is proposed to use external links only; see [section 8.4](#84-media)).
+- Self-hosted product videos (the MVP uses external links only; see [section 8.4](#84-media)).
 - Additional notification channels (web push, SMS, WhatsApp).
 - Advanced recommendations.
 
@@ -128,7 +128,7 @@ The following must be designed from the start and implemented in realistic phase
 
 - Products are organized in a **hierarchical category tree**.
 - **Attributes, variations and units of measure belong to categories, not to marketplaces.** A niche marketplace uses part of the category tree; a generalist marketplace uses many branches of it.
-- Subcategories inherit attributes from their parent categories **(proposed)**.
+- Subcategories inherit attributes from their parent categories. A subcategory can add attributes and make an inherited attribute required, but cannot remove it. Moving a category changes the effective attributes of the products beneath it, and the design must handle that case.
 - The administrator **creates attributes freely through the console, without code changes**, with varied types (text, number with unit, single choice, multiple choice, yes/no, among others).
 - For each attribute, a category defines whether it is:
   - **required**;
@@ -155,7 +155,7 @@ The following must be designed from the start and implemented in realistic phase
 
 ### 8.4 Media
 
-- Products accept **photos and videos**. **(proposed)** In the MVP, videos are **links to externally hosted videos** (such as YouTube). Self-hosted video is a later phase (see [section 2.3](#23-later-phases-the-design-must-not-prevent-them)).
+- Products accept **photos and videos**. In the MVP, videos are **links to externally hosted videos** from a closed list of allowed providers (such as YouTube and Vimeo). The player is loaded only after the visitor clicks the thumbnail, using the provider's cookie-free embed where available, so that no third-party cookie is set before consent. The link is stored as provider plus external identifier (see [section 25](#25-external-integrations)). Self-hosted video is a later phase (see [section 2.3](#23-later-phases-the-design-must-not-prevent-them)).
 - Files are stored in **Cloud Storage**, not in the database.
 - Limits on file count and size are **configurable in the console**. In the MVP, the limit for videos is by **number of links**, also configurable in the console.
 - Images are resized and converted to efficient formats.
@@ -257,7 +257,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Changing email and password.
 - Managing delivery addresses (buyers): multiple addresses, one of them marked as default.
 - Managing saved cards (buyers): multiple cards (see [section 11](#11-payments)).
-- **(proposed)** Viewing active sessions and devices, and signing them out remotely.
+- Viewing active sessions and devices, and signing them out remotely. Sessions are stored server-side and revocable from the first release, and a password change ends all other sessions of the account; the screen itself may be delivered after the first release.
 - Full privacy self-service (see [section 18.3](#183-privacy)).
 
 ### 18.2 Two-factor authentication
@@ -274,7 +274,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
   - tracking the status of the deletion request.
 - Because the platform is international, the general design must also consider other privacy laws (such as GDPR).
 - **Consent management** for non-essential cookies and tracking, and for marketing communications.
-- Reconciling full auditability with deletion requests (retention periods, anonymization, legal retention obligations) is an open topic.
+- Deletion requests are reconciled with auditing through per-user encryption keys (see [section 21](#21-auditing)). Retention periods and legal retention obligations are an open topic.
 
 ## 19. Administration: roles and permissions
 
@@ -309,7 +309,8 @@ Platform staff, sellers and buyers all have a user panel that allows:
 
 - The system is **highly auditable**. Every operation by platform staff, stores and buyers is traceable: **who** did it, **what** was done, **when**, **from where**, and the **state before and after** when applicable.
 - Every parameter change is audited.
-- **(proposed)** Audit records are append-only and tamper-evident.
+- Audit records are **append-only** (no updates or deletions, enforced by database permissions) and **tamper-evident** (each record carries the hash of the previous one, and the chain is verified periodically).
+- Audit records reference people by **internal identifiers**, never by name, email or document number. Fields that inherently carry personal data (such as the state before and after, or the origin IP address) are stored **encrypted with a per-user key** kept outside the log. A deletion request is fulfilled by **destroying that key**: the record and the hash chain stay intact, and the content becomes unrecoverable. Keys are retained while a legal retention obligation applies (see [section 18.3](#183-privacy)).
 
 ## 22. Metrics, behavior tracking and recommendations
 
@@ -317,7 +318,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **Customer behavior is recorded** (for example: product viewed, searched, added to cart, purchased) to learn what to offer each customer.
   - Signed-in users: events are recorded **server-side**, linked to the account.
   - Anonymous visitors: a cookie holds only a visitor identifier, subject to consent where required.
-  - **(proposed)** First-party tracking only, without third-party trackers.
+  - First-party tracking only, without third-party trackers. If paid advertising is ever adopted, conversion measurement is a separate decision, implemented through server-side integrations and subject to consent.
 - **Recommendations** start with simple techniques (for example "customers who bought this also bought" and category affinity). Example: a customer who bought a pillow may be interested in a blanket or a bed sheet set. Machine learning is a later phase.
 - Where to store and how to query metrics and events without burdening the primary database or creating high fixed costs is an open topic.
 
@@ -371,7 +372,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - **Releases:** Claude Code creates a release, **only when the owner asks for one**, by pushing the version tag to `main`. The tag push triggers the CD pipeline, which builds the binary, creates the GitHub Release with generated notes, and deploys to production. Releases mark milestones, not individual changes; a long development cycle may have many merges and no release.
 - **CD with two triggers:** every merge into `main` deploys automatically to the **lab** environment, without a tag or release; a release deploys to **production**.
 - **Build identifier:** every build embeds an identifier derived from git (`git describe`): the clean version on a tagged commit (`v0.3.0`), or the version plus the distance and commit after it (`v0.3.0-12-gabc1234`); before the first tag, the short commit hash and build date. The identifier is recorded in the start-up log, shown in the footer of the administrative console and exposed on a version endpoint restricted to staff, so that the deployed build can always be verified, in the lab as well as in production.
-- **(proposed)** GitHub authenticates to GCP without stored keys (Workload Identity Federation).
+- GitHub authenticates to GCP without stored keys (Workload Identity Federation), configured in Terraform and restricted to this repository.
 - Environments: lab now; production in the future.
 - **End-to-end tests** of real flows (sign-up, search, checkout) run in CI. Language and runner are open topics.
 - Claude Code works exclusively through **Claude Code on the web**; the owner has no local development environment.
@@ -399,7 +400,7 @@ Platform staff, sellers and buyers all have a user panel that allows:
 - Shipping scope in the MVP: quotes only, or labels and tracking as well; provider selection.
 - Coupon funding (platform or store) and the commission base (before or after discounts).
 - How to enforce isolation between marketplaces (the rule is decided; see [section 4](#4-business-model)) and authorization between stores.
-- Auditing versus privacy: retention periods, anonymization and legal retention obligations.
+- Auditing versus privacy: retention periods and legal retention obligations that delay key destruction (the mechanism is decided; see [section 21](#21-auditing)).
 - Security incident response: what to do in case of a data breach, including the notification duties and deadlines under LGPD and, for future markets, other privacy laws (to be validated with a lawyer).
 - Storage and querying of metrics and behavior events without high fixed costs.
 - Which behaviors become console parameters.
