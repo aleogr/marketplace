@@ -173,6 +173,7 @@ with `***`.
 | `GCP_TERRAFORM_SA` | `terraform@aleogr-marketplace-lab-a4j5.iam.gserviceaccount.com` |
 | `GCP_WIF_PROVIDER` | `projects/1084000440884/locations/global/workloadIdentityPools/github/providers/marketplace-ci` |
 | `TF_STATE_BUCKET` | `aleogr-marketplace-lab-a4j5-tfstate` |
+| `GCP_DEPLOYER_SA` | `deployer@aleogr-marketplace-lab-a4j5.iam.gserviceaccount.com` |
 
 The billing account id is deliberately **not** recorded here: the repository is
 public and it identifies a payment instrument.
@@ -232,6 +233,118 @@ required check: **Format and validate** is the one that must pass.
 Terraform cannot create the bucket that holds its own state or the identity it
 authenticates with, and adopting the API enablement would mean a `destroy` could
 turn the project off. They are created once, by hand, and recorded here.
+
+## The deployment pipeline
+
+Three workflows act on `main`, in this order, and each one answers a different
+question.
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `terraform.yml` | push to `main` | applies the infrastructure |
+| `deploy.yml` | `terraform.yml` finished successfully on `main` | builds the image, pushes it, rolls the service forward, proves the deployment answers |
+| `release.yml` | a `v*` tag | creates the GitHub Release |
+
+**Why `deploy.yml` waits for `terraform.yml` instead of listening to the same
+push.** On the merge that first creates the Cloud Run service there is nothing
+to deploy to until Terraform has applied, and on every merge afterwards two
+writers of the same service at once is a race Cloud Run answers with a
+conflict. Chaining them costs a few seconds and removes both.
+
+**Terraform owns the service's shape; the pipeline owns its image.** Terraform
+declares the identity the service runs as, how it scales, every environment
+variable it reads and the host it answers on, and explicitly ignores the image,
+which changes on every merge. Without that split, a deployment would be an
+infrastructure change and every `terraform plan` would report a difference left
+by the last one. It is also why the service is created with Google's `hello`
+image: Terraform cannot create a service without naming one, and on that first
+merge no image of this repository exists yet.
+
+**Deployment is by digest, never by tag.** A tag is a label that can be moved
+onto other bytes; a digest is the bytes. It is also what lets a release promote
+the image that was already tested rather than rebuild its source
+(`docs/requirements.md`, section 27). Tags in the registry are therefore
+mutable and exist for people reading it.
+
+### Two service accounts, not one
+
+| Account | Used by | May |
+|---|---|---|
+| `terraform@…` | `terraform.yml` | create and destroy the project's infrastructure |
+| `deployer@…` | `deploy.yml` | push to the `containers` registry, update the `marketplace` service, and act as the service's runtime account |
+| `marketplace-run@…` | the running service | write logs, and for now nothing else |
+
+They are separate because they run on different triggers and fail differently:
+a mistake in a deployment must not be able to delete a database. The deploy
+account's roles are granted on the registry and on the service rather than on
+the project, so a second registry or a second service added later is not
+writable by accident. Neither account holds a key; both federate from GitHub
+through the pool the bootstrap block created.
+
+`deployer@…` is created by Terraform, but its name is predictable, which is why
+the repository variable above can be set before the first apply. It has to be:
+the first deployment runs minutes after that apply, and a workflow cannot read
+a variable that does not exist yet.
+
+### Domain verification, performed by hand
+
+Cloud Run refuses to map a domain to a service until the account that creates
+the mapping is a **verified owner of the base domain** in Google Search Console.
+The mapping is created by `terraform@…` during the apply, so it is that account
+— not the deploy account, and not the owner's own Google account — that must be
+on the domain's verified-owner list.
+
+Performed once, in [Search Console](https://search.google.com/search-console),
+on the `aleogr.dev` property: **Settings → Users and permissions → Add user**,
+with `terraform@aleogr-marketplace-lab-a4j5.iam.gserviceaccount.com` and the
+permission **Owner**.
+
+The "Ownership verification" screen is not where this is done, despite its
+name: it lists the verification methods used, and offers no way to add an
+account. A subdomain property does not help either — Search Console will hold
+one for `lab.aleogr.dev`, but Cloud Run asks for ownership of the registrable
+domain when it maps any host beneath it.
+
+Without this, the apply fails with *"Caller is not authorized to administer the
+domain"*, which names neither the account nor the console it is missing from.
+
+**Why a domain mapped by hand needs none of this.** Mapping a domain from the
+console or from `gcloud` runs as the person doing it, who is already an owner of
+the property. Terraform runs as a service account, and Google has no reason to
+believe that account is the same person. Every project that maps a host under
+this domain from CI therefore adds its own service account here, and production
+will add a third. Ownership is per account, so a new one disturbs none of the
+others.
+
+The grant is over the Search Console property, not over DNS: the account can
+map hosts under `aleogr.dev` to Cloud Run services in its own project and
+administer the property, and cannot touch the zone in Cloudflare. It is
+revocable from the same screen. The spike that re-examines domain mapping before
+production (`docs/design.md`, section 7) is also what would end the need for it:
+neither a load balancer nor Cloudflare as a proxy asks for ownership here.
+
+### The host
+
+`marketplace.lab.aleogr.dev` is a CNAME to `ghs.googlehosted.com` in Cloudflare,
+in **DNS only** mode (`docs/requirements.md`, section 7). The mode is not a
+preference: with Cloudflare proxying, the host resolves to Cloudflare and Google
+can never validate the domain to issue a certificate. The public resolution is
+the check —
+
+```
+$ getent hosts marketplace.lab.aleogr.dev
+2607:f8b0:4001:c64::79   ghs.googlehosted.com   marketplace.lab.aleogr.dev
+```
+
+— an address in Google's range rather than in Cloudflare's. Certificate
+issuance usually takes about fifteen minutes and can take up to 24 hours, so
+the pipeline verifies a deployment against the service's `run.app` URL and
+never against this one.
+
+Domain mapping is a preview feature Google does not recommend for production,
+and the spike that decides the production approach is scheduled before launch
+(`docs/design.md`, section 7). Nothing depends on its outcome: the service
+resolves the marketplace from the host it receives, whatever put it there.
 
 ## Branch protection
 

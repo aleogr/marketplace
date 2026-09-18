@@ -12,7 +12,7 @@ VERSION ?= $(shell git describe --tags --dirty 2>/dev/null \
 	|| echo "$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)-$$(date -u +%Y%m%d)")
 LDFLAGS := -X $(PKG)/internal/platform/version.version=$(VERSION)
 
-.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover e2e e2e-deps tf terraform-deps fmt clean version
+.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover e2e e2e-lab e2e-deps tf terraform-deps fmt clean version
 
 all: check test
 
@@ -80,6 +80,21 @@ e2e-deps:
 e2e: build
 	@python3 e2e/check_browser.py
 	MARKETPLACE_BINARY=$(PWD)/$(BINARY) python3 -m pytest e2e/ -v
+
+# The same suite against a service that is already running, which is how a
+# deployment is proved to answer rather than only the build that produced it
+# (docs/roadmap.md, F3). The two checks that read the process's own stdout and
+# exit status cannot describe a service reached over the internet; they are
+# skipped by name, and the run prints which. Nothing is built here: the service
+# under test was built by the pipeline.
+e2e-lab:
+	@test -n "$(MARKETPLACE_BASE_URL)" || { \
+	  echo "set MARKETPLACE_BASE_URL to the service to test, for example:"; \
+	  echo "  make e2e-lab MARKETPLACE_BASE_URL=https://marketplace.lab.aleogr.dev"; \
+	  exit 1; \
+	}
+	@python3 e2e/check_browser.py
+	MARKETPLACE_BASE_URL=$(MARKETPLACE_BASE_URL) python3 -m pytest e2e/ -v
 
 # The Terraform half of the pipeline, in the order the Terraform workflow runs
 # it. No backend and no credentials: a session answers whether the files are

@@ -12,6 +12,7 @@ import subprocess
 import urllib.error
 import urllib.request
 
+import pytest
 from playwright.sync_api import sync_playwright
 
 
@@ -34,6 +35,7 @@ def test_healthz_answers_with_the_running_build(server):
     assert body["version"], "the health check carries no build identifier"
 
 
+@pytest.mark.local_process
 def test_the_start_up_log_records_the_build_and_the_indexing_mode(server):
     entry = server.entry("server started")
 
@@ -42,6 +44,7 @@ def test_the_start_up_log_records_the_build_and_the_indexing_mode(server):
     assert entry["severity"] == "INFO"
 
 
+@pytest.mark.local_process
 def test_an_unreadable_variable_stops_the_process(binary):
     """A typo must be a start-up failure, not a silently wrong default.
 

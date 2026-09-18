@@ -1,0 +1,159 @@
+name: Deploy
+
+# Infrastructure first, then the image.
+#
+# A merge starts the Terraform workflow; this one starts when that workflow has
+# finished successfully on `main`. The order is not a preference. On the merge
+# that creates the Cloud Run service there is nothing to deploy to until
+# Terraform has applied, and on every merge afterwards two writers of the same
+# service running at once is a race that Cloud Run answers with a conflict.
+on:
+  workflow_run:
+    workflows: [Terraform]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Deployments are never cancelled and never overlap: a cancelled one can leave
+# the service on a revision nobody asked for.
+concurrency:
+  group: deploy-lab
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy to the lab
+    # A Terraform run that failed leaves the infrastructure in a state nobody
+    # has described. Deploying onto it would only make the first failure harder
+    # to read.
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # A workflow_run job runs with the default branch's context, not with the
+      # context of the run that triggered it, so the commit is named explicitly
+      # everywhere below instead of being taken from github.sha.
+      COMMIT: ${{ github.event.workflow_run.head_sha }}
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      # The names Terraform gives these two resources
+      # (infra/terraform/artifact_registry.tf, infra/terraform/cloud_run.tf).
+      # They do not vary by environment; the region does, and is read from the
+      # environment's own file below rather than repeated here.
+      REPOSITORY: containers
+      SERVICE: marketplace
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # The build identifier comes from `git describe`, which needs the
+          # tags and the history behind them (docs/requirements.md, section 27).
+          fetch-depth: 0
+
+      - name: Read the region and the build identifier
+        id: facts
+        run: |
+          region=$(sed -n 's/^region *= *"\(.*\)"/\1/p' infra/terraform/lab/lab.tfvars)
+          test -n "$region" || { echo "no region in infra/terraform/lab/lab.tfvars"; exit 1; }
+          echo "region=$region" >> "$GITHUB_OUTPUT"
+          echo "image=${region}-docker.pkg.dev/${PROJECT}/${REPOSITORY}/${SERVICE}" >> "$GITHUB_OUTPUT"
+          echo "version=$(make version)" >> "$GITHUB_OUTPUT"
+
+      # Third-party actions are pinned to a commit, not to a tag: a tag can be
+      # moved onto different code, and this one hands the job credentials for
+      # the GCP project. It is the only third-party action here — the runner
+      # already carries gcloud, docker and jq, so nothing else needs installing.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          # Not the Terraform account. This one may push an image and roll the
+          # service forward, and nothing else (infra/terraform/deployer.tf).
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+
+      - name: Authorise docker against Artifact Registry
+        run: gcloud auth configure-docker "${{ steps.facts.outputs.region }}-docker.pkg.dev" --quiet
+
+      - name: Build the image
+        run: |
+          docker build \
+            --build-arg VERSION="${{ steps.facts.outputs.version }}" \
+            --tag "${{ steps.facts.outputs.image }}:${COMMIT}" \
+            .
+
+      - name: Push the image and read back its digest
+        id: push
+        run: |
+          docker push "${{ steps.facts.outputs.image }}:${COMMIT}"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' \
+            "${{ steps.facts.outputs.image }}:${COMMIT}")
+          test -n "$digest" || { echo "the push produced no digest"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # By digest, never by tag. A tag is a label that can be moved onto other
+      # bytes; a digest is the bytes. It is also what makes a release a
+      # promotion of the image that was already tested rather than a rebuild of
+      # its source (docs/requirements.md, section 27).
+      #
+      # `services update` and not `deploy`: the service is Terraform's to
+      # create, and the deploy account deliberately cannot create one. If this
+      # step reports that the service does not exist, the Terraform apply is
+      # what to look at, not this workflow.
+      - name: Roll the service forward
+        run: |
+          gcloud run services update "$SERVICE" \
+            --project="$PROJECT" \
+            --region="${{ steps.facts.outputs.region }}" \
+            --image="${{ steps.push.outputs.digest }}" \
+            --quiet
+
+      - name: Prove the deployment is the build this run produced
+        id: deployed
+        run: |
+          url=$(gcloud run services describe "$SERVICE" \
+            --project="$PROJECT" \
+            --region="${{ steps.facts.outputs.region }}" \
+            --format='value(status.url)')
+          test -n "$url" || { echo "the service reports no URL"; exit 1; }
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+          # The run.app URL, not the custom domain: a domain mapping's
+          # certificate can take a day to be issued, and a deployment must not
+          # wait on DNS to say whether it worked (docs/requirements.md, §7).
+          running=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 2 \
+            "$url/healthz" | jq -r .version)
+          expected='${{ steps.facts.outputs.version }}'
+          if [ "$running" != "$expected" ]; then
+            echo "the service answers as build '$running', not '$expected'"
+            exit 1
+          fi
+          echo "the lab is serving $running"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: e2e/requirements.txt
+
+      - name: Install the suite
+        run: |
+          pip install -r e2e/requirements.txt
+          playwright install --with-deps chromium
+
+      # The same scenarios the pull request ran against a local process, now
+      # against what is actually deployed. The two that read the process's own
+      # stdout and exit status are skipped by name, because a service reached
+      # over the internet has neither (e2e/conftest.py).
+      - name: Run the end-to-end suite against the deployment
+        run: make e2e-lab MARKETPLACE_BASE_URL='${{ steps.deployed.outputs.url }}'
+
+      - name: Keep the screenshots as evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-lab-screenshots
+          path: e2e/screenshots/
+          if-no-files-found: ignore

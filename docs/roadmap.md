@@ -184,7 +184,7 @@ Cloud Shell):
 
 ### F3 — Cloud Run in the lab and continuous deployment on merge
 
-- [ ] **Objective:** merging into `main` deploys the binary to the lab automatically, and the lab
+- [x] **Objective:** merging into `main` deploys the binary to the lab automatically, and the lab
   host answers over HTTPS (§27, design §3).
 
 **Depends on:** F1, F2.

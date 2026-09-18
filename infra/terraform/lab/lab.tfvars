@@ -3,3 +3,6 @@
 # to another project changes a setting rather than this repository.
 region      = "us-central1"
 environment = "lab"
+
+# The platform host of the lab (docs/requirements.md, section 7).
+platform_host = "marketplace.lab.aleogr.dev"
