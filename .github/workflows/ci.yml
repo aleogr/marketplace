@@ -33,6 +33,43 @@ jobs:
       - name: Unit and integration tests
         run: make test
 
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+
+    # A real PostgreSQL of the version the design names, not a fake and not an
+    # in-memory stand-in: the things these tests check — migrations,
+    # transactions, and later row-level security — are the database's
+    # behaviour, and only the database has it (docs/design.md, section 2.8).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: marketplace
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run the integration tests
+        run: make integration
+        env:
+          # Given an address, the suite uses it instead of starting a cluster
+          # of its own (internal/platform/dbtest).
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/marketplace?sslmode=disable
+
   e2e:
     name: End-to-end tests
     runs-on: ubuntu-latest

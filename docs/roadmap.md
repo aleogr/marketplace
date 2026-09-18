@@ -216,7 +216,7 @@ Cloud Shell):
 
 ### F4 — Cloud SQL, migrations and the database layer
 
-- [ ] **Objective:** the application talks to PostgreSQL, schema changes are versioned and applied
+- [x] **Objective:** the application talks to PostgreSQL, schema changes are versioned and applied
   by the pipeline, and integration tests run against a real PostgreSQL with migrations applied
   (design §2.8).
 
@@ -233,9 +233,11 @@ Cloud Shell):
 3. Create a billing budget with an e-mail alert at a threshold the owner chooses.
 
 **Scope:**
-- Terraform: Cloud SQL for PostgreSQL 16, smallest instance, automatic backups with **30-day
-  retention**, point-in-time recovery on, a maintenance window, IAM database authentication, and
-  the connection from Cloud Run through the built-in connector (design §3).
+- Terraform: Cloud SQL for PostgreSQL 16, smallest instance, automatic backups, point-in-time
+  recovery on, a maintenance window, IAM database authentication, and the connection from Cloud
+  Run through the connector (design §3). Retention is per environment: the design's 30 days are
+  production's, and the lab keeps less because it is rebuilt from this repository
+  (`docs/infrastructure.md`).
 - `migrations/`: SQL migrations managed by an embedded migration tool, embedded with `go:embed`
   and applied by a `migrate` subcommand of the **same binary**, so there is no second image.
 - Terraform: a Cloud Run Job running that subcommand, and a deploy pipeline step that runs the job

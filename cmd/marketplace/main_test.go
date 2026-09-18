@@ -80,7 +80,7 @@ func findEntry(t *testing.T, logged string, message string) map[string]any {
 func TestRunRefusesToStartOnAnUnreadableValue(t *testing.T) {
 	var stdout syncBuffer
 
-	err := run(context.Background(), lookupFrom(map[string]string{"INDEXABLE": "ture"}), &stdout)
+	err := run(context.Background(), nil, lookupFrom(map[string]string{"INDEXABLE": "ture"}), &stdout)
 
 	if err == nil {
 		t.Fatal("run() started with INDEXABLE=ture, want an error")
@@ -102,7 +102,7 @@ func TestRunLogsTheBuildAndTheIndexingModeOnEveryStart(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, lookupFrom(map[string]string{
+		done <- run(ctx, nil, lookupFrom(map[string]string{
 			"PORT":      fmt.Sprint(freePort(t)),
 			"INDEXABLE": "false",
 		}), &stdout)
@@ -137,7 +137,7 @@ func TestRunServesTheHealthCheck(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, lookupFrom(map[string]string{"PORT": fmt.Sprint(port)}), &stdout)
+		done <- run(ctx, nil, lookupFrom(map[string]string{"PORT": fmt.Sprint(port)}), &stdout)
 	}()
 	waitFor(t, func() bool { return strings.Contains(stdout.String(), "server started") })
 
@@ -174,4 +174,28 @@ func waitFor(t *testing.T, condition func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("the condition never held")
+}
+
+func TestRunRefusesAnUnknownCommand(t *testing.T) {
+	var stdout syncBuffer
+
+	err := run(context.Background(), []string{"migarte"}, lookupFrom(map[string]string{}), &stdout)
+	if err == nil {
+		t.Fatal("run() accepted an unknown command, want an error")
+	}
+	if !strings.Contains(err.Error(), "migarte") {
+		t.Errorf("the error %q does not name the command that was given", err)
+	}
+}
+
+func TestMigrateRefusesWithoutADatabase(t *testing.T) {
+	var stdout syncBuffer
+
+	err := run(context.Background(), []string{"migrate"}, lookupFrom(map[string]string{}), &stdout)
+	if err == nil {
+		t.Fatal("`migrate` ran without a database, want an error")
+	}
+	if !strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Errorf("the error %q does not say how to give it a database", err)
+	}
 }

@@ -47,15 +47,22 @@ These rules restate section 3 of `docs/requirements.md` and the agreements made 
 Once the code exists, the checks that CI runs are the ones to run before pushing; keep this list current:
 
 ```
-make check   # go vet, staticcheck, golangci-lint, gosec, govulncheck
-make test    # go test ./... -race -cover
-make e2e     # builds the binary and runs the end-to-end suite against it
-make tf      # terraform fmt -check, init -backend=false and validate
+make check        # go vet, staticcheck, golangci-lint, gosec, govulncheck
+make test         # go test ./... -race -cover
+make integration  # the tests that need a real PostgreSQL, behind the `integration` tag
+make e2e          # builds the binary and runs the end-to-end suite against it
+make e2e-lab      # the same suite against a deployed service (MARKETPLACE_BASE_URL)
+make tf           # terraform fmt -check, init -backend=false and validate
 ```
 
 The tools are pinned as `tool` directives in `go.mod` and run through `go tool`,
 so a session and CI run the same versions. CI additionally runs `gitleaks` and
 scans the container image with Trivy.
+
+`make integration` starts a PostgreSQL 16 cluster of its own when
+`TEST_DATABASE_URL` is not set; CI sets it to a service container. The Docker
+daemon does not run in a session, so testcontainers are not an option
+(`docs/roadmap.md`, appendix).
 
 `terraform` is not a Go tool. The environment setup script installs the release
 named in `infra/terraform/.terraform-version`; `make terraform-deps` installs it

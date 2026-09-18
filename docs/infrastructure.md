@@ -49,6 +49,57 @@ a detail: a free trial stops every resource in the project when the trial ends,
 and the trial can be neither paused nor extended, so a Cloud SQL instance
 created under one has an expiry date rather than a lifetime.
 
+## Budget and the lab's cost
+
+A budget named `marketplace-lab`, scoped to the lab project alone, alerts by
+e-mail at **R$ 200 per month**: at 50%, 90% and 100% of actual spend, and once
+more when the *forecast* for the month reaches 100%. The forecast threshold is
+the one that catches a runaway on the third day rather than the twentieth; the
+others catch a drift.
+
+It is **alerts only**, never the spend-limit enforcement the console offers
+beside it. That option pauses services when the cap is reached, which in an
+environment whose purpose is to be available for testing trades a surprise bill
+for a surprise outage.
+
+R$ 200 is roughly three times what the lab is expected to cost, which is what
+keeps the 50% alert meaningful: a threshold that sits inside the normal range
+sends an e-mail every month and teaches its reader to ignore it.
+
+**The expected cost**, at the configuration below and the rate of 2026-09-18
+(1 USD = R$ 5,1359):
+
+| Item | ~US$/month |
+|---|---|
+| `db-f1-micro` instance (1 shared vCPU, 0.614 GB) | 8 |
+| 10 GB SSD | 1.70 |
+| Backups and point-in-time recovery logs | 0.50 – 4 |
+| **Total** | **~10 – 14** (R$ 51 – 72) |
+
+Cloud SQL is the only material recurring cost of the whole design; Cloud Run,
+Tasks, Scheduler, Storage and Logging stay within free quotas or cents at this
+volume (`docs/design.md`, section 3).
+
+**Why the lab is configured more cheaply than the design's targets.** Design
+section 3 sets a recovery point objective of 5 minutes, 30-day backup retention
+and a quarterly restore test. Those are **production's** targets. The lab holds
+nothing irreplaceable — it is rebuilt from this repository — so it keeps 7
+backups and a 1-day point-in-time window, the shortest Cloud SQL Enterprise
+allows. Point-in-time recovery stays *on* rather than off: it costs almost
+nothing on an idle database, and the mechanism production will depend on should
+have been exercised somewhere before production depends on it.
+
+**The tier is `db-f1-micro`**, the cheapest Cloud SQL offers and the one Google
+documents as being for test and development. Its 0.614 GB of memory is tight for
+PostgreSQL, and that is an accepted risk rather than an overlooked one: the tier
+is a Terraform variable, and changing it restarts the instance without touching
+the data. Starting cheap is reversible; starting expensive is only reversible by
+noticing.
+
+**The budget is not in Terraform**, and that is deliberate: a budget resource
+needs the billing account id, which this document does not record because the
+repository is public and that id identifies a payment instrument.
+
 ## Bootstrap performed by hand
 
 Run once, in Cloud Shell, because Terraform cannot create the bucket that holds
@@ -242,7 +293,7 @@ question.
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `terraform.yml` | push to `main` | applies the infrastructure |
-| `deploy.yml` | `terraform.yml` finished successfully on `main` | builds the image, pushes it, rolls the service forward, proves the deployment answers |
+| `deploy.yml` | `terraform.yml` finished successfully on `main` | builds the image, pushes it, **applies the migrations**, rolls the service forward, proves the deployment answers |
 | `release.yml` | a `v*` tag | creates the GitHub Release |
 
 **Why `deploy.yml` waits for `terraform.yml` instead of listening to the same
@@ -279,13 +330,22 @@ the image that was already tested rather than rebuild its source
 (`docs/requirements.md`, section 27). Tags in the registry are therefore
 mutable and exist for people reading it.
 
-### Two service accounts, not one
+**Migrations run before the service, never after.** A revision that met a
+schema older than the code expects would fail on the first query rather than at
+deployment time, and it would fail for a visitor. The migration job runs the
+same image the service is about to run, so the schema a deployment applies and
+the code that expects it are always from one commit; `gcloud run jobs execute
+--wait` is what makes a failed migration a failed deployment rather than a
+started one.
+
+### The accounts, and what each may do
 
 | Account | Used by | May |
 |---|---|---|
 | `terraform@…` | `terraform.yml` | create and destroy the project's infrastructure |
-| `deployer@…` | `deploy.yml` | push to the `containers` registry, update the `marketplace` service, and act as the service's runtime account |
-| `marketplace-run@…` | the running service | write logs, and for now nothing else |
+| `deployer@…` | `deploy.yml` | push to the `containers` registry, update the `marketplace` service and the migration job, and act as their runtime accounts |
+| `marketplace-run@…` | the running service | write logs; connect to the database as itself, with IAM |
+| `marketplace-migrate@…` | the migration job | write logs; connect to the database as the migration user, and read that user's password |
 
 They are separate because they run on different triggers and fail differently:
 a mistake in a deployment must not be able to delete a database. The deploy
@@ -359,6 +419,44 @@ and the spike that decides the production approach is scheduled before launch
 (`docs/design.md`, section 7). Nothing depends on its outcome: the service
 resolves the marketplace from the host it receives, whatever put it there.
 
+## The database
+
+One Cloud SQL instance, `marketplace`, PostgreSQL 16, described in
+`infra/terraform/cloud_sql.tf`. What it costs and why it is configured the way
+it is are above; what reaches it is here.
+
+**Two identities, and only one password.** The service authenticates with IAM:
+the connector exchanges its service account's token for the login, so a running
+revision holds no credential at all. The migration job cannot do the same,
+because it is the thing that bootstraps the privileges — Cloud SQL creates an
+IAM database user with no rights on anything, and granting rights needs a
+connection that already has them. That first connection is a built-in
+`migrator` user whose password Terraform generates and writes to Secret
+Manager, where only the job's account may read it. The value is never in this
+repository, never in a workflow's environment and never in a log. It is also in
+the Terraform state, which lives in the private, versioned bucket above.
+
+**The migrations grant, and keep granting.** After applying the schema the job
+grants the service's user what the schema now holds, and sets default
+privileges so that a table created by a later migration carries the same rights
+without that migration having to remember. A delivery that forgot would
+otherwise fail in the lab and not in a test.
+
+**A public address with no authorized network** is not the contradiction it
+reads as: with an empty authorization list nothing on the internet can open a
+connection, and the only route in is the connector. Private IP only would
+require a VPC with private services access, and Cloud SQL refuses an instance
+with neither — this design has no network of its own to maintain.
+
+**Reading the database by hand**, from Cloud Shell:
+
+```bash
+gcloud sql connect marketplace --user=postgres --database=marketplace \
+  --project=aleogr-marketplace-lab-a4j5
+```
+
+It authorizes the client address for a few minutes and then removes it again.
+
 ## Branch protection
 
 The `main` branch is covered by the `protect-main` ruleset: a pull request is
@@ -371,6 +469,7 @@ before merging, deletions are restricted and force pushes are blocked.
 | `End-to-end tests` | `ci.yml` |
 | `Secret detection` | `ci.yml` |
 | `Image build and scan` | `ci.yml` |
+| `Integration tests` | `ci.yml` |
 | `Format and validate` | `terraform.yml` |
 
 A check is named after its **job**, not after its workflow. The pull request

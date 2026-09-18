@@ -45,6 +45,7 @@ jobs:
       # environment's own file below rather than repeated here.
       REPOSITORY: containers
       SERVICE: marketplace
+      MIGRATE_JOB: marketplace-migrate
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,6 +93,28 @@ jobs:
             "${{ steps.facts.outputs.image }}:${COMMIT}")
           test -n "$digest" || { echo "the push produced no digest"; exit 1; }
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # Before the service, never after. A revision that met a schema older
+      # than the code expects would fail on the first query rather than at
+      # deployment time, and it would fail for a visitor
+      # (infra/terraform/migrate_job.tf).
+      #
+      # The job runs the same image the service is about to run, so the
+      # migrations and the code that expects them are always from one commit.
+      # `--wait` is what makes a failed migration a failed deployment: without
+      # it this step would report success for having started something.
+      - name: Apply the database migrations
+        run: |
+          gcloud run jobs update "$MIGRATE_JOB" \
+            --project="$PROJECT" \
+            --region="${{ steps.facts.outputs.region }}" \
+            --image="${{ steps.push.outputs.digest }}" \
+            --quiet
+          gcloud run jobs execute "$MIGRATE_JOB" \
+            --project="$PROJECT" \
+            --region="${{ steps.facts.outputs.region }}" \
+            --wait \
+            --quiet
 
       # By digest, never by tag. A tag is a label that can be moved onto other
       # bytes; a digest is the bytes. It is also what makes a release a

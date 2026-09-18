@@ -35,20 +35,53 @@ const readHeaderTimeout = 10 * time.Second
 // `/healthz` perfectly well.
 const HealthPath = "/health"
 
+// Database is the part of the connection pool the health check needs: whether
+// the database answers. Taking an interface rather than the pool keeps this
+// package free of a database dependency it would otherwise carry into every
+// test that builds a handler.
+type Database interface {
+	Ping(ctx context.Context) error
+}
+
 // Handler returns the routes served by the process.
-func Handler() http.Handler {
+//
+// database may be nil, which is how a process configured without one runs; the
+// health check then says so rather than pretending.
+func Handler(database Database) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+HealthPath, health)
+	mux.HandleFunc("GET "+HealthPath, health(database))
 	return mux
 }
 
-func health(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"status":  "ok",
-		"version": version.String(),
-	})
+// health answers what this process is and whether it can do its work.
+//
+// It is a readiness check, not only a liveness one: a process that cannot reach
+// its database is not ready to serve, and saying so with a 503 is what makes
+// the deployment fail instead of the first visitor (docs/roadmap.md, F4).
+func health(database Database) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body := map[string]string{
+			"status":  "ok",
+			"version": version.String(),
+		}
+		status := http.StatusOK
+
+		switch {
+		case database == nil:
+			body["database"] = "not configured"
+		case database.Ping(r.Context()) != nil:
+			body["status"] = "unavailable"
+			body["database"] = "unreachable"
+			status = http.StatusServiceUnavailable
+		default:
+			body["database"] = "ok"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(body)
+	}
 }
 
 // Serve accepts connections on ln until ctx is cancelled, then stops accepting

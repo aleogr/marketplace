@@ -121,3 +121,74 @@ func TestLoadReportsEveryInvalidVariableAtOnce(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRefusesContradictoryDatabaseSettings(t *testing.T) {
+	t.Parallel()
+
+	for name, environment := range map[string]map[string]string{
+		"both routes at once": {
+			"DATABASE_URL":      "postgres://localhost/marketplace",
+			"DATABASE_INSTANCE": "project:region:instance",
+			"DATABASE_NAME":     "marketplace",
+			"DATABASE_USER":     "service",
+		},
+		"an instance without a database name": {
+			"DATABASE_INSTANCE": "project:region:instance",
+			"DATABASE_USER":     "service",
+		},
+		"an instance without a user": {
+			"DATABASE_INSTANCE": "project:region:instance",
+			"DATABASE_NAME":     "marketplace",
+		},
+		"settings with no route to use them": {
+			"DATABASE_NAME": "marketplace",
+			"DATABASE_USER": "service",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := config.Load(env(environment)); err == nil {
+				t.Errorf("Load(%v) started, want a refusal", environment)
+			}
+		})
+	}
+}
+
+func TestLoadAcceptsEitherRouteToTheDatabase(t *testing.T) {
+	t.Parallel()
+
+	direct, err := config.Load(env(map[string]string{
+		"DATABASE_URL": "postgres://localhost/marketplace",
+	}))
+	if err != nil {
+		t.Fatalf("Load() with DATABASE_URL = %v, want nil", err)
+	}
+	if !direct.Database.Configured() {
+		t.Error("a declared DATABASE_URL did not configure a database")
+	}
+
+	connector, err := config.Load(env(map[string]string{
+		"DATABASE_INSTANCE": "project:region:instance",
+		"DATABASE_NAME":     "marketplace",
+		"DATABASE_USER":     "service",
+	}))
+	if err != nil {
+		t.Fatalf("Load() with DATABASE_INSTANCE = %v, want nil", err)
+	}
+	if !connector.Database.Configured() {
+		t.Error("a declared DATABASE_INSTANCE did not configure a database")
+	}
+}
+
+func TestLoadWithoutADatabaseIsAValidConfiguration(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(env(map[string]string{}))
+	if err != nil {
+		t.Fatalf("Load() = %v, want nil", err)
+	}
+	if cfg.Database.Configured() {
+		t.Error("an empty environment configured a database")
+	}
+}
