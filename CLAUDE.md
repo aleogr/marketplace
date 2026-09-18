@@ -17,6 +17,11 @@ These rules restate section 3 of `docs/requirements.md` and the agreements made 
 
 - Each topic is developed in its own branch and merged through a pull request, always opened by Claude Code, never directly on `main`.
 - Never push to a branch other than the one designated for the session without explicit permission.
+- **Claude Code watches every pull request it opens** until it is merged or closed, and drives it to a green, mergeable state: the owner should never have to report a red check. Subscribe to the pull request's activity when it is opened, and act on each CI failure and review comment as it arrives.
+- Diagnose a failing check from **that job's log**, not from a guess. Reproduce the failure where the session can, fix it, prove the same check passes, and only then push. One validated push beats three speculative ones.
+- **Never buy a green check.** No test is skipped, disabled or quarantined; no job is made non-blocking; no severity threshold is lowered; no commit bypasses the checks. If a check cannot run in a session (the Docker daemon is not running, GitHub Actions does not run here), say so in the pull request instead of claiming it passed.
+- Stop and ask the owner when the cause is ambiguous, when the fix would change a design decision, or when it would widen the pull request beyond its topic.
+- Claude Code **never approves and never merges.** The owner merges.
 
 ## Working with the owner
 
