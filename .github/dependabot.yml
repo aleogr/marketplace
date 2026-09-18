@@ -39,3 +39,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # Keeps the provider constraint in infra/terraform/versions.tf moving, and
+  # with it the lock file. The Terraform release itself is in
+  # infra/terraform/.terraform-version, which no ecosystem here can see.
+  - package-ecosystem: terraform
+    directory: /infra/terraform
+    schedule:
+      interval: weekly
+    groups:
+      terraform-providers:
+        patterns: ["*"]

@@ -155,6 +155,62 @@ with `***`.
 The billing account id is deliberately **not** recorded here: the repository is
 public and it identifies a payment instrument.
 
+## Terraform
+
+Everything above exists so that this can run. The configuration lives in
+`infra/terraform/` and is applied only by GitHub Actions
+(`.github/workflows/terraform.yml`); nobody applies from a laptop, and a Claude
+Code session has no credentials to apply with.
+
+```
+infra/terraform/
+  .terraform-version   the Terraform release, read by CI and by make terraform-deps
+  .terraform.lock.hcl  the provider versions and their checksums
+  versions.tf          the Terraform and provider constraints
+  backend.tf           backend "gcs" {}, deliberately empty
+  providers.tf         project and region, no credentials
+  variables.tf         project_id, region, environment
+  locals.tf            the labels every resource carries
+  artifact_registry.tf the container registry
+  outputs.tf
+  lab/
+    backend.hcl        prefix = "lab"
+    lab.tfvars         region and environment
+```
+
+**One root configuration, one directory of values per environment.** The
+resources are described once; `lab/` holds what makes them the lab. Production
+adds `prod/` next to it, and nothing else moves. That is why `backend.tf` is
+empty and `project_id` has no default: the values that differ between
+environments are supplied at `init` and `plan` time, from the environment's
+directory and from the repository variables, never from a second copy of the
+configuration.
+
+**The state bucket's name is a repository variable, not a line in this
+repository.** `terraform init` receives it as
+`-backend-config="bucket=$TF_STATE_BUCKET"`, and the state prefix comes from
+`lab/backend.hcl`. Two environments therefore cannot write to one state file by
+forgetting to change a line.
+
+**What the workflow does**
+
+| Job | When | What it needs |
+|---|---|---|
+| Format and validate | every pull request and every push to `main` | nothing; no backend, no credentials |
+| Plan the lab | pull requests from this repository | the federation; posts the plan as a single comment, rewritten on each run |
+| Apply to the lab | pushes to `main` | the federation |
+
+The plan job is skipped for a pull request from a fork and for Dependabot,
+because the federation issues credentials only against a token minted for this
+repository and Dependabot's token is read-only. It is for that reason not a
+required check: **Format and validate** is the one that must pass.
+
+**What Terraform does not manage.** The resources of the bootstrap block above
+— the state bucket, the service account, the federation — and the enabled APIs.
+Terraform cannot create the bucket that holds its own state or the identity it
+authenticates with, and adopting the API enablement would mean a `destroy` could
+turn the project off. They are created once, by hand, and recorded here.
+
 ## Branch protection
 
 The `main` branch is covered by the `protect-main` ruleset: a pull request is
