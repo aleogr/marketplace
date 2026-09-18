@@ -69,6 +69,7 @@ cover:
 	$(GO) tool cover -func=coverage.out | tail -1
 
 e2e: build
+	@python3 e2e/check_browser.py
 	MARKETPLACE_BINARY=$(PWD)/$(BINARY) python3 -m pytest e2e/ -v
 
 fmt:

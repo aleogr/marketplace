@@ -37,8 +37,8 @@ the script installs `pytest` into `python3`, matching the version pinned in
 `e2e/requirements.txt`:
 
 ```bash
-pip install --retries 5 --timeout 60 "pytest==9.0.2" >> "$LOG" 2>&1 \
-  || pip install --break-system-packages --retries 5 --timeout 60 "pytest==9.0.2" >> "$LOG" 2>&1 \
+pip install --retries 5 --timeout 60 "pytest==9.1.1" >> "$LOG" 2>&1 \
+  || pip install --break-system-packages --retries 5 --timeout 60 "pytest==9.1.1" >> "$LOG" 2>&1 \
   || echo "FAILURE: pytest not installed" >> "$LOG"
 ```
 
@@ -69,6 +69,18 @@ and uses the same Chromium revision. Pinning to `1.56.1` makes `pip install`
 fail with "No matching distribution found"; with the current script, this
 shows up in `/var/log/setup-environment.log` as the line
 `FAILURE: playwright not installed`.
+
+The pin is **held against Dependabot** by an `ignore` entry in
+`.github/dependabot.yml`, and checked by `e2e/check_browser.py`, which `make
+e2e` runs before the suite. Both exist because CI cannot protect this: the
+GitHub runner downloads whichever revision its Playwright asks for, so a bump
+passes the pipeline and breaks only the session. It happened once, in
+[#22](https://github.com/aleogr/marketplace/pull/22), which moved the pin to
+1.62.0 — a release built against revision 1234.
+
+**When the environment image updates its Chromium**, remove the `ignore` entry
+and let Playwright move with it. `make e2e` prints the revision it found when
+the two disagree.
 
 ## Skills in `.claude/skills/`
 

@@ -1,7 +1,14 @@
 # Pinned so that CI and a Claude Code session run the same versions.
-# playwright 1.56.0 matches the Chromium preinstalled in the cloud environment
-# (see docs/claude-code-environment.md). Everything else the suite needs comes
-# from the standard library, so there is no third-party HTTP client to keep up
-# to date for four requests.
-playwright==1.62.0
+#
+# playwright is held at 1.56.0 on purpose: each Playwright release is built
+# against one exact Chromium revision, and the cloud environment ships a single
+# preinstalled one (1194) that it does not replace. 1.56.0 is the release built
+# against that revision, so a newer Playwright would have no browser to drive in
+# a session. `make e2e` checks this before running, and .github/dependabot.yml
+# holds the pin, because CI downloads its own browser and therefore can neither
+# fail on the mismatch nor protect against it.
+#
+# Everything else the suite needs comes from the standard library, so there is
+# no third-party HTTP client to keep up to date for four requests.
+playwright==1.56.0
 pytest==9.1.1
