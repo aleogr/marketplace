@@ -8,7 +8,7 @@
 > - Items listed under [Open topics](#29-open-topics-for-design) still need an external input (a lawyer, a commercial proposal, a spike) before they can be decided; topics closed during design are recorded in `docs/design.md`.
 > - Legal topics (terms of use, privacy, consumer law, marketplace regulations) must be reviewed by a qualified lawyer before launch.
 >
-> **Related documents:** `docs/design.md` (how the product is built: architecture, data model, design decisions and phases), `docs/research/competitive-analysis.md` (competitors), `docs/research/payment-providers.md` (payment gateway candidates), `docs/research/shipping-providers.md` (shipping provider candidates, with an appendix on transactional e-mail). Decisions below that came from those analyses cite them.
+> **Related documents:** `docs/design.md` (how the product is built: architecture, data model, design decisions and phases), `docs/roadmap.md` (the ordered deliveries of the phase under way), `docs/research/competitive-analysis.md` (competitors), `docs/research/payment-providers.md` (payment gateway candidates), `docs/research/shipping-providers.md` (shipping provider candidates, with an appendix on transactional e-mail). Decisions below that came from those analyses cite them.
 
 ---
 
