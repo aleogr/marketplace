@@ -14,13 +14,17 @@ LOG=/var/log/setup-environment.log
 REPO=/home/user/marketplace
 
 # The end-to-end suite's versions live in e2e/requirements.txt, under
-# Dependabot. This script names no version of its own: a number repeated here
-# would drift, because nothing in CI can see this file.
+# Dependabot; the Terraform release lives in infra/terraform/.terraform-version,
+# which the Terraform workflow reads as well. This script names no version of
+# its own: a number repeated here would drift, because nothing in CI can see
+# this file.
 if [ -d "$REPO" ]; then
   make -C "$REPO" e2e-deps >> "$LOG" 2>&1 \
     || echo "FAILURE: e2e dependencies not installed" >> "$LOG"
+  make -C "$REPO" terraform-deps >> "$LOG" 2>&1 \
+    || echo "FAILURE: terraform not installed" >> "$LOG"
 else
-  echo "NOTE: $REPO absent at setup time; run 'make e2e-deps' in the session" >> "$LOG"
+  echo "NOTE: $REPO absent at setup time; run 'make e2e-deps terraform-deps' in the session" >> "$LOG"
 fi
 
 claude plugin marketplace add anthropics/claude-plugins-official >> "$LOG" 2>&1 \
@@ -34,6 +38,18 @@ exit 0
 
 All command output goes to `/var/log/setup-environment.log`. Installation
 failures are recorded in that file as lines starting with `FAILURE`.
+
+### Why the script installs Terraform
+
+A session has no `terraform` binary, so without this the only thing that could
+answer whether `infra/terraform/` is well-formed was CI, and every formatting
+mistake cost a pull request round trip. With it, `make tf` runs in a session the
+same `fmt -check`, `init -backend=false` and `validate` the Terraform workflow
+runs.
+
+The session never *applies* anything and never holds GCP credentials: the
+federation issues them to a token minted by GitHub Actions for this repository,
+which is not something a session can obtain (`docs/infrastructure.md`).
 
 ### Why the script installs no version of its own
 

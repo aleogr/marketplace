@@ -1,0 +1,198 @@
+name: Terraform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Applies are never cancelled, and neither are plans: both take the state
+# lock, and a cancelled run can leave that lock behind.
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  # Terraform reads TF_VAR_<name> for the variable of that name. The project
+  # id and the state bucket are repository variables rather than values in
+  # this repository, so moving an environment to another project changes a
+  # setting instead of a commit (docs/infrastructure.md).
+  TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+jobs:
+  validate:
+    name: Format and validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the pinned Terraform release
+        id: release
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
+
+      # Third-party actions are pinned to a commit, not to a tag: a tag can be
+      # moved onto different code, and this workflow's repository holds a
+      # federation that can change the GCP project.
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ steps.release.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Format
+        run: terraform fmt -check -recursive
+
+      # No backend and no credentials: this job answers whether the
+      # configuration is well-formed, which is a question about the files.
+      - name: Initialise without the backend
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        run: terraform validate
+
+  plan:
+    name: Plan the lab
+    needs: validate
+    # A plan needs the federation, and the federation issues credentials only
+    # to a token minted for this repository. A pull request from a fork gets
+    # no such token, and Dependabot's token is read-only, so the job is
+    # skipped there rather than failing on an authentication it cannot have.
+    # It is for that reason not a required check; "Format and validate" is.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the pinned Terraform release
+        id: release
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ steps.release.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Initialise
+        run: |
+          terraform init -input=false -lock-timeout=5m \
+            -backend-config=lab/backend.hcl \
+            -backend-config="bucket=${TF_STATE_BUCKET}"
+
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -input=false -lock-timeout=5m -no-color \
+            -detailed-exitcode -var-file=lab/lab.tfvars -out=tfplan
+          code=$?
+          set -e
+          case "$code" in
+            0) echo "changes=false" >> "$GITHUB_OUTPUT" ;;
+            2) echo "changes=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$code" ;;
+          esac
+          terraform show -no-color tfplan > plan.txt
+
+      # One comment per pull request, rewritten on every run, so what it says
+      # is the plan for the commit under review and not for an earlier one.
+      - name: Comment the plan on the pull request
+        uses: actions/github-script@v9
+        env:
+          HAS_CHANGES: ${{ steps.plan.outputs.changes }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- terraform-plan-lab -->';
+            const limit = 60000;
+
+            let body;
+            if (process.env.HAS_CHANGES === 'true') {
+              let plan = fs.readFileSync('infra/terraform/plan.txt', 'utf8');
+              if (plan.length > limit) {
+                plan = plan.slice(0, limit) +
+                  '\n\n[truncated; the whole plan is in the job log]';
+              }
+              body = `${marker}\n### Terraform plan — lab\n\n` +
+                '<details><summary>Show the plan</summary>\n\n' +
+                '```terraform\n' + plan + '\n```\n\n</details>';
+            } else {
+              body = `${marker}\n### Terraform plan — lab\n\n` +
+                'No changes. The lab matches this configuration.';
+            }
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(
+              github.rest.issues.listComments, { owner, repo, issue_number });
+            const previous = comments.find(
+              (c) => c.user.type === 'Bot' && (c.body || '').startsWith(marker));
+
+            if (previous) {
+              await github.rest.issues.updateComment(
+                { owner, repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment(
+                { owner, repo, issue_number, body });
+            }
+
+  apply:
+    name: Apply to the lab
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the pinned Terraform release
+        id: release
+        run: echo "version=$(cat .terraform-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ steps.release.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Initialise
+        run: |
+          terraform init -input=false -lock-timeout=5m \
+            -backend-config=lab/backend.hcl \
+            -backend-config="bucket=${TF_STATE_BUCKET}"
+
+      - name: Apply
+        run: |
+          terraform apply -input=false -lock-timeout=5m -no-color \
+            -auto-approve -var-file=lab/lab.tfvars

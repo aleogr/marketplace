@@ -9,5 +9,13 @@
 __pycache__/
 *.pyc
 
+# Terraform working directory and plan output. The provider lock file
+# (infra/terraform/.terraform.lock.hcl) is versioned on purpose.
+/infra/terraform/.terraform/
+/infra/terraform/tfplan
+/infra/terraform/plan.txt
+*.tfstate
+*.tfstate.*
+
 # Local environment
 .env

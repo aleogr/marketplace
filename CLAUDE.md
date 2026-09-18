@@ -50,11 +50,17 @@ Once the code exists, the checks that CI runs are the ones to run before pushing
 make check   # go vet, staticcheck, golangci-lint, gosec, govulncheck
 make test    # go test ./... -race -cover
 make e2e     # builds the binary and runs the end-to-end suite against it
+make tf      # terraform fmt -check, init -backend=false and validate
 ```
 
 The tools are pinned as `tool` directives in `go.mod` and run through `go tool`,
 so a session and CI run the same versions. CI additionally runs `gitleaks` and
 scans the container image with Trivy.
+
+`terraform` is not a Go tool. The environment setup script installs the release
+named in `infra/terraform/.terraform-version`; `make terraform-deps` installs it
+in a session that started before the script was last changed. Terraform is only
+ever applied by CI (`docs/infrastructure.md`).
 
 The end-to-end suite must run under the interpreter that has Playwright
 installed, which is `python3`, not the `pytest` on the path (see

@@ -12,7 +12,7 @@ VERSION ?= $(shell git describe --tags --dirty 2>/dev/null \
 	|| echo "$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)-$$(date -u +%Y%m%d)")
 LDFLAGS := -X $(PKG)/internal/platform/version.version=$(VERSION)
 
-.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover e2e e2e-deps fmt clean version
+.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover e2e e2e-deps tf terraform-deps fmt clean version
 
 all: check test
 
@@ -81,8 +81,44 @@ e2e: build
 	@python3 e2e/check_browser.py
 	MARKETPLACE_BINARY=$(PWD)/$(BINARY) python3 -m pytest e2e/ -v
 
+# The Terraform half of the pipeline, in the order the Terraform workflow runs
+# it. No backend and no credentials: a session answers whether the files are
+# well-formed, and CI answers what they would change.
+tf:
+	@command -v terraform > /dev/null 2>&1 || { \
+	  echo "terraform is not on the path; run 'make terraform-deps'"; \
+	  echo "(the environment setup script normally does, see docs/claude-code-environment.md)"; \
+	  exit 1; \
+	}
+	terraform -chdir=infra/terraform fmt -check -recursive
+	terraform -chdir=infra/terraform init -backend=false -input=false
+	terraform -chdir=infra/terraform validate
+
+# Terraform is not in the environment image, and the release it should be
+# lives in infra/terraform/.terraform-version, which the workflow reads too.
+# The setup script calls this target instead of repeating that number, for the
+# same reason it calls e2e-deps. The archive is verified against the published
+# checksums before anything is installed. linux/amd64 is the environment and
+# the GitHub runner alike (docs/roadmap.md, appendix).
+terraform-deps:
+	@version=$$(cat infra/terraform/.terraform-version); \
+	 if [ "$$(terraform version 2>/dev/null | sed -n '1s/^Terraform v//p')" = "$$version" ]; then \
+	   echo "Terraform $$version already installed"; \
+	   exit 0; \
+	 fi; \
+	 tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT; \
+	 base="https://releases.hashicorp.com/terraform/$$version"; \
+	 archive="terraform_$${version}_linux_amd64.zip"; \
+	 curl -fsSL --retry 5 -o "$$tmp/$$archive" "$$base/$$archive"; \
+	 curl -fsSL --retry 5 -o "$$tmp/sums" "$$base/terraform_$${version}_SHA256SUMS"; \
+	 (cd "$$tmp" && grep " $$archive$$" sums | sha256sum -c -); \
+	 unzip -oq "$$tmp/$$archive" -d "$$tmp"; \
+	 install -m 0755 "$$tmp/terraform" /usr/local/bin/terraform; \
+	 terraform version
+
 fmt:
 	$(GO) tool golangci-lint fmt
 
 clean:
 	rm -rf bin coverage.out e2e/screenshots
+	rm -rf infra/terraform/.terraform infra/terraform/tfplan infra/terraform/plan.txt

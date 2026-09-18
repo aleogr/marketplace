@@ -146,7 +146,7 @@ not linked by a dependency may be worked in any order, and section 6 shows where
 
 ### F2 — GCP bootstrap and the Terraform foundation
 
-- [ ] **Objective:** infrastructure is described in Terraform, its state lives in a versioned
+- [x] **Objective:** infrastructure is described in Terraform, its state lives in a versioned
   bucket, and GitHub authenticates to GCP without any stored key (§27).
 
 **Depends on:** F1.
@@ -924,4 +924,4 @@ Checked directly, because the deliveries above depend on them.
 | Docker | Installed, but **the daemon is not running** | Testcontainers are not an option; hence the helper above |
 | Python / Playwright | Python 3.11.15, `playwright` importable, Chromium revision 1194 in `/opt/pw-browsers` | The end-to-end suite pins `playwright==1.56.0`, as `docs/claude-code-environment.md` explains |
 | `gcloud` | **Not installed** | Every GCP manual step is written for the owner's Cloud Shell, never run from a session |
-| `terraform` | **Not installed** | Terraform runs in CI; F2 asks the owner to add it to the environment setup script so a session can at least `fmt` and `validate` |
+| `terraform` | **Not installed in the image**; F2 added `make terraform-deps` to the environment setup script | Terraform applies only in CI, which is where the federation's credentials exist; a session runs `make tf`, which is `fmt -check`, `init -backend=false` and `validate` |
