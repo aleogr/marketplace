@@ -11,10 +11,17 @@ repository**. It runs at the start of every cloud session:
 ```bash
 #!/bin/bash
 LOG=/var/log/setup-environment.log
+REPO=/home/user/marketplace
 
-pip install --retries 5 --timeout 60 "playwright==1.56.0" >> "$LOG" 2>&1 \
-  || pip install --break-system-packages --retries 5 --timeout 60 "playwright==1.56.0" >> "$LOG" 2>&1 \
-  || echo "FAILURE: playwright not installed" >> "$LOG"
+# The end-to-end suite's versions live in e2e/requirements.txt, under
+# Dependabot. This script names no version of its own: a number repeated here
+# would drift, because nothing in CI can see this file.
+if [ -d "$REPO" ]; then
+  make -C "$REPO" e2e-deps >> "$LOG" 2>&1 \
+    || echo "FAILURE: e2e dependencies not installed" >> "$LOG"
+else
+  echo "NOTE: $REPO absent at setup time; run 'make e2e-deps' in the session" >> "$LOG"
+fi
 
 claude plugin marketplace add anthropics/claude-plugins-official >> "$LOG" 2>&1 \
   || echo "FAILURE: official marketplace not added" >> "$LOG"
@@ -28,22 +35,26 @@ exit 0
 All command output goes to `/var/log/setup-environment.log`. Installation
 failures are recorded in that file as lines starting with `FAILURE`.
 
+### Why the script installs no version of its own
+
+It used to name `playwright==1.56.0` and `pytest==9.1.1` directly. Both numbers
+also live in `e2e/requirements.txt`, where Dependabot maintains them — and this
+file is not in the repository, so nothing could keep the two copies together.
+They drifted within a day of being written.
+
+Calling `make e2e-deps` leaves the versions in exactly one place. The guard
+exists because the order between the repository being cloned and this script
+running is not something the session can observe; when the repository is not
+there yet, the script says so in the log instead of installing a stale guess,
+and `e2e/check_browser.py` tells whoever runs `make e2e` which command fixes it.
+
 ### Why `pytest` is installed next to playwright
 
 The environment ships a `pytest` on the path, but it is a `uv` tool with its own
-isolated interpreter, which does not have Playwright. `python3` has Playwright
-but had no `pytest`. The end-to-end suite needs both in the same interpreter, so
-the script installs `pytest` into `python3`, matching the version pinned in
-`e2e/requirements.txt`:
-
-```bash
-pip install --retries 5 --timeout 60 "pytest==9.1.1" >> "$LOG" 2>&1 \
-  || pip install --break-system-packages --retries 5 --timeout 60 "pytest==9.1.1" >> "$LOG" 2>&1 \
-  || echo "FAILURE: pytest not installed" >> "$LOG"
-```
-
-`make e2e` invokes the suite as `python3 -m pytest`, so it uses that interpreter
-rather than whichever `pytest` happens to be first on the path.
+isolated interpreter, which does not have Playwright. `python3` has Playwright.
+The end-to-end suite needs both in the same interpreter, which is why
+`make e2e-deps` installs with `python3 -m pip` and `make e2e` runs the suite as
+`python3 -m pytest`, rather than using whichever `pytest` is first on the path.
 
 ### Why Superpowers is installed by the script
 

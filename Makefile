@@ -12,7 +12,7 @@ VERSION ?= $(shell git describe --tags --dirty 2>/dev/null \
 	|| echo "$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)-$$(date -u +%Y%m%d)")
 LDFLAGS := -X $(PKG)/internal/platform/version.version=$(VERSION)
 
-.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover e2e fmt clean version
+.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover e2e e2e-deps fmt clean version
 
 all: check test
 
@@ -67,6 +67,15 @@ test:
 cover:
 	$(GO) test ./... -race -coverprofile=coverage.out
 	$(GO) tool cover -func=coverage.out | tail -1
+
+# The suite runs under python3, which is the interpreter the environment gave
+# Playwright; the pytest on the PATH is a uv tool with its own interpreter and
+# cannot import it. Installing here, from the pinned file, is what keeps the
+# versions in one place: the environment setup script calls this target instead
+# of repeating the numbers (see docs/claude-code-environment.md).
+e2e-deps:
+	python3 -m pip install --retries 5 --timeout 60 -r e2e/requirements.txt \
+	  || python3 -m pip install --break-system-packages --retries 5 --timeout 60 -r e2e/requirements.txt
 
 e2e: build
 	@python3 e2e/check_browser.py
