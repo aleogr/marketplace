@@ -451,11 +451,28 @@ with neither — this design has no network of its own to maintain.
 **Reading the database by hand**, from Cloud Shell:
 
 ```bash
-gcloud sql connect marketplace --user=postgres --database=marketplace \
-  --project=aleogr-marketplace-lab-a4j5
+PROJECT=aleogr-marketplace-lab-a4j5
+
+cloud-sql-proxy "$PROJECT:us-central1:marketplace" --port 5433 > /tmp/proxy.log 2>&1 &
+PROXY=$!
+sleep 6
+
+PGPASSWORD="$(gcloud secrets versions access latest \
+  --secret=migrator-password --project="$PROJECT")" \
+  psql -h 127.0.0.1 -p 5433 -U migrator -d marketplace \
+       -c "SELECT version_id, tstamp FROM goose_db_version ORDER BY version_id;"
+
+kill "$PROXY"
 ```
 
-It authorizes the client address for a few minutes and then removes it again.
+**Neither as `postgres` nor through `gcloud sql connect`**, and both for
+reasons that only show up when you try it. There is no password for `postgres`:
+Terraform creates two users and neither is it — the service's, which
+authenticates with IAM and has no password at all, and `migrator`, whose
+password is in Secret Manager. And `gcloud sql connect` does not pass
+`PGPASSWORD` through to the `psql` it launches, so it prompts whatever the
+environment holds. Running the proxy and `psql` as two steps is what lets the
+password reach the program that asks for it.
 
 ## Marketplaces and their hosts
 
