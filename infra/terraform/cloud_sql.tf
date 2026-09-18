@@ -153,3 +153,36 @@ resource "google_secret_manager_secret_version" "migrator_password" {
   secret      = google_secret_manager_secret.migrator_password.id
   secret_data = random_password.migrator.result
 }
+
+# What each identity may do with the instance.
+#
+# `cloudsql.client` opens a connection through the connector; `instanceUser` is
+# what makes an IAM database user able to log in at all. The service holds both
+# and no password. The migration job holds only `client`, because it logs in as
+# the built-in user, and the one grant that lets it read that user's password.
+
+resource "google_project_iam_member" "service_sql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.service.email}"
+}
+
+resource "google_project_iam_member" "service_sql_login" {
+  project = var.project_id
+  role    = "roles/cloudsql.instanceUser"
+  member  = "serviceAccount:${google_service_account.service.email}"
+}
+
+resource "google_project_iam_member" "migrator_sql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.migrator.email}"
+}
+
+# On the secret itself, not on the project: the job may read this password and
+# no other secret this project ever holds.
+resource "google_secret_manager_secret_iam_member" "migrator_password" {
+  secret_id = google_secret_manager_secret.migrator_password.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.migrator.email}"
+}

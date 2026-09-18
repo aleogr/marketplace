@@ -22,3 +22,13 @@ output "deployer_service_account" {
   description = "Account the deployment pipeline federates into. Its value belongs in the repository variable GCP_DEPLOYER_SA (docs/infrastructure.md)."
   value       = google_service_account.deployer.email
 }
+
+output "database_instance" {
+  description = "Connection name of the Cloud SQL instance, as the connector and `gcloud sql connect` name it."
+  value       = google_sql_database_instance.main.connection_name
+}
+
+output "migration_job" {
+  description = "Name of the Cloud Run Job the pipeline executes before a revision receives traffic."
+  value       = google_cloud_run_v2_job.migrate.name
+}

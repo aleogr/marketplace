@@ -12,7 +12,7 @@ VERSION ?= $(shell git describe --tags --dirty 2>/dev/null \
 	|| echo "$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)-$$(date -u +%Y%m%d)")
 LDFLAGS := -X $(PKG)/internal/platform/version.version=$(VERSION)
 
-.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover e2e e2e-lab e2e-deps tf terraform-deps fmt clean version
+.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover integration e2e e2e-lab e2e-deps tf terraform-deps fmt clean version
 
 all: check test
 
@@ -67,6 +67,15 @@ test:
 cover:
 	$(GO) test ./... -race -coverprofile=coverage.out
 	$(GO) tool cover -func=coverage.out | tail -1
+
+# The tests that need a real PostgreSQL. They are behind the `integration` build
+# tag so that `make test` needs nothing installed and stays fast, which is what
+# lets it run on every save. Set TEST_DATABASE_URL to use a database that is
+# already running, as CI does with its service container; without it the suite
+# starts a cluster of its own and stops it afterwards
+# (internal/platform/dbtest).
+integration:
+	$(GO) test -tags=integration ./... -race -count=1
 
 # The suite runs under python3, which is the interpreter the environment gave
 # Playwright; the pytest on the PATH is a uv tool with its own interpreter and

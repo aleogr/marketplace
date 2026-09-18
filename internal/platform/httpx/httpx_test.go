@@ -15,7 +15,7 @@ import (
 
 func TestHealthzReportsTheRunningBuild(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	httpx.Handler().ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil))
+	httpx.Handler(nil).ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
@@ -41,7 +41,7 @@ func TestHealthzReportsTheRunningBuild(t *testing.T) {
 
 func TestHandlerRefusesAnUnknownPath(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	httpx.Handler().ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/no-such-page", nil))
+	httpx.Handler(nil).ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/no-such-page", nil))
 
 	if recorder.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", recorder.Code, http.StatusNotFound)
@@ -76,7 +76,7 @@ func TestServeStopsWhenTheContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
-	go func() { done <- httpx.Serve(ctx, ln, httpx.Handler(), time.Second) }()
+	go func() { done <- httpx.Serve(ctx, ln, httpx.Handler(nil), time.Second) }()
 
 	response, err := get(t, "http://"+ln.Addr().String()+"/health")
 	if err != nil {
@@ -154,11 +154,64 @@ func TestServeReportsAListenerItCannotUse(t *testing.T) {
 	ln := listen(t)
 	ln.Close()
 
-	err := httpx.Serve(context.Background(), ln, httpx.Handler(), time.Second)
+	err := httpx.Serve(context.Background(), ln, httpx.Handler(nil), time.Second)
 	if err == nil {
 		t.Fatal("Serve() returned nil for a closed listener, want an error")
 	}
 	if errors.Is(err, http.ErrServerClosed) {
 		t.Error("Serve() reported an orderly shutdown for a broken listener")
+	}
+}
+
+// database answers a health check the way a pool would.
+type database struct{ err error }
+
+func (d database) Ping(context.Context) error { return d.err }
+
+func TestHealthReportsTheDatabase(t *testing.T) {
+	t.Parallel()
+
+	for name, testCase := range map[string]struct {
+		database   httpx.Database
+		wantStatus int
+		wantBody   string
+	}{
+		"none configured": {
+			database:   nil,
+			wantStatus: http.StatusOK,
+			wantBody:   "not configured",
+		},
+		"reachable": {
+			database:   database{},
+			wantStatus: http.StatusOK,
+			wantBody:   "ok",
+		},
+		// A process that cannot reach its database is not ready to serve, and
+		// the 503 is what makes a deployment fail instead of a visitor.
+		"unreachable": {
+			database:   database{err: errors.New("connection refused")},
+			wantStatus: http.StatusServiceUnavailable,
+			wantBody:   "unreachable",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := httptest.NewRecorder()
+			httpx.Handler(testCase.database).ServeHTTP(recorder,
+				httptest.NewRequestWithContext(t.Context(), http.MethodGet, httpx.HealthPath, nil))
+
+			if recorder.Code != testCase.wantStatus {
+				t.Errorf("status = %d, want %d", recorder.Code, testCase.wantStatus)
+			}
+
+			var body map[string]string
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatalf("cannot read the body %q: %v", recorder.Body.String(), err)
+			}
+			if body["database"] != testCase.wantBody {
+				t.Errorf("database = %q, want %q", body["database"], testCase.wantBody)
+			}
+		})
 	}
 }

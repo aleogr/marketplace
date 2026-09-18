@@ -100,6 +100,24 @@ resource "google_cloud_run_v2_service" "marketplace" {
         value = "info"
       }
 
+      # How the service reaches the database. There is no password here and no
+      # secret mounted: the connector authenticates this revision's own service
+      # account with IAM (infra/terraform/cloud_sql.tf).
+      env {
+        name  = "DATABASE_INSTANCE"
+        value = google_sql_database_instance.main.connection_name
+      }
+
+      env {
+        name  = "DATABASE_NAME"
+        value = google_sql_database.marketplace.name
+      }
+
+      env {
+        name  = "DATABASE_USER"
+        value = google_sql_user.service.name
+      }
+
       env {
         name = "PROVIDERS_MODE"
         # Every external provider is still a fake: no gateway, no shipping
