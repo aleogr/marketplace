@@ -104,8 +104,8 @@ The following must be designed from the start and implemented in realistic phase
 
 - The marketplace is identified by the **host of the incoming request**, from day one.
 - Development domains:
-  - Platform: `plataforma.lab.aleogr.dev`
-  - Marketplaces: subdomains such as `marketplace1.plataforma.lab.aleogr.dev`
+  - Platform: `marketplace.lab.aleogr.dev`
+  - Marketplaces: subdomains such as `marketplace1.marketplace.lab.aleogr.dev`
 - DNS is managed in **Cloudflare**, using CNAME records to `ghs.googlehosted.com` in **"DNS only"** mode, with **Cloud Run's native domain mapping** (the same model the owner already uses in another project).
 - Domain mapping does not support wildcards: **each marketplace requires its own domain mapping and DNS record**, and certificate issuance can take up to 24 hours. Creating a marketplace therefore includes an infrastructure step.
 - Cloud Run domain mapping is a preview feature not recommended by Google for production. This must be re-evaluated before production traffic and custom domains.
