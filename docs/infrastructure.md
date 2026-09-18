@@ -260,6 +260,19 @@ by the last one. It is also why the service is created with Google's `hello`
 image: Terraform cannot create a service without naming one, and on that first
 merge no image of this repository exists yet.
 
+**Nothing Terraform declares may depend on an image that is not deployed
+yet.** This follows from the order above and is the one rule that makes it
+safe. Terraform applies first, and the revision it creates runs whatever image
+the service is already on — so a Terraform setting that only the *next* image
+satisfies fails the apply, and the failed apply skips the deployment that would
+have brought that image. Each half then waits for the other. It happened once,
+on the merge that moved the health check off `/healthz`: the apply changed the
+startup probe to the new path, the revision still carried the old image, the
+probe failed, and the deployment never ran. The startup probe is a TCP check on
+the container port for that reason, not for simplicity — it answers the
+question that matters, whether the process is listening, without naming
+anything the application might rename.
+
 **Deployment is by digest, never by tag.** A tag is a label that can be moved
 onto other bytes; a digest is the bytes. It is also what lets a release promote
 the image that was already tested rather than rebuild its source

@@ -108,13 +108,25 @@ resource "google_cloud_run_v2_service" "marketplace" {
         value = "fake"
       }
 
-      # Traffic reaches a revision only once the process answers. Without this,
-      # a revision that refuses to start over a misread variable — which is a
-      # designed behaviour here, not a fault — would take the service down
-      # instead of failing the deployment.
+      # Traffic reaches a revision only once the process is listening. Without
+      # this, a revision that refuses to start over a misread variable — which
+      # is a designed behaviour here, not a fault — would take the service down
+      # instead of failing the deployment. A process that refuses to start
+      # never listens, so a connection to the port answers that question.
+      #
+      # It is deliberately a TCP check and not an HTTP path, and that is not a
+      # simplification: Terraform applies *before* the image is deployed
+      # (.github/workflows/deploy.yml), so the revision this probe first runs
+      # against is the one already running. A probe naming an application route
+      # therefore deadlocks the moment that route changes — the apply creates a
+      # revision whose probe the old image fails, the apply fails, and the
+      # deployment that would have brought the image serving the new route is
+      # skipped because the apply failed. That happened once, on the merge that
+      # moved the health check off /healthz. Nothing Terraform declares here may
+      # depend on an image that does not exist yet.
       startup_probe {
-        http_get {
-          path = "/health"
+        tcp_socket {
+          port = 8080
         }
         period_seconds    = 3
         timeout_seconds   = 3
