@@ -18,11 +18,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/aleogr/marketplace/internal/platform/config"
 	"github.com/aleogr/marketplace/internal/platform/db"
 	"github.com/aleogr/marketplace/internal/platform/httpx"
 	"github.com/aleogr/marketplace/internal/platform/logging"
 	"github.com/aleogr/marketplace/internal/platform/version"
+	"github.com/aleogr/marketplace/internal/tenancy"
 )
 
 // shutdownGrace is how long in-flight requests have to finish after SIGTERM.
@@ -96,6 +99,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		// reason the indexing mode is logged: a process quietly running without
 		// a database is a thing somebody must be able to see.
 		"database", databaseMode(cfg.Database),
+		"platform_host", cfg.PlatformHost,
 	)
 
 	// A nil *db.Pool in an interface is not a nil interface, so the handler is
@@ -105,7 +109,18 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		checker = database
 	}
 
-	if err := httpx.Serve(ctx, listener, httpx.Handler(checker), shutdownGrace); err != nil {
+	handler := httpx.Handler(checker)
+
+	// Host resolution is the first thing a request meets, because language,
+	// session and every query after it are scoped by the answer
+	// (docs/design.md, section 2.3). It needs the database to know the hosts,
+	// so a process running without one serves every host as before.
+	if database != nil {
+		resolver := tenancy.NewResolver(tenancy.NewRepository(database), cfg.PlatformHost)
+		handler = tenancy.Resolve(resolver, httpx.Pages{}, httpx.HealthPath)(handler)
+	}
+
+	if err := httpx.Serve(ctx, listener, handler, shutdownGrace); err != nil {
 		return err
 	}
 
@@ -131,7 +146,36 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		"database", databaseMode(cfg.Database),
 	)
 
-	return db.Migrate(ctx, pool, cfg.Database, log)
+	if err := db.Migrate(ctx, pool, cfg.Database, log); err != nil {
+		return err
+	}
+
+	// The marketplaces this environment declares, applied after the schema
+	// that holds them. They come from the environment rather than from a
+	// migration because their hosts are the environment's: a host written into
+	// a versioned migration would be created in every environment that runs it
+	// (internal/tenancy/seed.go).
+	specs, err := tenancy.ParseSpecs(cfg.SeedMarketplaces)
+	if err != nil {
+		return err
+	}
+	if len(specs) == 0 {
+		log.InfoContext(ctx, "no marketplaces declared for this environment")
+		return nil
+	}
+
+	if err := pool.InTx(ctx, func(tx pgx.Tx) error {
+		return tenancy.Seed(ctx, tx, specs)
+	}); err != nil {
+		return err
+	}
+
+	slugs := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		slugs = append(slugs, spec.Slug)
+	}
+	log.InfoContext(ctx, "marketplaces seeded", "slugs", slugs)
+	return nil
 }
 
 // databaseMode names the route to the database without ever naming a

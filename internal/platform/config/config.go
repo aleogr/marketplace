@@ -63,6 +63,17 @@ type Config struct {
 	ProvidersMode ProvidersMode
 	// Database is how the process reaches PostgreSQL, if it does at all.
 	Database Database
+	// PlatformHost is the host the platform itself answers on: the console and
+	// everything belonging to no marketplace. It is configuration rather than
+	// data because it belongs to the deployment and exists before any
+	// marketplace does (docs/requirements.md, section 7).
+	PlatformHost string
+	// SeedMarketplaces declares, as JSON, the marketplaces this environment
+	// should have. Only the `migrate` command reads it. Marketplaces are
+	// seeded from the environment rather than from a migration because their
+	// hosts are the environment's: a host written into a versioned migration
+	// would be created in every environment that ever runs it.
+	SeedMarketplaces string
 }
 
 // Lookup reports the value of an environment variable and whether it was set.
@@ -163,6 +174,16 @@ func Load(lookup Lookup) (Config, error) {
 
 	read("DATABASE_APP_USER", func(value string) error {
 		cfg.Database.AppUser = value
+		return nil
+	})
+
+	read("PLATFORM_HOST", func(value string) error {
+		cfg.PlatformHost = value
+		return nil
+	})
+
+	read("SEED_MARKETPLACES", func(value string) error {
+		cfg.SeedMarketplaces = value
 		return nil
 	})
 
