@@ -21,14 +21,28 @@ import (
 // that an idle connection cannot hold a handler slot open indefinitely.
 const readHeaderTimeout = 10 * time.Second
 
+// HealthPath is where the process answers a health check.
+//
+// It is `/health` and must not become `/healthz`, which is the conventional
+// name and the one this project used until it was deployed. On Cloud Run,
+// Google's front end answers the literal path `/healthz` with its own 404 page
+// and the request never reaches the container: it arrives with no
+// `x-cloud-trace-context`, and neighbouring paths — `/healthz/`, `/healthZ`,
+// `/livez`, `/readyz` — all pass through untouched, so this is specific to that
+// one string rather than a rule about paths ending in `z`. Nothing in Google's
+// container contract mentions it, and nothing in this repository could have
+// found it before the first deployment, because a local process serves
+// `/healthz` perfectly well.
+const HealthPath = "/health"
+
 // Handler returns the routes served by the process.
 func Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthz)
+	mux.HandleFunc("GET "+HealthPath, health)
 	return mux
 }
 
-func healthz(w http.ResponseWriter, _ *http.Request) {
+func health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]string{

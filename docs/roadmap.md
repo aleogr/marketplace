@@ -116,7 +116,7 @@ not linked by a dependency may be worked in any order, and section 6 shows where
 **Scope:**
 - `go.mod` (module `github.com/aleogr/marketplace`, Go 1.24 toolchain), with the lint and security
   tools pinned as `tool` directives so CI and a session run identical versions.
-- `cmd/marketplace/main.go`: HTTP server, `/healthz`, graceful shutdown on `SIGTERM`, which is what
+- `cmd/marketplace/main.go`: HTTP server, `/health`, graceful shutdown on `SIGTERM`, which is what
   Cloud Run sends before stopping an instance.
 - `internal/platform/config`: typed loading from the environment. Unknown or unparseable values
   **refuse to start**, naming the variable and quoting the value received (§7.1 generalised).
@@ -206,7 +206,7 @@ Cloud Shell):
   project (section 8).
 
 **Verification:**
-- `curl -i https://marketplace.lab.aleogr.dev/healthz` returning 200, output attached.
+- `curl -i https://marketplace.lab.aleogr.dev/health` returning 200, output attached.
 - The start-up log in Cloud Logging showing the build identifier of the merged commit.
 - `pytest e2e/` run against the lab URL, not only against a local process.
 
@@ -241,7 +241,7 @@ Cloud Shell):
 - Terraform: a Cloud Run Job running that subcommand, and a deploy pipeline step that runs the job
   **before** the new revision receives traffic (design §3).
 - `internal/platform/db`: a `pgx` pool, a transaction helper that will later set the tenant
-  variable, and a readiness check that is part of `/healthz`.
+  variable, and a readiness check that is part of `/health`.
 - `internal/platform/dbtest`: starts a local PostgreSQL 16 cluster for a session run, or uses the
   service container's `DATABASE_URL` in CI; integration tests are behind a build tag so
   `go test -short` stays fast.

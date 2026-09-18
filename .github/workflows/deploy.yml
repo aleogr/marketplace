@@ -124,7 +124,7 @@ jobs:
           # certificate can take a day to be issued, and a deployment must not
           # wait on DNS to say whether it worked (docs/requirements.md, §7).
           running=$(curl -fsS --retry 5 --retry-all-errors --retry-delay 2 \
-            "$url/healthz" | jq -r .version)
+            "$url/health" | jq -r .version)
           expected='${{ steps.facts.outputs.version }}'
           if [ "$running" != "$expected" ]; then
             echo "the service answers as build '$running', not '$expected'"
