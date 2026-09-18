@@ -2,7 +2,7 @@
 # package manager, and a non-root user, so a vulnerability scan has almost no
 # surface to report and an intrusion has almost no tools to use.
 
-FROM golang:1.26.6 AS build
+FROM golang:1.27.1 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
