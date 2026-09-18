@@ -295,17 +295,33 @@ The mapping is created by `terraform@…` during the apply, so it is that accoun
 on the domain's verified-owner list.
 
 Performed once, in [Search Console](https://search.google.com/search-console),
-for the property `aleogr.dev`:
+on the `aleogr.dev` property: **Settings → Users and permissions → Add user**,
+with `terraform@aleogr-marketplace-lab-a4j5.iam.gserviceaccount.com` and the
+permission **Owner**.
 
-1. Verify the property, if it is not verified already.
-2. **Settings → Users and permissions → Verified owners → Add an owner**, and
-   enter `terraform@aleogr-marketplace-lab-a4j5.iam.gserviceaccount.com`.
+The "Ownership verification" screen is not where this is done, despite its
+name: it lists the verification methods used, and offers no way to add an
+account. A subdomain property does not help either — Search Console will hold
+one for `lab.aleogr.dev`, but Cloud Run asks for ownership of the registrable
+domain when it maps any host beneath it.
 
-Without it the apply fails with *"Caller is not authorized to administer the
+Without this, the apply fails with *"Caller is not authorized to administer the
 domain"*, which names neither the account nor the console it is missing from.
 
-Production repeats this with its own Terraform account. The verification is per
-account, not per project, so adding the second one does not disturb the first.
+**Why a domain mapped by hand needs none of this.** Mapping a domain from the
+console or from `gcloud` runs as the person doing it, who is already an owner of
+the property. Terraform runs as a service account, and Google has no reason to
+believe that account is the same person. Every project that maps a host under
+this domain from CI therefore adds its own service account here, and production
+will add a third. Ownership is per account, so a new one disturbs none of the
+others.
+
+The grant is over the Search Console property, not over DNS: the account can
+map hosts under `aleogr.dev` to Cloud Run services in its own project and
+administer the property, and cannot touch the zone in Cloudflare. It is
+revocable from the same screen. The spike that re-examines domain mapping before
+production (`docs/design.md`, section 7) is also what would end the need for it:
+neither a load balancer nor Cloudflare as a proxy asks for ownership here.
 
 ### The host
 
