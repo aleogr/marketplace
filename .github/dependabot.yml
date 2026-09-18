@@ -24,6 +24,16 @@ updates:
     groups:
       e2e-dependencies:
         patterns: ["*"]
+    ignore:
+      # Each Playwright release is built against one exact Chromium revision,
+      # and the cloud environment ships a single preinstalled one it does not
+      # replace, so a bump leaves a session with no browser to drive. CI cannot
+      # catch it, because the runner downloads whichever revision its Playwright
+      # asks for. This entry is the only thing holding the pin, and it also
+      # silences security updates for this package, which runs in tests and
+      # never in production. Remove it when the environment image moves to a
+      # newer Chromium: `make e2e` reports the revision it finds.
+      - dependency-name: playwright
 
   - package-ecosystem: docker
     directory: /
