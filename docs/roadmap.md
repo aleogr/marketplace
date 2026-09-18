@@ -223,9 +223,14 @@ Cloud Shell):
 **Depends on:** F3.
 
 **What is needed from the owner:**
-1. Confirm the Cloud SQL machine tier. This is the **only material recurring cost** of the design
+1. **Confirm that the billing account is an upgraded, paid Cloud Billing account, not a free
+   trial.** A free trial account stops every resource in the project when the trial period ends,
+   and the period can be neither paused nor extended, so a Cloud SQL instance created under one
+   has an expiry date rather than a lifetime. Upgrading before the trial ends preserves the
+   remaining credit.
+2. Confirm the Cloud SQL machine tier. This is the **only material recurring cost** of the design
    (design §3) and the decision belongs to the owner.
-2. Create a billing budget with an e-mail alert at a threshold the owner chooses.
+3. Create a billing budget with an e-mail alert at a threshold the owner chooses.
 
 **Scope:**
 - Terraform: Cloud SQL for PostgreSQL 16, smallest instance, automatic backups with **30-day
@@ -831,6 +836,7 @@ later phase are listed because the design says to start them **now** or **during
 | `terraform` added to the environment setup script | F2 | With F2 | No; CI validates in the meantime |
 | Cloudflare CNAME for the platform host | F3 | When F2 merges; the certificate can take 24 h | Only the live check of F3 |
 | Cloudflare CNAME for the first marketplace host | F5 | When F3 merges | Only the live check of F5 |
+| Billing account upgraded from free trial to paid | F4 | **Before F4 creates the instance.** A free trial stops every resource when it ends, and cannot be paused or extended | Yes, from F4 onward |
 | Cloud SQL tier decision and budget alert | F4 | When F3 merges | Yes, from F4 onward |
 | E-mail provider account, domain verification, production access | F11 | **Start when F10 merges.** Design §8 places it in the foundation phase because sign-up and password recovery depend on e-mail; production access can take a business day | No — F11 merges with the fake adapter |
 | MaxMind account and GeoLite2 licence key | F18 | **Start when F8 merges.** Design §8 places it in the foundation phase | No — F18 merges with the fake adapter |
@@ -894,6 +900,9 @@ Listed so that no delivery above quietly grows to include them. Each has its pla
   service resolves the marketplace from the host it receives, whatever put it there.
 - **Cloud SQL is the phase's only material recurring cost** (design §3). F4 makes the owner
   confirm the tier and set a budget alert before the instance is created.
+- **A billing account still in its free trial has an expiry date, and so does everything in it.**
+  The trial stops every resource when it ends and cannot be extended, which would take the lab
+  database down mid-phase. F4 checks for the upgrade before creating the instance.
 - **The pipeline grows faster than the code it protects.** F1 deliberately front-loads it, so that
   no delivery ever merges under a weaker set of checks than the one before it.
 - **A wrong `INDEXABLE` value is invisible for months** (§7.1). F9 makes it a start-up failure and
