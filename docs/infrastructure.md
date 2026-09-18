@@ -49,6 +49,57 @@ a detail: a free trial stops every resource in the project when the trial ends,
 and the trial can be neither paused nor extended, so a Cloud SQL instance
 created under one has an expiry date rather than a lifetime.
 
+## Budget and the lab's cost
+
+A budget named `marketplace-lab`, scoped to the lab project alone, alerts by
+e-mail at **R$ 200 per month**: at 50%, 90% and 100% of actual spend, and once
+more when the *forecast* for the month reaches 100%. The forecast threshold is
+the one that catches a runaway on the third day rather than the twentieth; the
+others catch a drift.
+
+It is **alerts only**, never the spend-limit enforcement the console offers
+beside it. That option pauses services when the cap is reached, which in an
+environment whose purpose is to be available for testing trades a surprise bill
+for a surprise outage.
+
+R$ 200 is roughly three times what the lab is expected to cost, which is what
+keeps the 50% alert meaningful: a threshold that sits inside the normal range
+sends an e-mail every month and teaches its reader to ignore it.
+
+**The expected cost**, at the configuration below and the rate of 2026-09-18
+(1 USD = R$ 5,1359):
+
+| Item | ~US$/month |
+|---|---|
+| `db-f1-micro` instance (1 shared vCPU, 0.614 GB) | 8 |
+| 10 GB SSD | 1.70 |
+| Backups and point-in-time recovery logs | 0.50 – 4 |
+| **Total** | **~10 – 14** (R$ 51 – 72) |
+
+Cloud SQL is the only material recurring cost of the whole design; Cloud Run,
+Tasks, Scheduler, Storage and Logging stay within free quotas or cents at this
+volume (`docs/design.md`, section 3).
+
+**Why the lab is configured more cheaply than the design's targets.** Design
+section 3 sets a recovery point objective of 5 minutes, 30-day backup retention
+and a quarterly restore test. Those are **production's** targets. The lab holds
+nothing irreplaceable — it is rebuilt from this repository — so it keeps 7
+backups and a 1-day point-in-time window, the shortest Cloud SQL Enterprise
+allows. Point-in-time recovery stays *on* rather than off: it costs almost
+nothing on an idle database, and the mechanism production will depend on should
+have been exercised somewhere before production depends on it.
+
+**The tier is `db-f1-micro`**, the cheapest Cloud SQL offers and the one Google
+documents as being for test and development. Its 0.614 GB of memory is tight for
+PostgreSQL, and that is an accepted risk rather than an overlooked one: the tier
+is a Terraform variable, and changing it restarts the instance without touching
+the data. Starting cheap is reversible; starting expensive is only reversible by
+noticing.
+
+**The budget is not in Terraform**, and that is deliberate: a budget resource
+needs the billing account id, which this document does not record because the
+repository is public and that id identifies a payment instrument.
+
 ## Bootstrap performed by hand
 
 Run once, in Cloud Shell, because Terraform cannot create the bucket that holds
