@@ -4,4 +4,4 @@
 # from the standard library, so there is no third-party HTTP client to keep up
 # to date for four requests.
 playwright==1.56.0
-pytest==9.0.2
+pytest==9.0.3
