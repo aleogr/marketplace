@@ -103,7 +103,7 @@ The following must be designed from the start and implemented in realistic phase
 ## 7. Tenancy and domains
 
 - The marketplace is identified by the **host of the incoming request**, from day one.
-- Development domains:
+- Development domains, named after the GCP project that serves them, so that a host says which project answers on it. The production names are a separate decision, taken when the production project is created.
   - Platform: `marketplace.lab.aleogr.dev`
   - Marketplaces: subdomains such as `marketplace1.marketplace.lab.aleogr.dev`
 - DNS is managed in **Cloudflare**, using CNAME records to `ghs.googlehosted.com` in **"DNS only"** mode, with **Cloud Run's native domain mapping** (the same model the owner already uses in another project).
