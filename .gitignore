@@ -1,0 +1,13 @@
+# Build output
+/bin/
+/marketplace
+
+# Test and tooling artefacts
+/coverage.out
+/e2e/.pytest_cache/
+/e2e/screenshots/
+__pycache__/
+*.pyc
+
+# Local environment
+.env

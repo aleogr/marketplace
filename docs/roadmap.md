@@ -26,7 +26,7 @@ Asynchronous work uses outbox + Cloud Tasks + Cloud Scheduler, because Cloud Run
 (design §2.5). Tenant isolation is enforced twice: in the application and by PostgreSQL row-level
 security (design §2.6).
 
-**Tech stack:** Go 1.24 (the toolchain version is pinned in `go.mod`), templ + HTMX + Alpine.js,
+**Tech stack:** Go (the language version and the exact toolchain are pinned in `go.mod`), templ + HTMX + Alpine.js,
 PostgreSQL 16 on Cloud SQL, Cloud Run, Cloud Storage, Cloud Tasks, Cloud Scheduler, Secret
 Manager, Cloud KMS, Terraform, GitHub Actions, pytest + Playwright (Python) for end-to-end tests.
 
@@ -103,7 +103,7 @@ not linked by a dependency may be worked in any order, and section 6 shows where
 
 ### F1 — Repository skeleton, configuration, build identifier and the pipeline
 
-- [ ] **Objective:** every later pull request is checked by a pipeline that runs the full command
+- [x] **Objective:** every later pull request is checked by a pipeline that runs the full command
   list of `CLAUDE.md`, and the binary starts, announces which build it is, and answers a health
   check.
 
@@ -916,7 +916,9 @@ Checked directly, because the deliveries above depend on them.
 
 | Fact | Value | Consequence |
 |---|---|---|
-| Go | `go1.24.7 linux/amd64` | `go.mod` targets Go 1.24; tools are pinned with `tool` directives |
+| Go | `go1.24.7` on the path, but `GOTOOLCHAIN=auto` fetches what `go.mod` asks for | The pinned lint and security tools require a newer Go, so `go.mod` names the exact toolchain; tools are pinned with `tool` directives |
+| Go toolchain and `govulncheck` | Every 1.26 patch release below `go1.26.6` carries standard-library vulnerabilities the code reaches through `http.Server.Serve` | The toolchain is pinned to the first release `govulncheck` accepts, and Dependabot keeps it moving |
+| `pytest` on the path | A `uv` tool with its own interpreter, which does **not** have Playwright installed | The suite runs as `python3 -m pytest`; the environment setup script installs `pytest` next to Playwright |
 | PostgreSQL server | 16.13 installed locally (`/usr/lib/postgresql/16`) | Integration tests run against a real cluster started in the session; CI uses a `postgres:16` service container |
 | PostgreSQL as root | `initdb` refuses to run as root, and refuses a data directory the `postgres` user cannot reach | The test helper starts the cluster as the `postgres` user with its data directory outside the session scratchpad |
 | Docker | Installed, but **the daemon is not running** | Testcontainers are not an option; hence the helper above |

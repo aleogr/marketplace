@@ -1,0 +1,7 @@
+# Pinned so that CI and a Claude Code session run the same versions.
+# playwright 1.56.0 matches the Chromium preinstalled in the cloud environment
+# (see docs/claude-code-environment.md). Everything else the suite needs comes
+# from the standard library, so there is no third-party HTTP client to keep up
+# to date for four requests.
+playwright==1.56.0
+pytest==9.0.2

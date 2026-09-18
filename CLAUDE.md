@@ -42,7 +42,16 @@ These rules restate section 3 of `docs/requirements.md` and the agreements made 
 Once the code exists, the checks that CI runs are the ones to run before pushing; keep this list current:
 
 ```
-go vet ./... && staticcheck ./... && golangci-lint run && gosec ./... && govulncheck ./...
-go test ./...
-pytest e2e/
+make check   # go vet, staticcheck, golangci-lint, gosec, govulncheck
+make test    # go test ./... -race -cover
+make e2e     # builds the binary and runs the end-to-end suite against it
 ```
+
+The tools are pinned as `tool` directives in `go.mod` and run through `go tool`,
+so a session and CI run the same versions. CI additionally runs `gitleaks` and
+scans the container image with Trivy.
+
+The end-to-end suite must run under the interpreter that has Playwright
+installed, which is `python3`, not the `pytest` on the path (see
+`docs/claude-code-environment.md`). `make e2e` does that; a bare `pytest e2e/`
+fails to import Playwright.
