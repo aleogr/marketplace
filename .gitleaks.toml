@@ -1,0 +1,9 @@
+# Secret detection. The repository is public and no secret may ever be
+# committed (see CLAUDE.md). This file extends the default rule set; any
+# allowlist entry added here must say what the match is and why it is not a
+# secret.
+
+title = "marketplace"
+
+[extend]
+useDefault = true

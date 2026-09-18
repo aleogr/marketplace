@@ -28,6 +28,23 @@ exit 0
 All command output goes to `/var/log/setup-environment.log`. Installation
 failures are recorded in that file as lines starting with `FAILURE`.
 
+### Why `pytest` is installed next to playwright
+
+The environment ships a `pytest` on the path, but it is a `uv` tool with its own
+isolated interpreter, which does not have Playwright. `python3` has Playwright
+but had no `pytest`. The end-to-end suite needs both in the same interpreter, so
+the script installs `pytest` into `python3`, matching the version pinned in
+`e2e/requirements.txt`:
+
+```bash
+pip install --retries 5 --timeout 60 "pytest==9.0.2" >> "$LOG" 2>&1 \
+  || pip install --break-system-packages --retries 5 --timeout 60 "pytest==9.0.2" >> "$LOG" 2>&1 \
+  || echo "FAILURE: pytest not installed" >> "$LOG"
+```
+
+`make e2e` invokes the suite as `python3 -m pytest`, so it uses that interpreter
+rather than whichever `pytest` happens to be first on the path.
+
 ### Why Superpowers is installed by the script
 
 Plugins enabled only through `enabledPlugins` in the repository's
