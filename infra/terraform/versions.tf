@@ -10,5 +10,11 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 8.3"
     }
+    # Generates the one password in the system, the migration user's. The value
+    # lives in the Terraform state and in Secret Manager, never here.
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7"
+    }
   }
 }

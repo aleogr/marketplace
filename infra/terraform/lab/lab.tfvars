@@ -6,3 +6,10 @@ environment = "lab"
 
 # The platform host of the lab (docs/requirements.md, section 7).
 platform_host = "marketplace.lab.aleogr.dev"
+
+# The cheapest instance Cloud SQL offers, and the shortest recovery window it
+# allows. Both are deliberate and both are recorded, with the risk each carries,
+# in docs/infrastructure.md.
+database_tier               = "db-f1-micro"
+database_backup_count       = 7
+database_log_retention_days = 1
