@@ -74,7 +74,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: gitleaks/gitleaks-action@v2
+      # Third-party actions are pinned to a commit, not to a tag: a tag can be
+      # moved onto different code, and from F3 this workflow's repository holds
+      # a federation that can deploy to the GCP project.
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -88,7 +91,7 @@ jobs:
         run: docker build --build-arg VERSION=${{ github.sha }} -t marketplace:${{ github.sha }} .
 
       - name: Scan the image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: marketplace:${{ github.sha }}
           format: table
