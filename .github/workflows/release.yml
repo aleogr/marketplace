@@ -1,0 +1,64 @@
+name: Release
+
+# A release marks a milestone, not a change: a long development cycle may have
+# many merges and no release (docs/requirements.md, section 27). It happens when
+# the owner asks for one and Claude Code pushes the version tag.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Publish the GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      # Creating a release writes to the repository; nothing else here does.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A tag is a name someone typed, and this workflow acts on whatever it
+      # names. Refusing a tag that is not SemVer here costs one failed run;
+      # accepting it publishes a release nobody can order against the others
+      # (docs/requirements.md, section 27: v MAJOR.MINOR.PATCH, 0.y.z until the
+      # first production launch).
+      - name: Check the tag is a version
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "'${GITHUB_REF_NAME}' is not a vMAJOR.MINOR.PATCH tag"
+              exit 1
+              ;;
+          esac
+
+      # The tag must be on `main`. A tag pushed to a branch that was never
+      # merged would release code no pull request ever checked.
+      - name: Check the tag is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" FETCH_HEAD; then
+            echo "${GITHUB_REF_NAME} (${GITHUB_SHA}) is not an ancestor of main"
+            exit 1
+          fi
+
+      # `gh` is on the runner, so this needs no third-party action. The notes
+      # are generated from the merged pull requests since the previous tag.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag
+
+      # Deploying this release to production is deliberately not here. §27 asks
+      # for the same image to be promoted by digest, and there is no production
+      # project to promote it into yet; the delivery that creates one adds the
+      # promotion (docs/roadmap.md, section 8).

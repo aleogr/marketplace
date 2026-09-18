@@ -1,9 +1,12 @@
 # The registry the container image is pushed to on every merge into main, and
 # promoted from by digest on a release (docs/requirements.md, section 27).
 #
-# Whether tags should be immutable is decided with the deployment pipeline in
-# F3, not here: it is the pipeline that decides what a tag names and whether
-# re-running a build may push the same tag again.
+# Tags are mutable, which F3 decided once the pipeline existed to decide it
+# against. The pipeline deploys by digest and never by tag, so a tag is a label
+# for people reading the registry, not the thing a revision runs. Immutable
+# tags would buy nothing for that and would cost a re-run: a merge build that
+# is restarted pushes the same commit's tag a second time, and the push would
+# fail on a repository that refuses it.
 resource "google_artifact_registry_repository" "containers" {
   location      = var.region
   repository_id = "containers"
