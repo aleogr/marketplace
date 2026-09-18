@@ -190,7 +190,7 @@ Cloud Shell):
 **Depends on:** F1, F2.
 
 **What is needed from the owner:**
-1. In Cloudflare, create the CNAME `plataforma.lab.aleogr.dev` pointing to `ghs.googlehosted.com`
+1. In Cloudflare, create the CNAME `marketplace.lab.aleogr.dev` pointing to `ghs.googlehosted.com`
    in **DNS only** mode (§7).
 2. Report when the certificate has been issued; this can take up to 24 hours and nothing else in
    the phase waits for it.
@@ -206,7 +206,7 @@ Cloud Shell):
   project (section 8).
 
 **Verification:**
-- `curl -i https://plataforma.lab.aleogr.dev/healthz` returning 200, output attached.
+- `curl -i https://marketplace.lab.aleogr.dev/healthz` returning 200, output attached.
 - The start-up log in Cloud Logging showing the build identifier of the merged commit.
 - `pytest e2e/` run against the lab URL, not only against a local process.
 
@@ -266,7 +266,7 @@ Cloud Shell):
 
 **What is needed from the owner:**
 1. In Cloudflare, create the CNAME for the first marketplace host,
-   `marketplace1.plataforma.lab.aleogr.dev`, to `ghs.googlehosted.com` in **DNS only** mode, and
+   `marketplace1.marketplace.lab.aleogr.dev`, to `ghs.googlehosted.com` in **DNS only** mode, and
    report when the certificate is issued.
 
 **Scope:**
