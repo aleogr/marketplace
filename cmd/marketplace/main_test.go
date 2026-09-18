@@ -142,7 +142,7 @@ func TestRunServesTheHealthCheck(t *testing.T) {
 	waitFor(t, func() bool { return strings.Contains(stdout.String(), "server started") })
 
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
-		fmt.Sprintf("http://127.0.0.1:%d/healthz", port), nil)
+		fmt.Sprintf("http://127.0.0.1:%d/health", port), nil)
 	if err != nil {
 		t.Fatalf("cannot build the request: %v", err)
 	}

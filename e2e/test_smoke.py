@@ -24,8 +24,8 @@ def get(url: str):
         return error
 
 
-def test_healthz_answers_with_the_running_build(server):
-    response = get(f"{server.base_url}/healthz")
+def test_health_answers_with_the_running_build(server):
+    response = get(f"{server.base_url}/health")
 
     assert response.status == 200
     assert response.headers["content-type"] == "application/json"
@@ -80,10 +80,10 @@ def test_a_browser_can_reach_the_service(server, screenshots):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page()
-        page.goto(f"{server.base_url}/healthz")
+        page.goto(f"{server.base_url}/health")
 
         body = json.loads(page.inner_text("body"))
         assert body["status"] == "ok"
 
-        page.screenshot(path=str(screenshots / "healthz.png"))
+        page.screenshot(path=str(screenshots / "health.png"))
         browser.close()

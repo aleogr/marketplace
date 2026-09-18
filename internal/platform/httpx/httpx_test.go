@@ -15,7 +15,7 @@ import (
 
 func TestHealthzReportsTheRunningBuild(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	httpx.Handler().ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil))
+	httpx.Handler().ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
@@ -78,7 +78,7 @@ func TestServeStopsWhenTheContextIsCancelled(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- httpx.Serve(ctx, ln, httpx.Handler(), time.Second) }()
 
-	response, err := get(t, "http://"+ln.Addr().String()+"/healthz")
+	response, err := get(t, "http://"+ln.Addr().String()+"/health")
 	if err != nil {
 		t.Fatalf("request before shutdown failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestServeStopsWhenTheContextIsCancelled(t *testing.T) {
 		t.Fatal("Serve() did not return after the context was cancelled")
 	}
 
-	if response, err := get(t, "http://"+ln.Addr().String()+"/healthz"); err == nil {
+	if response, err := get(t, "http://"+ln.Addr().String()+"/health"); err == nil {
 		response.Body.Close()
 		t.Error("the server still answers after shutdown")
 	}

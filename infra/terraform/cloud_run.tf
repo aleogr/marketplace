@@ -114,7 +114,7 @@ resource "google_cloud_run_v2_service" "marketplace" {
       # instead of failing the deployment.
       startup_probe {
         http_get {
-          path = "/healthz"
+          path = "/health"
         }
         period_seconds    = 3
         timeout_seconds   = 3
