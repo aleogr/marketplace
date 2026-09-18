@@ -95,3 +95,31 @@ variable "database_log_retention_days" {
     error_message = "Cloud SQL Enterprise keeps between 1 and 7 days of transaction logs."
   }
 }
+
+variable "marketplaces" {
+  description = "The marketplaces this environment serves. Declared once and used twice: Cloud Run needs a domain mapping per host, and the migration job seeds the same list into the database. Hosts live here rather than in a migration because they belong to the environment — a host written into a versioned migration would be created in every environment that runs it (internal/tenancy/seed.go)."
+
+  type = list(object({
+    slug                = string
+    name                = string
+    market              = string
+    revenue_model       = string
+    default_language    = string
+    languages           = list(string)
+    hosts               = list(string)
+    detect_contact_data = bool
+    reveal_contact      = bool
+  }))
+
+  default = []
+
+  validation {
+    condition     = alltrue([for m in var.marketplaces : length(m.hosts) > 0])
+    error_message = "Every marketplace needs at least one host; one nobody can reach is not a marketplace."
+  }
+
+  validation {
+    condition     = alltrue([for m in var.marketplaces : contains(m.languages, m.default_language)])
+    error_message = "A marketplace's default language must be one of its languages."
+  }
+}

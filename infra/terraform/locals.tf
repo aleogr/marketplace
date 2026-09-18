@@ -7,3 +7,11 @@ locals {
     managed_by  = "terraform"
   }
 }
+
+locals {
+  # Every marketplace host, flattened, because Cloud Run maps one domain at a
+  # time and its mapping supports no wildcard (docs/requirements.md, section 7).
+  marketplace_hosts = toset(flatten([
+    for marketplace in var.marketplaces : marketplace.hosts
+  ]))
+}

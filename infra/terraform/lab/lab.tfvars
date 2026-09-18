@@ -13,3 +13,19 @@ platform_host = "marketplace.lab.aleogr.dev"
 database_tier               = "db-f1-micro"
 database_backup_count       = 7
 database_log_retention_days = 1
+
+# The lab's first marketplace. Its host is mapped by Terraform and seeded into
+# the database by the migration job, from this one declaration.
+marketplaces = [
+  {
+    slug                = "marketplace1"
+    name                = "Marketplace 1"
+    market              = "BR"
+    revenue_model       = "commission"
+    default_language    = "pt-BR"
+    languages           = ["en-US", "pt-BR"]
+    hosts               = ["marketplace1.marketplace.lab.aleogr.dev"]
+    detect_contact_data = true
+    reveal_contact      = false
+  }
+]

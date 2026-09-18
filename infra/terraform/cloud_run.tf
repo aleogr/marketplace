@@ -118,6 +118,14 @@ resource "google_cloud_run_v2_service" "marketplace" {
         value = google_sql_user.service.name
       }
 
+      # The platform's own host. It is configuration rather than a row because
+      # it belongs to the deployment and exists before any marketplace does
+      # (docs/requirements.md, section 7).
+      env {
+        name  = "PLATFORM_HOST"
+        value = var.platform_host
+      }
+
       env {
         name = "PROVIDERS_MODE"
         # Every external provider is still a fake: no gateway, no shipping
@@ -202,6 +210,30 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 resource "google_cloud_run_domain_mapping" "platform" {
   location = var.region
   name     = var.platform_host
+
+  metadata {
+    namespace = var.project_id
+    labels    = local.labels
+  }
+
+  spec {
+    route_name = google_cloud_run_v2_service.marketplace.name
+  }
+}
+
+# One mapping per marketplace host.
+#
+# Domain mapping supports no wildcard, so each host is its own resource and its
+# own certificate — which is why creating a marketplace includes an
+# infrastructure step and why that step can take a day (docs/requirements.md,
+# section 7). They all point at the one service: which marketplace serves a
+# request is decided inside the process, from the host it receives
+# (internal/tenancy).
+resource "google_cloud_run_domain_mapping" "marketplace" {
+  for_each = local.marketplace_hosts
+
+  location = var.region
+  name     = each.value
 
   metadata {
     namespace = var.project_id

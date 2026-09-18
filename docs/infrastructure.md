@@ -457,6 +457,42 @@ gcloud sql connect marketplace --user=postgres --database=marketplace \
 
 It authorizes the client address for a few minutes and then removes it again.
 
+## Marketplaces and their hosts
+
+A marketplace is declared once, in the environment's own `.tfvars`, and that
+one declaration is used twice: Terraform maps a domain per host, and the
+migration job seeds the same list into the database.
+
+```hcl
+marketplaces = [
+  {
+    slug    = "marketplace1"
+    hosts   = ["marketplace1.marketplace.lab.aleogr.dev"]
+    # ... market, revenue model, languages, contact flags
+  }
+]
+```
+
+**Why not a migration.** Migrations are versioned and every environment runs
+all of them, so a host written into one is created everywhere — production
+would hold the lab's addresses. The market stays in a migration, because Brazil
+is Brazil everywhere; the hosts do not, because they are the environment's.
+
+**Why the declaration is authoritative.** Seeding removes a host the
+environment has stopped declaring. A host left behind would keep resolving to a
+marketplace nobody is pointing DNS at, which is a working answer to a question
+nobody asked any more.
+
+**The DNS record is still by hand**, in Cloudflare, as a CNAME to
+`ghs.googlehosted.com` in **DNS only** mode — the same shape as the platform's
+own host above. Domain mapping supports no wildcard, so every marketplace costs
+one record, one mapping and one certificate, and the certificate is why
+creating a marketplace is not instant (`docs/requirements.md`, section 7).
+
+**Which marketplace serves a request is decided inside the process**, from the
+host it receives. Every mapping points at the one Cloud Run service; there is
+no routing layer and nothing to keep in step with the database.
+
 ## Branch protection
 
 The `main` branch is covered by the `protect-main` ruleset: a pull request is
