@@ -11,6 +11,11 @@ for a certificate, which Cloud Run issues in about fifteen minutes and may take
 a day, and a deployment must not fail for a wait that was expected. The hosts
 to check are named in MARKETPLACE_HOSTS, and the run that names them is the one
 that produces the delivery's evidence.
+
+The address no marketplace claims is named separately, in
+MARKETPLACE_UNCLAIMED_URL, and that check does run in the pipeline: the
+deployment's own `run.app` address is exactly such an address, and it is the
+one thing here that needs no certificate to wait for.
 """
 
 from __future__ import annotations
@@ -53,24 +58,37 @@ def test_every_host_answers_as_the_same_build():
     )
 
 
-@needs_the_lab
-def test_an_unknown_host_is_refused():
-    """A host nobody configured is told so, never served a default.
+unclaimed = os.environ.get("MARKETPLACE_UNCLAIMED_URL", "").strip()
 
-    The request carries a host the lab does not know; the reply must say so
-    rather than pick a marketplace.
+needs_an_unclaimed_address = pytest.mark.skipif(
+    not unclaimed,
+    reason="set MARKETPLACE_UNCLAIMED_URL to an address of the service that no "
+    "marketplace claims, such as its own run.app address",
+)
+
+
+@needs_an_unclaimed_address
+def test_an_address_no_marketplace_claims_is_told_so():
+    """The page for a host that belongs to nobody, proved on the deployment.
+
+    It is asked of an address the edge does route to the service but no
+    marketplace claims — the deployment's own `run.app` address. Sending an
+    unknown `Host:` header to a mapped address proves nothing instead: Google's
+    front end routes by that header, and one it has no mapping for is refused
+    with Google's own 404 page before the request reaches the binary.
     """
-    known = hosts()[0]
-    request = urllib.request.Request(
-        f"https://{known}/", headers={"Host": "not-a-marketplace.example"}
-    )
+    request = urllib.request.Request(unclaimed.rstrip("/") + "/")
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             raise AssertionError(
-                f"an unknown host was served with status {response.status}"
+                f"an unclaimed address was served with status {response.status}"
             )
     except urllib.error.HTTPError as error:
         assert error.code == 404, error.code
+        # Never indexable, whatever the deployment's setting.
+        assert error.headers.get("X-Robots-Tag") == "noindex, nofollow", (
+            dict(error.headers)
+        )
         body = error.read().decode()
         # Both languages, because a request with no marketplace has no language
         # to pick from (docs/requirements.md, section 6).

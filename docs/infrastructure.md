@@ -510,6 +510,13 @@ creating a marketplace is not instant (`docs/requirements.md`, section 7).
 host it receives. Every mapping points at the one Cloud Run service; there is
 no routing layer and nothing to keep in step with the database.
 
+**A host with no mapping never reaches the process at all.** Google's front end
+routes by the `Host` header, and one it has no mapping for is refused with
+Google's own 404 before the request arrives. The platform's own page for a host
+that belongs to no marketplace is therefore what an address the edge *does*
+route answers with — the service's `run.app` address, which no marketplace
+claims. That is where every deployment proves it (`e2e/test_hosts.py`).
+
 ## Branch protection
 
 The `main` branch is covered by the `protect-main` ruleset: a pull request is
