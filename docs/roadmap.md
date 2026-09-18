@@ -261,7 +261,7 @@ Cloud Shell):
 
 ### F5 — Markets, marketplaces and host resolution
 
-- [ ] **Objective:** the host of the incoming request decides which marketplace serves it, and
+- [x] **Objective:** the host of the incoming request decides which marketplace serves it, and
   Brazil is a row in `market`, not a branch in the code (§5, §7, design §4).
 
 **Depends on:** F4.
@@ -276,8 +276,13 @@ Cloud Shell):
   **with effective dates**, address format), `marketplace` (market, languages, revenue model, the
   per-marketplace flags of design decision 2, state `in_preparation` / `active`) and
   `marketplace_host`.
-- A seed migration creating the `BR` market and the lab marketplace. The platform host resolves to
-  the platform, not to a marketplace.
+- A seed migration creating the `BR` market, which is environment-neutral: Brazil is Brazil
+  everywhere. The **marketplaces come from the environment**, not from a migration, because their
+  hosts do: a host written into a versioned migration would be created in every environment that
+  ever runs it, so production would hold the lab's addresses. Terraform declares them once and uses
+  them twice — a domain mapping per host, and the same list seeded by the migration job. The
+  platform host is configuration for the same reason, and resolves to the platform rather than to
+  a marketplace.
 - `internal/tenancy`: service and repository, with a short-lived in-process cache of the host map
   and explicit invalidation.
 - The host-resolution middleware, first in the pipeline (design §2.3), and an explicit page for an
@@ -287,7 +292,9 @@ Cloud Shell):
 - Unit tests over a resolution table: known marketplace host, platform host, unknown host, a host
   with a port, an uppercase host, a marketplace still `in_preparation`.
 - An integration test with two marketplaces proving the context carries the right one.
-- An end-to-end test against the lab reaching both hosts, with screenshots.
+- An end-to-end test against the lab reaching both hosts, with screenshots. It names the hosts in
+  `MARKETPLACE_HOSTS` and is not part of the deployment pipeline: a newly mapped host waits for a
+  certificate that can take a day, and a deployment must not fail for a wait that was expected.
 
 **Not in this delivery:** the console wizard that creates a marketplace (design decision 16); its
 infrastructure checklist is written in F19 and the wizard belongs to a later phase.

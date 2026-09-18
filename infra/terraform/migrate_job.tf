@@ -84,6 +84,15 @@ resource "google_cloud_run_v2_job" "migrate" {
           value = google_sql_user.service.name
         }
 
+        # The marketplaces this environment declares, as the job reads them.
+        # Terraform is what knows them, because it is also what maps their
+        # hosts; the database learns them from here rather than from a
+        # migration every environment would run (internal/tenancy/seed.go).
+        env {
+          name  = "SEED_MARKETPLACES"
+          value = jsonencode(var.marketplaces)
+        }
+
         env {
           name  = "LOG_LEVEL"
           value = "info"
