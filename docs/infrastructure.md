@@ -138,6 +138,28 @@ BOOTSTRAP
   OIDC token for credentials on each run, so there is nothing to leak from a
   public repository (`docs/requirements.md`, section 27).
 
+### What the bootstrap produced, verified afterwards
+
+`gcloud storage buckets describe gs://aleogr-marketplace-lab-a4j5-tfstate`, run
+in Cloud Shell on 2026-09-18. This is the third verification item of delivery
+F2 (`docs/roadmap.md`): the state bucket is the one resource whose loss is not
+recoverable from this repository, so its properties are read back rather than
+assumed from the block above.
+
+| Property | Value |
+|---|---|
+| `versioning_enabled` | `true` |
+| `uniform_bucket_level_access` | `true` |
+| `public_access_prevention` | `enforced` |
+| `location` | `US-CENTRAL1` |
+
+The bucket also reports a `soft_delete_policy` of seven days, which Cloud
+Storage applies by default and the block above never asked for. It is a second
+recovery layer rather than a replacement for versioning, because the two answer
+different questions: versioning answers "the state was overwritten with
+something broken", soft delete answers "the state was deleted". Neither costs
+anything measurable for a file of this size.
+
 ## GitHub repository variables
 
 Set under **Settings → Secrets and variables → Actions → Variables**. They are
@@ -214,8 +236,29 @@ turn the project off. They are created once, by hand, and recorded here.
 ## Branch protection
 
 The `main` branch is covered by the `protect-main` ruleset: a pull request is
-required, the four CI checks must pass, branches must be up to date before
-merging, deletions are restricted and force pushes are blocked.
+required, the required status checks must pass, branches must be up to date
+before merging, deletions are restricted and force pushes are blocked.
+
+| Required check | Workflow |
+|---|---|
+| `Build, lint and test` | `ci.yml` |
+| `End-to-end tests` | `ci.yml` |
+| `Secret detection` | `ci.yml` |
+| `Image build and scan` | `ci.yml` |
+| `Format and validate` | `terraform.yml` |
+
+A check is named after its **job**, not after its workflow. The pull request
+page shows `Terraform / Format and validate`, which is the workflow and the job
+joined for display; the ruleset matches the check run's own name, which is
+`Format and validate`.
+
+**`Plan the lab` is deliberately not in the list.** It does not run on every
+pull request — it is skipped for a pull request from a fork and for Dependabot,
+because the federation issues credentials only against a token minted for this
+repository and Dependabot's token is read-only. A gate has to mean the same
+thing on every pull request to be a gate, and that one cannot. `Format and
+validate` needs no credential, runs everywhere, and answers the question that
+matters before a merge: whether `infra/terraform/` is well-formed.
 
 Required approvals is **0**, because Claude Code never approves its own pull
 requests and there is one human on the repository; the guarantee comes from the
