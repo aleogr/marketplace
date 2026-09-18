@@ -12,7 +12,7 @@ VERSION ?= $(shell git describe --tags --dirty 2>/dev/null \
 	|| echo "$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)-$$(date -u +%Y%m%d)")
 LDFLAGS := -X $(PKG)/internal/platform/version.version=$(VERSION)
 
-.PHONY: all build run check vet staticcheck lint sec vuln test cover e2e fmt clean version
+.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover e2e fmt clean version
 
 all: check test
 
@@ -25,7 +25,26 @@ run: build
 version:
 	@echo $(VERSION)
 
-check: vet staticcheck lint sec vuln
+check: toolchain vet staticcheck lint sec vuln
+
+# The Dockerfile and go.mod must name the same Go release. The toolchain line
+# wins at build time, so a Dockerfile ahead of it is decoration: the image would
+# say one version while the binary was built with another, and nothing would
+# fail to say so. Dependabot only sees the Dockerfile, so this is the check that
+# makes it bring go.mod along.
+toolchain:
+	@image=$$(sed -n 's|^FROM golang:\([^ ]*\) .*|\1|p' Dockerfile); \
+	 pinned=$$(sed -n 's|^toolchain go||p' go.mod); \
+	 if [ -z "$$image" ] || [ -z "$$pinned" ]; then \
+	   echo "cannot read the Go release from Dockerfile ('$$image') or from go.mod ('$$pinned')"; \
+	   exit 1; \
+	 fi; \
+	 if [ "$$image" != "$$pinned" ]; then \
+	   echo "Dockerfile builds on golang:$$image but go.mod pins toolchain go$$pinned."; \
+	   echo "The toolchain line wins at build time, so both must name the same release."; \
+	   exit 1; \
+	 fi; \
+	 echo "Go $$pinned in both the Dockerfile and go.mod"
 
 vet:
 	$(GO) vet ./...

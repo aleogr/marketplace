@@ -27,7 +27,7 @@ jobs:
       - name: Build
         run: make build
 
-      - name: Vet, staticcheck, lint, gosec, govulncheck
+      - name: Toolchain consistency, vet, staticcheck, lint, gosec, govulncheck
         run: make check
 
       - name: Unit and integration tests

@@ -2,7 +2,7 @@ module github.com/aleogr/marketplace
 
 go 1.26.0
 
-toolchain go1.26.6
+toolchain go1.27.1
 
 tool (
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
