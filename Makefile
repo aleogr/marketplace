@@ -51,10 +51,12 @@ toolchain:
 # template edited without regenerating fails here rather than serving the old
 # markup.
 templates:
-	@$(GO) tool templ generate > /dev/null
-	@if ! git diff --quiet -- '*_templ.go'; then \
-	   echo "the generated template code is out of date; run 'make generate' and commit the result"; \
-	   git --no-pager diff --stat -- '*_templ.go'; \
+	@before=$$(find . -name '*_templ.go' -exec sha256sum {} + | sort); \
+	 $(GO) tool templ generate > /dev/null; \
+	 after=$$(find . -name '*_templ.go' -exec sha256sum {} + | sort); \
+	 if [ "$$before" != "$$after" ]; then \
+	   echo "the generated template code was out of date; it has just been regenerated."; \
+	   echo "Review the change and commit it."; \
 	   exit 1; \
 	 fi
 	@echo "the generated template code is current"

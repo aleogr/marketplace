@@ -419,7 +419,7 @@ infrastructure checklist is written in F19 and the wizard belongs to a later pha
 
 ### F9 — Indexing control and page descriptions
 
-- [ ] **Objective:** the lab cannot be indexed by accident, and a real deployment becomes
+- [x] **Objective:** the lab cannot be indexed by accident, and a real deployment becomes
   indexable by flipping one variable (§7.1, §7.2).
 
 **Depends on:** F3 (the variable is declared in Terraform), F8 (the page layout exists).
@@ -432,8 +432,15 @@ infrastructure checklist is written in F19 and the wizard belongs to a later pha
 - A middleware mounted once writing `X-Robots-Tag: noindex, nofollow` on **every response the
   process writes**, not only HTML.
 - `robots.txt` always serving `Allow: /` and never `Disallow: /`; when indexing is off it omits
-  only the `Sitemap:` line, with a comment in its place saying why.
-- Open Graph and Twitter tags and the preview image served normally in both modes.
+  only the `Sitemap:` line, with a comment in its place saying why. **With indexing on the line is
+  still absent for now**, with a different comment saying so: the sitemap arrives with the first
+  indexable pages in phase 2, and inviting a crawler to a 404 is worse than not inviting it. The
+  end-to-end test asserts each comment in its own mode, so the day the sitemap exists the test
+  fails until the line is back.
+- Open Graph and Twitter tags and the preview image served normally in both modes. The image is
+  **drawn from the marketplace's name** rather than stored: one file per marketplace would be a
+  file to remember on the day somebody creates the fourth one, and a binary blob nobody can review
+  in the diff. A designed image replaces the drawn one when the brand exists.
 - A single description source feeding `<meta name="description">`, `og:description` and
   `twitter:description`, cut at about 160 **runes** at the end of a sentence, never mid-word and
   never mid-rune.

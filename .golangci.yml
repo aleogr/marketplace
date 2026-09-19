@@ -18,8 +18,12 @@ linters:
       # follow it so that one repository does not hold two spellings.
       locale: UK
       ignore-rules:
-        # Go's own identifiers: context.Canceled, http.ErrServerClosed's docs.
+        # Go's own identifiers: context.Canceled, http.ErrServerClosed's docs,
+        # and the image/color package, which the checker reads as American
+        # prose. The documentation is British; the standard library is not
+        # ours to rename.
         - canceled
+        - color
         # Portuguese words the checker reads as misspelled English. User-facing
         # text exists in both languages by definition (docs/requirements.md,
         # section 6), and a spell checker with one locale cannot judge the

@@ -35,5 +35,7 @@
   "weekday.friday": "Friday",
   "weekday.saturday": "Saturday",
   "page.platform.title": "Marketplace platform",
-  "page.platform.welcome": "This address serves the platform itself. Each marketplace answers on its own address."
+  "page.platform.welcome": "This address serves the platform itself. Each marketplace answers on its own address.",
+  "page.home.description": "%[1]s is an online marketplace. Buy and sell with payment held until delivery, shipping calculated at checkout and a reputation on every store.",
+  "page.platform.description": "The platform behind each marketplace. Every marketplace answers on its own address, in its own languages, with its own rules."
 }

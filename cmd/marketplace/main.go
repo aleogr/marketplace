@@ -27,6 +27,7 @@ import (
 	"github.com/aleogr/marketplace/internal/platform/i18n"
 	"github.com/aleogr/marketplace/internal/platform/logging"
 	"github.com/aleogr/marketplace/internal/platform/ratelimit"
+	"github.com/aleogr/marketplace/internal/platform/seo"
 	"github.com/aleogr/marketplace/internal/platform/version"
 	"github.com/aleogr/marketplace/internal/tenancy"
 )
@@ -130,16 +131,31 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		checker = database
 	}
 
+	// The preview image is drawn from the marketplace's name rather than
+	// stored, so a new marketplace needs no new file (internal/platform/seo).
+	preview, err := seo.NewPreview()
+	if err != nil {
+		return fmt.Errorf("cannot prepare the link preview: %w", err)
+	}
+
 	pages := httpx.NewPages(catalogue)
-	handler := httpx.NewSite(checker, catalogue).Handler()
+	handler := httpx.NewSite(checker, catalogue, preview, cfg.Indexable).Handler()
 
 	// Language comes next, and it redirects: the language is part of the URL,
 	// so a page is never served at an address that does not say which language
 	// it is in (docs/design.md, decision 10). Country detection is a port with
 	// no adapter yet, which is a working deployment — everyone gets the
 	// official language until they choose otherwise (docs/roadmap.md, F18).
+	//
+	// Four addresses are outside it. The health check and the language switch
+	// are not pages. `robots.txt` is read by a crawler before it reads
+	// anything else and is defined to live at the root, and the link preview
+	// is fetched by a scraper that may not follow a redirect at all — neither
+	// has a language to be served in, and sending either into one would mean
+	// the canonical address of a machine-read file is /en-US/robots.txt.
 	handler = i18n.NewResolver(catalogue, geoip.Nowhere{}).
-		Resolve(httpx.Speaks(catalogue), httpx.HealthPath, httpx.LanguagePath)(handler)
+		Resolve(httpx.Speaks(catalogue),
+			httpx.HealthPath, httpx.LanguagePath, httpx.RobotsPath, httpx.PreviewPath)(handler)
 
 	// Host resolution comes before that, because language, session and every
 	// query after it are scoped by the answer (docs/design.md, section 2.3).

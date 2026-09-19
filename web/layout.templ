@@ -2,6 +2,11 @@ package web
 
 // Layout is the shell every page is served in.
 //
+// The description tag, og:description and twitter:description all take one
+// field, already cut to length. Three fields would describe the page three
+// ways and drift apart without anybody noticing (docs/requirements.md,
+// section 7.2).
+//
 // Three things here are not decoration. The `lang` attribute tells a reader's
 // browser and a screen reader which language the text is in. The `hreflang`
 // links tell a search engine that these pages are each other's translations,
@@ -16,6 +21,18 @@ templ Layout(page Page, title string) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title }</title>
+			<meta name="description" content={ page.Description }/>
+			<meta property="og:type" content="website"/>
+			<meta property="og:site_name" content={ page.Title() }/>
+			<meta property="og:title" content={ title }/>
+			<meta property="og:description" content={ page.Description }/>
+			<meta property="og:url" content={ page.URL }/>
+			<meta property="og:image" content={ page.Image }/>
+			<meta property="og:locale" content={ page.Language }/>
+			<meta name="twitter:card" content="summary_large_image"/>
+			<meta name="twitter:title" content={ title }/>
+			<meta name="twitter:description" content={ page.Description }/>
+			<meta name="twitter:image" content={ page.Image }/>
 			for tag, address := range page.Alternates {
 				<link rel="alternate" hreflang={ tag } href={ address }/>
 			}

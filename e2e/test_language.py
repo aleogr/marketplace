@@ -29,29 +29,29 @@ def fetch(url: str, follow: bool = True):
         return error
 
 
-def test_the_root_sends_a_visitor_into_a_language(server):
+def test_the_root_sends_a_visitor_into_a_language(site_url):
     """No page is served at an address that does not say its language."""
-    response = fetch(f"{server.base_url}/", follow=False)
+    response = fetch(f"{site_url}/", follow=False)
 
     assert response.status == 302, response.status
     assert response.headers["Location"] == "/en-US/"
 
 
-def test_a_lowercase_address_is_corrected_permanently(server):
+def test_a_lowercase_address_is_corrected_permanently(site_url):
     """Two spellings of one address are two pages to a search engine, so one
     of them answers permanently with the other (docs/design.md, decision 10)."""
-    response = fetch(f"{server.base_url}/en-us/", follow=False)
+    response = fetch(f"{site_url}/en-us/", follow=False)
 
     assert response.status == 301, response.status
     assert response.headers["Location"] == "/en-US/"
 
 
-def test_each_language_is_its_own_page(server):
+def test_each_language_is_its_own_page(site_url):
     """The same page, in both languages, each at its own address, each saying
     which language it is in and where the other one is."""
     pages = {}
     for tag in ("en-US", "pt-BR"):
-        response = fetch(f"{server.base_url}/{tag}/")
+        response = fetch(f"{site_url}/{tag}/")
         assert response.status == 200, tag
         pages[tag] = response.read().decode()
 
@@ -66,7 +66,7 @@ def test_each_language_is_its_own_page(server):
     assert pages["en-US"] != pages["pt-BR"], "both addresses served the same text"
 
 
-def test_the_switch_is_remembered_across_sessions(server, screenshots):
+def test_the_switch_is_remembered_across_sessions(site_url, screenshots):
     """A visitor's own choice outranks every guess, on this visit and the next.
 
     The browser is closed between the two halves, keeping only the cookies, as
@@ -77,7 +77,7 @@ def test_the_switch_is_remembered_across_sessions(server, screenshots):
 
         first = browser.new_context()
         page = first.new_page()
-        page.goto(f"{server.base_url}/en-US/")
+        page.goto(f"{site_url}/en-US/")
         page.screenshot(path=str(screenshots / "home-en-US.png"))
 
         # The switch is a form, because it changes something that is
@@ -98,7 +98,7 @@ def test_the_switch_is_remembered_across_sessions(server, screenshots):
         second = browser.new_context()
         second.add_cookies(cookies)
         returning = second.new_page()
-        returning.goto(f"{server.base_url}/")
+        returning.goto(f"{site_url}/")
 
         assert returning.url.endswith("/pt-BR/"), (
             f"a returning visitor landed on {returning.url}, not on what they chose"
