@@ -205,17 +205,18 @@ func (c *Client) Confirm(ctx context.Context, event mail.Event) (bool, error) {
 	if event.Message != "" {
 		query.Set("messageId", event.Message)
 	}
-	// How far back to look. A webhook that the provider retried for a day is
-	// still found, and a window with no beginning would make a stale event
-	// look like a current one.
+	// No window at all, and both halves of that are the provider's own rules,
+	// learned one refusal at a time.
 	//
-	// There is deliberately no end date. The provider refuses one that is
-	// greater than the current date, and "current" is the account's own time
-	// zone, which this process does not know: a date computed here in UTC is
-	// tomorrow's for an account behind UTC for part of every day. The default
-	// end is now, which is what was wanted anyway. A start date in the past is
-	// in the past in every time zone.
-	query.Set("startDate", time.Now().UTC().AddDate(0, 0, -7).Format(time.DateOnly))
+	// An end date must not be greater than the current date, and "current" is
+	// the account's time zone, which this process does not know: a date
+	// computed here in UTC is tomorrow's for an account behind UTC during part
+	// of every day. And a start date may not be sent alone — "Start and end
+	// date both required together". Sending neither leaves the provider's own
+	// default window, which covers an event that arrived seconds ago and a
+	// webhook it retried for hours, and it is the only form with no time zone
+	// in it. The question is narrow enough without dates: this address, this
+	// event, this message.
 
 	request, err := c.request(ctx, http.MethodGet, "/smtp/statistics/events?"+query.Encode(), nil)
 	if err != nil {
