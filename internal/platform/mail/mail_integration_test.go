@@ -3,6 +3,8 @@
 package mail_test
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -23,7 +25,6 @@ import (
 	"github.com/aleogr/marketplace/internal/platform/mail/mailbox"
 	"github.com/aleogr/marketplace/internal/platform/outbox"
 	"github.com/aleogr/marketplace/internal/platform/seo"
-	"github.com/aleogr/marketplace/internal/tenancy"
 )
 
 // token is the shared secret this deployment would have given the provider.
@@ -34,6 +35,24 @@ func TestMain(m *testing.M) {
 }
 
 func quiet() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+// unique returns a name no other test and no earlier run has used.
+//
+// The packages of one test run share a database in CI — it is a service
+// container, named in TEST_DATABASE_URL — and a session can be pointed at a
+// database that outlives the run. A test that wrote a fixed address would
+// therefore find that address already suppressed on the second run, and would
+// pass or fail depending on what ran before it.
+func unique(name string) string {
+	raw := make([]byte, 8)
+	if _, err := rand.Read(raw); err != nil {
+		panic("cannot name a fixture: " + err.Error())
+	}
+	return name + "-" + hex.EncodeToString(raw)
+}
+
+// address returns an address of this test's own.
+func address(name string) string { return unique(name) + "@example.test" }
 
 // migrated returns a pool whose database carries the schema.
 func migrated(t *testing.T) *db.Pool {
@@ -201,9 +220,9 @@ func (p platform) suppressed(t *testing.T, address string) bool {
 // recorded as skipped (docs/roadmap.md, F11).
 func TestABounceStopsTheNextMessage(t *testing.T) {
 	site := assemble(t)
-	const address = "gone@example.test"
+	bounced := address("gone")
 
-	if err := site.mailer.Send(t.Context(), site.message(address)); err != nil {
+	if err := site.mailer.Send(t.Context(), site.message(bounced)); err != nil {
 		t.Fatalf("the first message could not be sent: %v", err)
 	}
 	if site.delivered(t) != 1 {
@@ -211,9 +230,11 @@ func TestABounceStopsTheNextMessage(t *testing.T) {
 	}
 
 	// What the provider reports about it, through the endpoint it posts to.
-	sent := site.sentMessage(t, address)
+	sent := site.sentMessage(t, bounced)
 	if status := site.report(t, mail.Event{
-		ID: "event-1", Message: sent, Address: "Gone@Example.Test",
+		// Reported in another case than it is stored in, which is the form
+		// an address comes back from a provider in more often than not.
+		ID: "event-1", Message: sent, Address: strings.ToUpper(bounced),
 		Kind: mail.Bounce, Reported: "hard_bounce", Reason: "550 no such mailbox",
 	}); status != http.StatusAccepted {
 		t.Fatalf("the webhook answered %d, want %d", status, http.StatusAccepted)
@@ -221,24 +242,24 @@ func TestABounceStopsTheNextMessage(t *testing.T) {
 
 	// Nothing has happened yet: the endpoint acknowledged and wrote, which is
 	// all it does.
-	if site.suppressed(t, address) {
+	if site.suppressed(t, bounced) {
 		t.Fatal("the endpoint suppressed the address itself instead of writing an event")
 	}
 
 	site.dispatch(t)
 
-	if !site.suppressed(t, address) {
+	if !site.suppressed(t, bounced) {
 		t.Fatal("the bounce was delivered and suppressed nobody")
 	}
 
-	if err := site.mailer.Send(t.Context(), site.message(address)); err != nil {
+	if err := site.mailer.Send(t.Context(), site.message(bounced)); err != nil {
 		t.Fatalf("the second message returned %v; a suppressed address is not a failure", err)
 	}
 	if got := site.delivered(t); got != 1 {
 		t.Errorf("the provider received %d messages, want the first one only", got)
 	}
 
-	states := site.states(t, address)
+	states := site.states(t, bounced)
 	want := []string{string(mail.StateSent), string(mail.StateSkipped)}
 	if len(states) != len(want) || states[0] != want[0] || states[1] != want[1] {
 		t.Errorf("the sending log reads %v, want %v", states, want)
@@ -267,22 +288,22 @@ func (p platform) sentMessage(t *testing.T, address string) string {
 // writing to any address they named (docs/requirements.md, section 25).
 func TestAnEventTheProviderNeverReportedSuppressesNobody(t *testing.T) {
 	site := assemble(t)
-	const address = "victim@example.test"
+	victim := address("victim")
 
 	if status := site.report(t, mail.Event{
 		ID: "event-2", Message: "a-message-this-platform-never-sent",
-		Address: address, Kind: mail.Bounce, Reported: "hard_bounce",
+		Address: victim, Kind: mail.Bounce, Reported: "hard_bounce",
 	}); status != http.StatusAccepted {
 		t.Fatalf("the webhook answered %d, want %d", status, http.StatusAccepted)
 	}
 
 	site.dispatch(t)
 
-	if site.suppressed(t, address) {
+	if site.suppressed(t, victim) {
 		t.Error("an address was suppressed by an event the provider does not report")
 	}
 
-	if err := site.mailer.Send(t.Context(), site.message(address)); err != nil {
+	if err := site.mailer.Send(t.Context(), site.message(victim)); err != nil {
 		t.Fatalf("Send() = %v", err)
 	}
 	if site.delivered(t) != 1 {
@@ -301,45 +322,43 @@ func TestTheSendingLogBelongsToItsMarketplace(t *testing.T) {
 	mine := site.marketplace(t, "marketplace-one")
 	theirs := site.marketplace(t, "marketplace-two")
 
-	// An address of this test's own: the tests of a package share one
-	// database, and a count with no condition would be counting everybody's
-	// rows.
-	const address = "tenant-reader@example.test"
+	// An address of this test's own, for the same reason: a count with no
+	// condition would be counting every test's rows.
+	reader := address("tenant-reader")
 
-	message := site.message(address)
+	message := site.message(reader)
 	message.Marketplace = mine
 	if err := site.mailer.Send(t.Context(), message); err != nil {
 		t.Fatalf("Send() = %v", err)
 	}
 
-	if got := site.countFor(t, mine, address); got != 1 {
+	if got := site.countFor(t, mine, reader); got != 1 {
 		t.Errorf("the marketplace sees %d of its own sends, want 1", got)
 	}
-	if got := site.countFor(t, theirs, address); got != 0 {
+	if got := site.countFor(t, theirs, reader); got != 0 {
 		t.Errorf("another marketplace sees %d of them, want none", got)
 	}
 }
 
-// marketplace seeds one and returns its identifier.
-func (p platform) marketplace(t *testing.T, slug string) string {
+// marketplace creates one and returns its identifier.
+//
+// Written here rather than seeded through internal/tenancy, and deliberately
+// with **no host**: the packages of one test run share a database, and the
+// tenancy tests count the hosts in it. A fixture of this package that added
+// one would fail a test in another (docs/roadmap.md, F11). What this test
+// needs from a marketplace is its identifier, which is what scopes the rows.
+func (p platform) marketplace(t *testing.T, name string) string {
 	t.Helper()
-
-	if err := p.pool.InTx(t.Context(), func(tx pgx.Tx) error {
-		return tenancy.Seed(t.Context(), tx, []tenancy.Spec{{
-			Slug: slug, Name: slug, Market: "BR", RevenueModel: "commission",
-			DefaultLanguage: "pt-BR", Languages: []string{"en-US", "pt-BR"},
-			Hosts: []string{slug + ".example.test"},
-		}})
-	}); err != nil {
-		t.Fatalf("cannot seed %s: %v", slug, err)
-	}
 
 	var id string
 	if err := p.pool.InTx(t.Context(), func(tx pgx.Tx) error {
-		return tx.QueryRow(t.Context(),
-			`SELECT id::text FROM marketplace WHERE slug = $1`, slug).Scan(&id)
+		return tx.QueryRow(t.Context(), `
+			INSERT INTO marketplace (slug, name, market_code, revenue_model, default_language)
+			VALUES ($1, $2, 'BR', 'commission', 'pt-BR')
+			RETURNING id::text
+		`, unique(name), name).Scan(&id)
 	}); err != nil {
-		t.Fatalf("cannot read %s: %v", slug, err)
+		t.Fatalf("cannot create the marketplace %s: %v", name, err)
 	}
 	return id
 }
