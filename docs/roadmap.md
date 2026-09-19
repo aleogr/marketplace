@@ -379,7 +379,7 @@ infrastructure checklist is written in F19 and the wizard belongs to a later pha
 
 ### F8 — Internationalization: en-US and pt-BR
 
-- [ ] **Objective:** both languages fully working, the language in the URL, and no user-facing
+- [x] **Objective:** both languages fully working, the language in the URL, and no user-facing
   text outside a translation key (§6).
 
 **Depends on:** F5.
@@ -393,12 +393,19 @@ infrastructure checklist is written in F19 and the wizard belongs to a later pha
 - Language resolution in the order of design decision 10: **an explicit language in the URL always
   wins**; then the remembered choice in a one-year cookie; then country detection (the `geoip`
   port, satisfied by the fake until F18); then `en-US`.
+- Plural forms follow CLDR, with an exact `=0` form available where a language needs one. Portuguese
+  needs one: CLDR puts zero in its `one` category, which would have the platform say
+  "0 anúncio".
 - Canonical BCP 47 prefixes `/en-US/` and `/pt-BR/`; a lowercase variant redirects with **301** to
   the canonical form; `hreflang` and `x-default` links on every page.
 - A manual language switch on every page, which writes the cookie.
 - Two CI checks: a catalogue-parity check failing when a key exists in one language and not the
   other, and a check failing when a template contains a user-facing literal outside a translation
-  call.
+  call. Both are tests, so they run wherever the tests run, and both were checked against the
+  failure they exist to catch.
+- A third, which the delivery found it needed: the generated template code is committed, and
+  `make check` fails when it is out of date. A template edited without regenerating would
+  otherwise serve the old markup with no check saying so.
 
 **Verification:**
 - Unit tests over the resolution table, enumerating: explicit URL against a contrary cookie,

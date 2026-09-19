@@ -1,0 +1,90 @@
+package web
+
+// Layout is the shell every page is served in.
+//
+// Three things here are not decoration. The `lang` attribute tells a reader's
+// browser and a screen reader which language the text is in. The `hreflang`
+// links tell a search engine that these pages are each other's translations,
+// which is what keeps two languages from competing as duplicates
+// (docs/design.md, decision 10). And the style carries the nonce of this one
+// response, so the Content Security Policy can refuse every other script and
+// style on the page (docs/roadmap.md, F7).
+templ Layout(page Page, title string) {
+	<!DOCTYPE html>
+	<html lang={ page.Language }>
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title }</title>
+			for tag, address := range page.Alternates {
+				<link rel="alternate" hreflang={ tag } href={ address }/>
+			}
+			<link rel="alternate" hreflang="x-default" href={ page.Default }/>
+			<style nonce={ page.Nonce }>
+				:root { color-scheme: light dark; }
+				body {
+					font-family: system-ui, sans-serif;
+					line-height: 1.5;
+					margin: 0 auto;
+					max-width: 40rem;
+					padding: 2rem 1rem;
+				}
+				header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+				nav form { display: inline; }
+				nav button {
+					background: none;
+					border: 0;
+					cursor: pointer;
+					font: inherit;
+					padding: 0.25rem;
+					text-decoration: underline;
+				}
+				nav button[aria-current="true"] { font-weight: 600; text-decoration: none; }
+				/* A pressed control must say so at once, whatever the
+				   connection is doing (docs/requirements.md, section 3). */
+				nav button:active { transform: scale(0.97); }
+				@media (prefers-reduced-motion: reduce) {
+					nav button:active { transform: none; }
+				}
+				footer { color: GrayText; font-size: 0.875rem; margin-top: 3rem; }
+			</style>
+		</head>
+		<body>
+			<header>
+				<strong>{ page.Title() }</strong>
+				@LanguageSwitch(page)
+			</header>
+			<main>
+				{ children... }
+			</main>
+			<footer>
+				<p>{ page.Year() } — { page.Title() }</p>
+			</footer>
+		</body>
+	</html>
+}
+
+// LanguageSwitch is the manual choice every page carries.
+//
+// It posts rather than links, because it changes something that is remembered:
+// the cookie that outranks country detection on every later visit. The
+// hreflang links above are what a crawler follows; this is what a person uses
+// (docs/requirements.md, section 6).
+templ LanguageSwitch(page Page) {
+	<nav aria-label={ page.T("language.switch") }>
+		for _, tag := range page.Languages() {
+			<form method="post" action="/language">
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<input type="hidden" name="language" value={ tag }/>
+				<input type="hidden" name="path" value={ page.Path }/>
+				<button
+					type="submit"
+					lang={ tag }
+					if tag == page.Language {
+						aria-current="true"
+					}
+				>{ page.Name(tag) }</button>
+			</form>
+		}
+	</nav>
+}

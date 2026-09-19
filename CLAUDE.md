@@ -47,13 +47,17 @@ These rules restate section 3 of `docs/requirements.md` and the agreements made 
 Once the code exists, the checks that CI runs are the ones to run before pushing; keep this list current:
 
 ```
-make check        # go vet, staticcheck, golangci-lint, gosec, govulncheck
+make check        # templates, go vet, staticcheck, golangci-lint, gosec, govulncheck
 make test         # go test ./... -race -cover
 make integration  # the tests that need a real PostgreSQL, behind the `integration` tag
 make e2e          # builds the binary and runs the end-to-end suite against it
 make e2e-lab      # the same suite against a deployed service (MARKETPLACE_BASE_URL)
 make tf           # terraform fmt -check, init -backend=false and validate
 ```
+
+The generated template code (`*_templ.go`) is committed. `make generate` writes
+it and `make check` fails when it is out of date, so a template edited without
+regenerating does not quietly serve the old markup.
 
 The tools are pinned as `tool` directives in `go.mod` and run through `go tool`,
 so a session and CI run the same versions. CI additionally runs `gitleaks` and

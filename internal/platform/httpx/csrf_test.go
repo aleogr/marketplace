@@ -9,7 +9,19 @@ import (
 	"testing"
 
 	"github.com/aleogr/marketplace/internal/platform/httpx"
+	"github.com/aleogr/marketplace/internal/platform/i18n"
 )
+
+// guarded returns the CSRF middleware, with the pages that write its refusal.
+func guarded(t *testing.T) func(http.Handler) http.Handler {
+	t.Helper()
+
+	catalogue, err := i18n.Load()
+	if err != nil {
+		t.Fatalf("i18n.Load() = %v", err)
+	}
+	return httpx.CSRF(httpx.NewPages(catalogue))
+}
 
 // session is one browser: the cookie it holds and the token it was given.
 type session struct {
@@ -23,7 +35,7 @@ func visit(t *testing.T) session {
 	t.Helper()
 
 	var token string
-	handler := httpx.CSRF(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+	handler := guarded(t)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		token = httpx.CSRFToken(r.Context())
 	}))
 
@@ -46,7 +58,7 @@ func visit(t *testing.T) session {
 func post(t *testing.T, s session, token string, inHeader bool) (int, string) {
 	t.Helper()
 
-	handler := httpx.CSRF(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := guarded(t)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -145,7 +157,7 @@ func TestATamperedTokenIsRefused(t *testing.T) {
 }
 
 func TestReadingIsNotGuarded(t *testing.T) {
-	handler := httpx.CSRF(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := guarded(t)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

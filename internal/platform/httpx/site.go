@@ -1,0 +1,143 @@
+package httpx
+
+import (
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/aleogr/marketplace/internal/platform/i18n"
+	"github.com/aleogr/marketplace/internal/tenancy"
+	"github.com/aleogr/marketplace/web"
+)
+
+// LanguagePath is where the manual language switch posts.
+//
+// It is outside the language prefixes, because it is what a visitor uses to
+// change which prefix they are under: an address that carried a language would
+// have to be reached in the language being left behind.
+const LanguagePath = "/language"
+
+// Site serves the pages a person reads.
+type Site struct {
+	database  Database
+	catalogue *i18n.Catalogue
+}
+
+// NewSite returns the site's routes, ready to be mounted behind the pipeline.
+func NewSite(database Database, catalogue *i18n.Catalogue) Site {
+	return Site{database: database, catalogue: catalogue}
+}
+
+// Handler returns the routes served by the process.
+func (s Site) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+HealthPath, health(s.database))
+	mux.HandleFunc("POST "+LanguagePath, s.switchLanguage)
+	mux.HandleFunc("GET /{$}", s.home)
+	return mux
+}
+
+// home is a marketplace's own address, in the language resolved for it.
+func (s Site) home(w http.ResponseWriter, r *http.Request) {
+	page := s.page(r, "/")
+
+	if page.Marketplace == "" {
+		// The platform's own host, which belongs to no marketplace.
+		render(w, r, web.Platform(page))
+		return
+	}
+	render(w, r, web.Home(page))
+}
+
+// switchLanguage remembers what a visitor chose and sends them back where they
+// were, in that language.
+func (s Site) switchLanguage(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "", http.StatusBadRequest)
+		return
+	}
+
+	languages, fallback := Speaks(s.catalogue)(r)
+	chosen := r.PostFormValue("language")
+	if !spoken(languages, chosen) {
+		chosen = fallback
+	}
+
+	i18n.Remember(w, r, chosen)
+
+	// Back to the page they were reading, in the language they chose. The path
+	// comes from the form and is therefore a visitor's to write, so only its
+	// path is used and never a host: a redirect that took a whole address from
+	// a form is an open redirect, and an open redirect is a phishing link with
+	// this deployment's name on it.
+	target := url.URL{Path: "/" + chosen + safePath(r.PostFormValue("path"))}
+	// #nosec G710 -- safePath keeps a path and discards a host; see above.
+	http.Redirect(w, r, target.String(), http.StatusSeeOther)
+}
+
+// safePath keeps what a visitor may decide — where on this site to return to —
+// and discards what they may not: which site.
+func safePath(path string) string {
+	if path == "" || !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return "/"
+	}
+	if strings.ContainsAny(path, "\\\r\n") {
+		return "/"
+	}
+	return path
+}
+
+// page prepares everything a template may need for this request.
+func (s Site) page(r *http.Request, path string) web.Page {
+	tag := i18n.FromContext(r.Context())
+	languages, _ := Speaks(s.catalogue)(r)
+
+	page := web.NewPage(tag, s.catalogue.Printer(tag), s.names(languages))
+	page.Nonce = Nonce(r.Context())
+	page.CSRFToken = CSRFToken(r.Context())
+	page.Path = path
+	page.Default = "/" + i18n.Default + path
+
+	for _, language := range languages {
+		if language != tag {
+			page.Alternates[language] = "/" + language + path
+		}
+	}
+
+	if resolution, ok := tenancy.FromContext(r.Context()); ok && resolution.Marketplace != nil {
+		page.Marketplace = resolution.Marketplace.Name
+	}
+	return page
+}
+
+// names is each language's name in its own language, which is how a person
+// looks for it.
+func (s Site) names(languages []string) map[string]string {
+	names := map[string]string{}
+	for _, language := range languages {
+		names[language] = s.catalogue.Printer(language).Sprintf("language.name")
+	}
+	return names
+}
+
+// Speaks reports which languages a request may be served in: the marketplace's
+// own, or every language the platform has when the host belongs to no
+// marketplace.
+func Speaks(catalogue *i18n.Catalogue) i18n.Enabled {
+	return func(r *http.Request) ([]string, string) {
+		resolution, ok := tenancy.FromContext(r.Context())
+		if !ok || resolution.Marketplace == nil {
+			return catalogue.Languages(), i18n.Default
+		}
+		return resolution.Marketplace.Languages, resolution.Marketplace.DefaultLanguage
+	}
+}
+
+func spoken(languages []string, tag string) bool {
+	for _, language := range languages {
+		if language == tag {
+			return true
+		}
+	}
+	return false
+}

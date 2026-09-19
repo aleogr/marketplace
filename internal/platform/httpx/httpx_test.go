@@ -11,11 +11,23 @@ import (
 	"time"
 
 	"github.com/aleogr/marketplace/internal/platform/httpx"
+	"github.com/aleogr/marketplace/internal/platform/i18n"
 )
+
+// routes returns the site's routes, which every test here exercises through.
+func routes(t *testing.T, database httpx.Database) http.Handler {
+	t.Helper()
+
+	catalogue, err := i18n.Load()
+	if err != nil {
+		t.Fatalf("i18n.Load() = %v", err)
+	}
+	return httpx.NewSite(database, catalogue).Handler()
+}
 
 func TestHealthzReportsTheRunningBuild(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	httpx.Handler(nil).ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil))
+	routes(t, nil).ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
@@ -41,7 +53,7 @@ func TestHealthzReportsTheRunningBuild(t *testing.T) {
 
 func TestHandlerRefusesAnUnknownPath(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	httpx.Handler(nil).ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/no-such-page", nil))
+	routes(t, nil).ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/no-such-page", nil))
 
 	if recorder.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", recorder.Code, http.StatusNotFound)
@@ -76,7 +88,7 @@ func TestServeStopsWhenTheContextIsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
-	go func() { done <- httpx.Serve(ctx, ln, httpx.Handler(nil), time.Second) }()
+	go func() { done <- httpx.Serve(ctx, ln, routes(t, nil), time.Second) }()
 
 	response, err := get(t, "http://"+ln.Addr().String()+"/health")
 	if err != nil {
@@ -154,7 +166,7 @@ func TestServeReportsAListenerItCannotUse(t *testing.T) {
 	ln := listen(t)
 	ln.Close()
 
-	err := httpx.Serve(context.Background(), ln, httpx.Handler(nil), time.Second)
+	err := httpx.Serve(context.Background(), ln, routes(t, nil), time.Second)
 	if err == nil {
 		t.Fatal("Serve() returned nil for a closed listener, want an error")
 	}
@@ -198,7 +210,7 @@ func TestHealthReportsTheDatabase(t *testing.T) {
 			t.Parallel()
 
 			recorder := httptest.NewRecorder()
-			httpx.Handler(testCase.database).ServeHTTP(recorder,
+			routes(t, testCase.database).ServeHTTP(recorder,
 				httptest.NewRequestWithContext(t.Context(), http.MethodGet, httpx.HealthPath, nil))
 
 			if recorder.Code != testCase.wantStatus {
