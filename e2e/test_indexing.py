@@ -121,3 +121,28 @@ def test_the_start_up_log_says_which_mode_is_in_effect(run_server):
     indexable = run_server(INDEXABLE="true")
 
     assert indexable.entry("server started")["indexable"] is True
+
+
+def test_the_callback_endpoint_is_reached_and_refuses(server):
+    """Cloud Tasks and Cloud Scheduler do not follow redirects.
+
+    An endpoint that answered 302 would be a job that silently never runs, so
+    what is checked here is that the call reaches the endpoint at all — and,
+    reaching it, is refused for want of a token (docs/roadmap.md, F10).
+    """
+    request = urllib.request.Request(
+        server.base_url + "/internal/tasks",
+        method="POST",
+        data=b'{"job":"dispatch-outbox"}',
+        headers={"Content-Type": "application/json"},
+    )
+    opener = urllib.request.build_opener(Stop)
+    try:
+        status = opener.open(request, timeout=15).status
+    except urllib.error.HTTPError as error:
+        status = error.code
+
+    assert status != 302, "the callback was redirected into a language"
+    # 401 where the endpoint is mounted — a deployment, which has a database —
+    # and 404 where it is not, which is a local process running without one.
+    assert status in (401, 404), status

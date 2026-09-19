@@ -169,15 +169,17 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// no adapter yet, which is a working deployment — everyone gets the
 	// official language until they choose otherwise (docs/roadmap.md, F18).
 	//
-	// Four addresses are outside it. The health check and the language switch
-	// are not pages. `robots.txt` is read by a crawler before it reads
-	// anything else and is defined to live at the root, and the link preview
-	// is fetched by a scraper that may not follow a redirect at all — neither
-	// has a language to be served in, and sending either into one would mean
-	// the canonical address of a machine-read file is /en-US/robots.txt.
+	// Five addresses are outside it, and none of them is a page. The health
+	// check and the language switch are machinery. `robots.txt` is read by a
+	// crawler before it reads anything else and is defined to live at the
+	// root; the link preview is fetched by a scraper that may not follow a
+	// redirect at all; and the callback endpoint is called by Cloud Tasks and
+	// Cloud Scheduler, which do not follow redirects either — a redirect
+	// there is a job that silently never runs.
 	handler = i18n.NewResolver(catalogue, geoip.Nowhere{}).
 		Resolve(httpx.Speaks(catalogue),
-			httpx.HealthPath, httpx.LanguagePath, httpx.RobotsPath, httpx.PreviewPath)(handler)
+			httpx.HealthPath, httpx.LanguagePath, httpx.RobotsPath,
+			httpx.PreviewPath, httpx.TasksPath)(handler)
 
 	// Host resolution comes before that, because language, session and every
 	// query after it are scoped by the answer (docs/design.md, section 2.3).
