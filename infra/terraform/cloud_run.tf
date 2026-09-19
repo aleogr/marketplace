@@ -30,6 +30,13 @@ resource "google_cloud_run_v2_service" "marketplace" {
   description = "The marketplace platform (docs/design.md, section 3)."
   labels      = local.labels
 
+  # The name this service also answers to, for the tokens Cloud Tasks and
+  # Cloud Scheduler sign their callbacks with. Without it, Cloud Run would
+  # refuse a token minted for the platform's host, and the generated `run.app`
+  # address cannot be named here because it does not exist until this resource
+  # does (infra/terraform/tasks.tf).
+  custom_audiences = ["https://${var.platform_host}"]
+
   # The service is the public web site; there is no load balancer in front of
   # it (docs/requirements.md, section 24), so it takes traffic directly.
   ingress = "INGRESS_TRAFFIC_ALL"
@@ -124,6 +131,39 @@ resource "google_cloud_run_v2_service" "marketplace" {
       env {
         name  = "PLATFORM_HOST"
         value = var.platform_host
+      }
+
+      # Where the queues are, and who the callbacks are signed as. Declared
+      # here rather than discovered at run time: a process that had to ask
+      # which project it is in would fail differently in every environment
+      # (infra/terraform/tasks.tf).
+      env {
+        name  = "TASKS_PROJECT"
+        value = var.project_id
+      }
+
+      env {
+        name  = "TASKS_LOCATION"
+        value = var.region
+      }
+
+      env {
+        name  = "TASKS_INVOKER"
+        value = google_service_account.invoker.email
+      }
+
+      # The address Cloud Tasks and Cloud Scheduler call back, and which the
+      # token must be minted for.
+      #
+      # The platform's own host rather than the generated `run.app` one: that
+      # address is only known after the service exists, and naming it here
+      # would be a resource referring to itself. Cloud Run accepts a token
+      # minted for it because it is declared as a custom audience below —
+      # which is the supported way to say "this service also answers to this
+      # name".
+      env {
+        name  = "SERVICE_URL"
+        value = "https://${var.platform_host}"
       }
 
       env {

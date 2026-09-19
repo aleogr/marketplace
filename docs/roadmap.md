@@ -461,7 +461,7 @@ here so phase 2 only adds the measurement.
 
 ### F10 — Outbox, Cloud Tasks, Cloud Scheduler and the job runner
 
-- [ ] **Objective:** work that must not happen inside a request happens exactly once, without an
+- [x] **Objective:** work that must not happen inside a request happens exactly once, without an
   always-on worker (design §2.5).
 
 **Depends on:** F6.
@@ -478,7 +478,12 @@ volume (design §3).
   is refused.
 - A consumer registry, idempotent by event id.
 - `job_lock` keyed by job name with a lease, so two overlapping runs cannot both proceed.
-- Cloud Scheduler jobs declared in Terraform, calling the same endpoint.
+- Cloud Scheduler jobs declared in Terraform, calling the same endpoint. The first of them is the
+  dispatcher itself: emptying the outbox on the way out of a request would make one visitor pay for
+  everybody's work.
+- The callbacks are addressed to the **platform's own host**, declared as a custom audience on the
+  service. The generated `run.app` address cannot be used: it does not exist until the service does,
+  so naming it in that service's own environment would be a resource referring to itself.
 - A fake dispatcher running consumers inline, used by tests.
 
 **Verification:**

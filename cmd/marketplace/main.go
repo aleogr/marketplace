@@ -25,9 +25,12 @@ import (
 	"github.com/aleogr/marketplace/internal/platform/geoip"
 	"github.com/aleogr/marketplace/internal/platform/httpx"
 	"github.com/aleogr/marketplace/internal/platform/i18n"
+	"github.com/aleogr/marketplace/internal/platform/jobs"
 	"github.com/aleogr/marketplace/internal/platform/logging"
+	"github.com/aleogr/marketplace/internal/platform/outbox"
 	"github.com/aleogr/marketplace/internal/platform/ratelimit"
 	"github.com/aleogr/marketplace/internal/platform/seo"
+	"github.com/aleogr/marketplace/internal/platform/tasks"
 	"github.com/aleogr/marketplace/internal/platform/version"
 	"github.com/aleogr/marketplace/internal/tenancy"
 )
@@ -45,6 +48,11 @@ const (
 	generalBurst     = 120
 	generalPerMinute = 240
 )
+
+// DispatchJob is the scheduled job that empties the outbox into the queue.
+// Cloud Scheduler calls it; its name is in the Terraform configuration too
+// (infra/terraform/tasks.tf).
+const DispatchJob = "dispatch-outbox"
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.LookupEnv, os.Stdout); err != nil {
@@ -139,7 +147,21 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 
 	pages := httpx.NewPages(catalogue)
-	handler := httpx.NewSite(checker, catalogue, preview, cfg.Indexable).Handler()
+	site := httpx.NewSite(checker, catalogue, preview, cfg.Indexable)
+
+	// Work that must not happen inside a request. A process without a database
+	// has no outbox to move and no lock to take, so it serves pages and
+	// nothing else (docs/design.md, section 2.5).
+	if database != nil {
+		tasks, closeTasks, err := work(ctx, cfg, database, log)
+		if err != nil {
+			return err
+		}
+		defer closeTasks()
+		site = site.WithTasks(tasks)
+	}
+
+	handler := site.Handler()
 
 	// Language comes next, and it redirects: the language is part of the URL,
 	// so a page is never served at an address that does not say which language
@@ -183,6 +205,61 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	log.InfoContext(context.WithoutCancel(ctx), "server stopped")
 	return nil
+}
+
+// work assembles the asynchronous half of the process: who consumes which
+// event, which jobs exist, and how an event reaches them.
+//
+// Two ways out of the outbox, and the process picks by what it was told. A
+// deployment hands events to Cloud Tasks, which calls back with a signed
+// token. Anything else — a local run, the end-to-end suite — delivers them
+// inline, which exercises the same registry and the same idempotency with no
+// queue and no network (docs/design.md, section 2.2).
+func work(ctx context.Context, cfg config.Config, database *db.Pool, log *slog.Logger) (httpx.Tasks, func(), error) {
+	registry := outbox.NewRegistry()
+
+	var queuer outbox.Queuer = outbox.NewInline(database, registry, log)
+	closeQueue := func() {}
+
+	if cfg.Tasks.Configured() {
+		client, err := tasks.New(ctx, tasks.Settings{
+			Project:  cfg.Tasks.Project,
+			Location: cfg.Tasks.Location,
+			URL:      cfg.Tasks.URL,
+			Invoker:  cfg.Tasks.Invoker,
+			Audience: cfg.Tasks.Audience,
+		})
+		if err != nil {
+			return httpx.Tasks{}, nil, err
+		}
+		queuer = client
+		closeQueue = func() { _ = client.Close() }
+	}
+
+	dispatcher := outbox.NewDispatcher(database, queuer, log)
+
+	// The dispatcher is itself a job, and Cloud Scheduler is what runs it.
+	// There is no always-on process to loop in, and a request that dispatched
+	// on its way out would make one visitor pay for everybody's work.
+	runner := jobs.NewRunner(database, version.String(), log)
+	runner.Register(jobs.JobFunc{
+		Named: DispatchJob,
+		Do: func(ctx context.Context) error {
+			handed, err := dispatcher.Dispatch(ctx)
+			if handed > 0 {
+				log.InfoContext(ctx, "events handed to the queue", "count", handed)
+			}
+			return err
+		},
+	})
+
+	audience := cfg.Tasks.Audience
+	if audience == "" {
+		audience = cfg.Tasks.URL
+	}
+
+	return httpx.NewTasks(httpx.GoogleCaller{}, audience, cfg.Tasks.Invoker,
+		registry, runner, database, log), closeQueue, nil
 }
 
 // migrate applies the migrations the binary carries and returns.

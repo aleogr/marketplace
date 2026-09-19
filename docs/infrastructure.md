@@ -567,6 +567,42 @@ limit depends on, and `TRUSTED_PROXY_HOPS = 2` is right for Cloud Run. Had the
 value been wrong, the second arm would have been allowed throughout: every
 request would have presented an address nobody had spent an allowance for.
 
+## Asynchronous work
+
+Cloud Run scales to zero, so there is no worker to hand work to. Cloud Tasks
+holds the work and calls this same service back, and Cloud Scheduler does the
+same for the periodic jobs (`docs/design.md`, section 2.5). Both stay inside
+the free allowance at this volume: Cloud Tasks bills nothing for the first
+million operations a month, and Cloud Scheduler allows three jobs per billing
+account.
+
+Three queues, one per class of work, so that a flood of notifications cannot
+delay a payment webhook. Their retry policies differ for the same reason.
+
+**The callbacks are signed.** Cloud Tasks and Cloud Scheduler mint an OIDC
+token of the `marketplace-invoker` account; the endpoint checks that Google
+signed it, that it was minted for this deployment's audience, and that it
+belongs to that account and no other. A valid Google token proves who is
+calling, not that they may.
+
+**The audience is the platform's own host**, declared as a custom audience on
+the Cloud Run service. The generated `run.app` address would be the obvious
+choice and cannot be used: it only exists once the service does, so naming it
+in that service's own environment is a resource referring to itself.
+
+**To see that a scheduled job ran**, from Cloud Shell:
+
+```bash
+gcloud logging read \
+  'resource.type=cloud_run_revision AND jsonPayload.message="job finished"' \
+  --project=aleogr-marketplace-lab-a4j5 --limit=5 \
+  --format='value(timestamp, jsonPayload.job, jsonPayload.took)'
+```
+
+The dispatcher runs every minute, so an empty answer means the schedule is not
+firing or the callbacks are being refused — and a refusal says so in the log of
+the service, with the reason.
+
 ## Schema changes that hide rows
 
 A migration that puts a table under row-level security hides its rows from any
