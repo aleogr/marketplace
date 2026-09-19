@@ -87,3 +87,20 @@ def test_a_browser_can_reach_the_service(server, screenshots):
 
         page.screenshot(path=str(screenshots / "health.png"))
         browser.close()
+
+
+@pytest.mark.local_process
+def test_the_process_says_what_protects_its_audit_keys(server):
+    """A deployment that cannot wrap and unwrap does not start.
+
+    The keeper is built and proved before anything is served, so the start-up
+    log naming it is also the evidence that both halves of it work
+    (docs/requirements.md, section 21).
+    """
+    entry = server.entry("audit keys")
+    assert entry["keeper"], "the process does not say which keeper protects the audit keys"
+
+    # With nothing configured, the key dies with the process, and that is said
+    # out loud rather than left to be discovered.
+    warning = server.entry("the audit keys are wrapped by a key that dies with this process")
+    assert warning["severity"] == "WARNING"

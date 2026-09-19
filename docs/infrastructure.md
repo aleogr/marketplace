@@ -805,6 +805,34 @@ address stop receiving" months later.
 The probe itself was the last thing this test corrected: it announced "the
 delivery probe was accepted" for the message it had deliberately not sent.
 
+## The key that protects the audit log
+
+Every person whose data appears in the audit log has a key of their own, kept
+in the database wrapped by a Cloud KMS key (`infra/terraform/audit.tf`). A
+deletion request destroys the person's key: the records and the hash chain stay
+exactly as they were, and what they hold about that person becomes unreadable
+(`docs/requirements.md`, sections 21 and 18.3).
+
+The service holds `roles/cloudkms.cryptoKeyEncrypterDecrypter` on that key and
+nothing else. It can ask for a wrap and an unwrap; it cannot read the key,
+create one or destroy one. The difference between that role and an
+administrative one is whether a compromised revision can erase the platform's
+ability to read its own audit log.
+
+**A key ring cannot be deleted**, in any project, ever — Google keeps the name
+taken. The lab is otherwise rebuilt from its configuration in minutes, and this
+is the one resource that is not; it is declared with `prevent_destroy` so that
+nothing tries.
+
+The process proves the key at start-up, before it opens its port: it wraps a
+value and unwraps it again. An identity that may encrypt and not decrypt looks
+configured, serves happily, and loses everything it writes; one call at
+start-up is what tells the difference. The start-up log says which keeper is in
+use, and an environment with no key manager says so as a warning — what it
+wraps with a key of its own is readable by anyone who can read its environment,
+and what it wraps with a key it generated cannot be read after a restart at
+all.
+
 ## Schema changes that hide rows
 
 A migration that puts a table under row-level security hides its rows from any

@@ -45,6 +45,7 @@ func TestLoadReadsEveryVariable(t *testing.T) {
 		"MAIL_API_KEY":       "a-key",
 		"MAIL_DIRECTORY":     "/tmp/mailbox",
 		"MAIL_WEBHOOK_TOKEN": "a-token",
+		"AUDIT_KEY":          "projects/p/locations/l/keyRings/r/cryptoKeys/k",
 	}))
 	if err != nil {
 		t.Fatalf("Load() returned an error: %v", err)
@@ -62,6 +63,7 @@ func TestLoadReadsEveryVariable(t *testing.T) {
 			Directory:    "/tmp/mailbox",
 			WebhookToken: "a-token",
 		},
+		Audit: config.Audit{Key: "projects/p/locations/l/keyRings/r/cryptoKeys/k"},
 	}
 	if got != want {
 		t.Errorf("Load() = %+v, want %+v", got, want)
@@ -233,5 +235,28 @@ func TestLoadRefusesRealProvidersWithNoMailCredential(t *testing.T) {
 func TestLoadAcceptsFakeProvidersWithNoMailCredential(t *testing.T) {
 	if _, err := config.Load(env(map[string]string{"PROVIDERS_MODE": "fake"})); err != nil {
 		t.Fatalf("Load() = %v, want no error", err)
+	}
+}
+
+// An audit log protected by a key this process holds is a log anyone who reads
+// the environment can open, and a deletion request against it means nothing
+// (docs/requirements.md, section 21).
+func TestLoadRefusesRealProvidersWithoutAKeyManager(t *testing.T) {
+	providers := map[string]string{
+		"PROVIDERS_MODE": "real",
+		"MAIL_API_KEY":   "a-key",
+		"MAIL_FROM":      "no-reply@marketplace.example",
+	}
+
+	if _, err := config.Load(env(providers)); err == nil {
+		t.Error("Load() accepted real providers with no key manager")
+	}
+
+	both := map[string]string{"AUDIT_KEY": "a-key-name", "AUDIT_LOCAL_KEY": "a-local-key"}
+	for name, value := range providers {
+		both[name] = value
+	}
+	if _, err := config.Load(env(both)); err == nil {
+		t.Error("Load() accepted a key manager and a local key at once")
 	}
 }

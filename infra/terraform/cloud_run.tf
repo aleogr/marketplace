@@ -210,6 +210,14 @@ resource "google_cloud_run_v2_service" "marketplace" {
         }
       }
 
+      # The key that wraps every person's audit key. The service may ask this
+      # key to wrap and unwrap and cannot read it, which is what makes a
+      # destroyed key final (infra/terraform/audit.tf).
+      env {
+        name  = "AUDIT_KEY"
+        value = google_kms_crypto_key.audit.id
+      }
+
       # The provider's API key, wired only where a provider is really talked
       # to. A secret with no version yet would refuse the revision, and until
       # the owner adds one there is nothing to read.
@@ -267,6 +275,7 @@ resource "google_cloud_run_v2_service" "marketplace" {
   depends_on = [
     google_secret_manager_secret_iam_member.service_mail_webhook_token,
     google_secret_manager_secret_iam_member.service_mail_api_key,
+    google_kms_crypto_key_iam_member.service,
   ]
 
   lifecycle {
