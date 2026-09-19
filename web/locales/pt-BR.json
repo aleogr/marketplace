@@ -36,5 +36,7 @@
   "weekday.friday": "sexta-feira",
   "weekday.saturday": "sábado",
   "page.platform.title": "Plataforma de marketplaces",
-  "page.platform.welcome": "Este endereço atende à própria plataforma. Cada marketplace responde no seu próprio endereço."
+  "page.platform.welcome": "Este endereço atende à própria plataforma. Cada marketplace responde no seu próprio endereço.",
+  "page.home.description": "%[1]s é um marketplace online. Compre e venda com pagamento retido até a entrega, frete calculado no carrinho e reputação em cada loja.",
+  "page.platform.description": "A plataforma por trás de cada marketplace. Cada marketplace responde no seu próprio endereço, nos seus idiomas e com as suas regras."
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aleogr/marketplace/internal/platform/i18n"
+	"github.com/aleogr/marketplace/internal/platform/seo"
 	"github.com/aleogr/marketplace/internal/tenancy"
 	"github.com/aleogr/marketplace/web"
 )
@@ -21,20 +22,54 @@ const LanguagePath = "/language"
 type Site struct {
 	database  Database
 	catalogue *i18n.Catalogue
+	preview   *seo.Preview
+	// indexable is the deployment's own setting. It changes one line of
+	// robots.txt and nothing else: the refusal itself is a header on every
+	// response (docs/requirements.md, section 7.1).
+	indexable bool
 }
 
 // NewSite returns the site's routes, ready to be mounted behind the pipeline.
-func NewSite(database Database, catalogue *i18n.Catalogue) Site {
-	return Site{database: database, catalogue: catalogue}
+func NewSite(database Database, catalogue *i18n.Catalogue, preview *seo.Preview, indexable bool) Site {
+	return Site{database: database, catalogue: catalogue, preview: preview, indexable: indexable}
 }
 
 // Handler returns the routes served by the process.
 func (s Site) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+HealthPath, health(s.database))
+	mux.HandleFunc("GET "+RobotsPath, robots(s.indexable, s.sitemap()))
+	mux.HandleFunc("GET "+PreviewPath, s.previewImage)
 	mux.HandleFunc("POST "+LanguagePath, s.switchLanguage)
 	mux.HandleFunc("GET /{$}", s.home)
 	return mux
+}
+
+// sitemap is where the sitemap will be once there are pages to list. It is
+// named here, rather than where it is served, because robots.txt is what
+// offers it and phase 2 is what writes it (docs/roadmap.md, F9).
+func (s Site) sitemap() string { return "" }
+
+// previewImage draws the image a link to this marketplace shows.
+//
+// It is served in both indexing modes: a link somebody pastes into a message
+// should look like something whether or not search engines may list the page
+// (docs/requirements.md, section 7.1).
+func (s Site) previewImage(w http.ResponseWriter, r *http.Request) {
+	name := s.catalogue.Printer(i18n.Default).Sprintf("page.platform.title")
+	if resolution, ok := tenancy.FromContext(r.Context()); ok && resolution.Marketplace != nil {
+		name = resolution.Marketplace.Name
+	}
+
+	drawn, err := s.preview.PNG(name)
+	if err != nil {
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(drawn)
 }
 
 // home is a marketplace's own address, in the language resolved for it.
@@ -98,6 +133,12 @@ func (s Site) page(r *http.Request, path string) web.Page {
 	page.Path = path
 	page.Default = "/" + i18n.Default + path
 
+	// Absolute, because these are read by other people's servers when somebody
+	// pastes a link: a path has nothing to resolve against there.
+	base := origin(r)
+	page.URL = base + "/" + tag + path
+	page.Image = base + PreviewPath
+
 	for _, language := range languages {
 		if language != tag {
 			page.Alternates[language] = "/" + language + path
@@ -107,7 +148,25 @@ func (s Site) page(r *http.Request, path string) web.Page {
 	if resolution, ok := tenancy.FromContext(r.Context()); ok && resolution.Marketplace != nil {
 		page.Marketplace = resolution.Marketplace.Name
 	}
+
+	// One source for every description the page carries, cut once
+	// (docs/requirements.md, section 7.2).
+	if page.Marketplace == "" {
+		page.Description = seo.Description(page.T("page.platform.description"))
+	} else {
+		page.Description = seo.Description(page.T("page.home.description", page.Marketplace))
+	}
 	return page
+}
+
+// origin is the address this request reached the site at, as another server
+// would have to write it.
+func origin(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }
 
 // names is each language's name in its own language, which is how a person

@@ -27,6 +27,7 @@ import (
 	"github.com/aleogr/marketplace/internal/platform/i18n"
 	"github.com/aleogr/marketplace/internal/platform/logging"
 	"github.com/aleogr/marketplace/internal/platform/ratelimit"
+	"github.com/aleogr/marketplace/internal/platform/seo"
 	"github.com/aleogr/marketplace/internal/platform/version"
 	"github.com/aleogr/marketplace/internal/tenancy"
 )
@@ -130,8 +131,15 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		checker = database
 	}
 
+	// The preview image is drawn from the marketplace's name rather than
+	// stored, so a new marketplace needs no new file (internal/platform/seo).
+	preview, err := seo.NewPreview()
+	if err != nil {
+		return fmt.Errorf("cannot prepare the link preview: %w", err)
+	}
+
 	pages := httpx.NewPages(catalogue)
-	handler := httpx.NewSite(checker, catalogue).Handler()
+	handler := httpx.NewSite(checker, catalogue, preview, cfg.Indexable).Handler()
 
 	// Language comes next, and it redirects: the language is part of the URL,
 	// so a page is never served at an address that does not say which language

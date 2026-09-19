@@ -12,17 +12,29 @@ import (
 
 	"github.com/aleogr/marketplace/internal/platform/httpx"
 	"github.com/aleogr/marketplace/internal/platform/i18n"
+	"github.com/aleogr/marketplace/internal/platform/seo"
 )
 
-// routes returns the site's routes, which every test here exercises through.
+// routes returns the site's routes, which every test here exercises through,
+// in the mode the lab runs in: not indexable.
 func routes(t *testing.T, database httpx.Database) http.Handler {
+	t.Helper()
+	return site(t, database, false)
+}
+
+// site returns the routes in either indexing mode.
+func site(t *testing.T, database httpx.Database, indexable bool) http.Handler {
 	t.Helper()
 
 	catalogue, err := i18n.Load()
 	if err != nil {
 		t.Fatalf("i18n.Load() = %v", err)
 	}
-	return httpx.NewSite(database, catalogue).Handler()
+	preview, err := seo.NewPreview()
+	if err != nil {
+		t.Fatalf("seo.NewPreview() = %v", err)
+	}
+	return httpx.NewSite(database, catalogue, preview, indexable).Handler()
 }
 
 func TestHealthzReportsTheRunningBuild(t *testing.T) {

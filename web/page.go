@@ -28,6 +28,17 @@ type Page struct {
 	// Marketplace is the name shown to a visitor. Empty on the platform's own
 	// pages, which belong to no marketplace.
 	Marketplace string
+	// Description is what this page says about itself, already cut to length.
+	// One field, feeding the description tag, og:description and
+	// twitter:description alike: three fields would describe the page three
+	// ways and drift apart without anyone noticing
+	// (docs/requirements.md, section 7.2).
+	Description string
+	// URL is this page's own absolute address, and Image the absolute address
+	// of its link preview. Absolute because the tags are read by other
+	// people's servers, which have no base to resolve a path against.
+	URL   string
+	Image string
 	// Nonce marks this response's own script and style, so the Content
 	// Security Policy can refuse everything else.
 	Nonce string
