@@ -74,12 +74,39 @@ type Config struct {
 	// itself (internal/platform/httpx.ClientIP). Two is what Cloud Run was
 	// measured to add; it is configuration because no document states it.
 	ProxyHops int
+	// Tasks is how this deployment reaches its queues and how it recognises
+	// the calls coming back from them.
+	Tasks Tasks
 	// SeedMarketplaces declares, as JSON, the marketplaces this environment
 	// should have. Only the `migrate` command reads it. Marketplaces are
 	// seeded from the environment rather than from a migration because their
 	// hosts are the environment's: a host written into a versioned migration
 	// would be created in every environment that ever runs it.
 	SeedMarketplaces string
+}
+
+// Tasks is what the deployment knows about its own queues.
+//
+// Nothing declared means no queue: the process then hands events to the
+// consumers inline, which is what a local run and the end-to-end suite do
+// (internal/platform/outbox.Inline).
+type Tasks struct {
+	Project  string
+	Location string
+	// URL is this service's own address, which Cloud Tasks and Cloud
+	// Scheduler call back.
+	URL string
+	// Invoker is the service account those callbacks are signed as, and the
+	// only one the internal endpoint accepts.
+	Invoker string
+	// Audience is what the token must be minted for. Empty means the URL,
+	// which is what Cloud Run expects.
+	Audience string
+}
+
+// Configured reports whether a queue was declared at all.
+func (t Tasks) Configured() bool {
+	return t.Project != "" && t.Location != "" && t.URL != "" && t.Invoker != ""
 }
 
 // Lookup reports the value of an environment variable and whether it was set.
@@ -190,6 +217,31 @@ func Load(lookup Lookup) (Config, error) {
 			return fmt.Errorf("%q is not a count of proxies; use a whole number, 0 or more", value)
 		}
 		cfg.ProxyHops = hops
+		return nil
+	})
+
+	read("TASKS_PROJECT", func(value string) error {
+		cfg.Tasks.Project = value
+		return nil
+	})
+
+	read("TASKS_LOCATION", func(value string) error {
+		cfg.Tasks.Location = value
+		return nil
+	})
+
+	read("TASKS_INVOKER", func(value string) error {
+		cfg.Tasks.Invoker = value
+		return nil
+	})
+
+	read("TASKS_AUDIENCE", func(value string) error {
+		cfg.Tasks.Audience = value
+		return nil
+	})
+
+	read("SERVICE_URL", func(value string) error {
+		cfg.Tasks.URL = value
 		return nil
 	})
 

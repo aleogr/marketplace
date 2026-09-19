@@ -80,30 +80,39 @@ type Pipeline struct {
 
 // Wrap mounts the pipeline around handler.
 func (p Pipeline) Wrap(handler http.Handler) http.Handler {
-	wrapped := CSRF(p.Pages)(handler)
+	// The callback endpoint is outside both. It carries no cookies and is not
+	// reached from a page, so a CSRF token would be a token nobody can mint;
+	// what guards it is the signed token of the account calling it
+	// (internal/platform/httpx.Tasks). And it is outside the limit because
+	// throttling Cloud Tasks would delay work this service asked for itself,
+	// while the queue's own rate is what bounds it.
+	wrapped := exempt(CSRF(p.Pages), TasksPath)(handler)
 
 	if p.General != nil {
 		byAddress := func(r *http.Request) string {
 			origin, _ := OriginFrom(r.Context())
 			return "general:" + origin.IP
 		}
-		wrapped = exempt(HealthPath, ratelimit.Limit(p.General, byAddress, p.Pages.Refused, p.Log))(wrapped)
+		wrapped = exempt(ratelimit.Limit(p.General, byAddress, p.Pages.Refused, p.Log),
+			HealthPath, TasksPath)(wrapped)
 	}
 
 	wrapped = Secure(p.Indexable)(wrapped)
 	return Origins(p.ProxyHops)(wrapped)
 }
 
-// exempt mounts middleware on everything but one path.
-func exempt(path string, middleware func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+// exempt mounts middleware on everything but the paths given.
+func exempt(middleware func(http.Handler) http.Handler, paths ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		limited := middleware(next)
+		wrapped := middleware(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == path {
-				next.ServeHTTP(w, r)
-				return
+			for _, path := range paths {
+				if r.URL.Path == path {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
-			limited.ServeHTTP(w, r)
+			wrapped.ServeHTTP(w, r)
 		})
 	}
 }

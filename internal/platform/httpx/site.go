@@ -23,6 +23,9 @@ type Site struct {
 	database  Database
 	catalogue *i18n.Catalogue
 	preview   *seo.Preview
+	// tasks answers the callbacks of Cloud Tasks and Cloud Scheduler. It is
+	// nil in a process with no database, which has no work to hand over.
+	tasks *Tasks
 	// indexable is the deployment's own setting. It changes one line of
 	// robots.txt and nothing else: the refusal itself is a header on every
 	// response (docs/requirements.md, section 7.1).
@@ -34,6 +37,12 @@ func NewSite(database Database, catalogue *i18n.Catalogue, preview *seo.Preview,
 	return Site{database: database, catalogue: catalogue, preview: preview, indexable: indexable}
 }
 
+// WithTasks returns the site answering the internal callbacks too.
+func (s Site) WithTasks(tasks Tasks) Site {
+	s.tasks = &tasks
+	return s
+}
+
 // Handler returns the routes served by the process.
 func (s Site) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -41,6 +50,9 @@ func (s Site) Handler() http.Handler {
 	mux.HandleFunc("GET "+RobotsPath, robots(s.indexable, s.sitemap()))
 	mux.HandleFunc("GET "+PreviewPath, s.previewImage)
 	mux.HandleFunc("POST "+LanguagePath, s.switchLanguage)
+	if s.tasks != nil {
+		mux.HandleFunc("POST "+TasksPath, s.tasks.Handle)
+	}
 	mux.HandleFunc("GET /{$}", s.home)
 	return mux
 }
