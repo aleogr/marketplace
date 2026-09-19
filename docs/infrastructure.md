@@ -668,6 +668,37 @@ gcloud run jobs execute marketplace-migrate \
   --args=send-probe,<address>,pt-BR --wait
 ```
 
+**Read on 19 September 2026**, minutes after the lab was switched to the real
+provider. The probe ran as the migration job, with the arguments overridden for
+that one execution, and finished:
+
+```
+Execution [marketplace-migrate-69rnh] has successfully completed.
+```
+
+The message arrived in the inbox — not in the spam folder — from
+`marketplace@lab.aleogr.dev`, in Portuguese, with its subject and both parts as
+the template renders them. That one e-mail is what proves the whole chain at
+once: the key read from Secret Manager, a sender the provider accepts on the
+strength of the authenticated domain alone, the signature, the template and the
+language.
+
+The starting of the execution took just under three minutes. That is
+provisioning a task and pulling the image, not sending: the send itself is one
+HTTPS call.
+
+The two webhook addresses swapped when the mode changed, which is the probe
+worth repeating after any change to that setting:
+
+```
+POST /webhooks/email/brevo     401   ← the configured provider, refused without a token
+POST /webhooks/email/mailbox   403   ← no longer configured, refused by the CSRF guard
+```
+
+Neither redirects. A 302 there is an event that is silently never delivered,
+with every check green — the failure this deployment has already had twice, on
+the language prefix and on the callback endpoint.
+
 ## Schema changes that hide rows
 
 A migration that puts a table under row-level security hides its rows from any

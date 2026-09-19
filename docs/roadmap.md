@@ -537,9 +537,13 @@ posts is re-read from its API before the platform acts on it.
   later send to it is skipped and recorded as skipped; an event the provider does not confirm
   suppresses nobody; the sending log of one marketplace is invisible to another.
 - End-to-end tests reading the fake mailbox, in both languages (`make e2e`).
-- **Waits on the owner steps above:** one real e-mail delivered from the lab to the owner's
-  address, with the screenshot attached. Until then the lab runs the fake adapter, which is the
-  mode `PROVIDERS_MODE` exists for.
+- One real e-mail delivered from the lab to the owner's address, on 19 September 2026, read in
+  the inbox rather than the spam folder (`docs/infrastructure.md`). The lab has run the real
+  adapter since.
+- **Waits on the owner:** the webhook address and its token pasted into the provider's console,
+  which is what makes a bounce reach the suppression list in the lab. The path is proved reachable
+  — it answers 401 without a token and does not redirect — and the behaviour behind it is proved
+  by the integration tests.
 
 **If the owner steps are not ready:** the delivery merges with the fake adapter selected in the
 lab by the `PROVIDERS_MODE` variable, and the real adapter is switched on by a one-line Terraform

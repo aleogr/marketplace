@@ -5,7 +5,7 @@
   "format.date.long": "Monday, 2 de January de 2006",
   "format.datetime": "02/01/2006 às 15:04",
   "page.home.title": "%[1]s",
-  "page.home.welcome": "Bem-vindo ao %[1]s.",
+  "page.home.welcome": "Boas-vindas a %[1]s.",
   "page.home.preparing": "Este marketplace está em preparação e ainda não abriu.",
   "error.unknown_host": "Este endereço não pertence a nenhum marketplace.",
   "error.forbidden": "Não foi possível verificar esta solicitação. Recarregue a página e tente novamente.",

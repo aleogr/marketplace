@@ -55,7 +55,7 @@ func TestBothLanguagesSayTheirOwnThing(t *testing.T) {
 	if english != "Welcome to Marketplace 1." {
 		t.Errorf("en-US = %q", english)
 	}
-	if portuguese != "Bem-vindo ao Marketplace 1." {
+	if portuguese != "Boas-vindas a Marketplace 1." {
 		t.Errorf("pt-BR = %q", portuguese)
 	}
 }
