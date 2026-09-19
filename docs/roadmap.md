@@ -540,10 +540,14 @@ posts is re-read from its API before the platform acts on it.
 - One real e-mail delivered from the lab to the owner's address, on 19 September 2026, read in
   the inbox rather than the spam folder (`docs/infrastructure.md`). The lab has run the real
   adapter since.
-- **Waits on the owner:** the webhook address and its token pasted into the provider's console,
-  which is what makes a bounce reach the suppression list in the lab. The path is proved reachable
-  — it answers 401 without a token and does not redirect — and the behaviour behind it is proved
-  by the integration tests.
+- The webhook is configured in the provider's console and the path is proved in the lab: a call
+  with no token and a call with the wrong one are refused, a call carrying it is accepted and
+  written to the outbox, and an event the provider does not confirm suppresses nobody. That test
+  found two defects, both fixed and both now held by tests (`docs/infrastructure.md`).
+- **Still to observe in the lab:** a suppression from a real hard bounce, which needs an address
+  at a domain that rejects an unknown mailbox — the two domains to hand are a domain with no MX,
+  which the provider calls a soft bounce, and a catch-all, which bounces nothing. The suppression
+  itself is proved by the integration tests against a real PostgreSQL.
 
 **If the owner steps are not ready:** the delivery merges with the fake adapter selected in the
 lab by the `PROVIDERS_MODE` variable, and the real adapter is switched on by a one-line Terraform

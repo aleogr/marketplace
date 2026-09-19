@@ -3,6 +3,7 @@ package mail_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -270,4 +271,23 @@ func has(args []any, want string) bool {
 		}
 	}
 	return false
+}
+
+// A provider that rejects the question is not a provider to keep asking. The
+// lab showed what the alternative costs: one wrong parameter in the query made
+// every event a sequence of retries, each failing identically, until the queue
+// gave up (internal/platform/mail.ErrRefused).
+func TestAnEventTheProviderRefusesToCheckIsNotRetried(t *testing.T) {
+	store := &database{tx: &transaction{}}
+	sender := &adapter{failCheck: fmt.Errorf("%w: brevo answered 400", mail.ErrRefused)}
+
+	err := mailer(t, store, sender).Apply(t.Context(), mail.Event{
+		Provider: "stub", ID: "1", Address: "gone@example.test", Kind: mail.Bounce,
+	})
+	if err != nil {
+		t.Fatalf("Apply() = %v, want nil: retrying a refusal is refused again", err)
+	}
+	if _, ok := wrote(store.tx.calls, "email_suppression"); ok {
+		t.Error("an address was suppressed on an answer the provider never gave")
+	}
 }

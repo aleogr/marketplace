@@ -187,7 +187,17 @@ func (m *Mailer) Apply(ctx context.Context, event Event) error {
 	}
 
 	confirmed, err := m.sender.Confirm(ctx, event)
-	if err != nil {
+	switch {
+	case errors.Is(err, ErrRefused):
+		// The provider rejected the question itself, which the next attempt
+		// would be rejected for too. It is this deployment that is wrong, so
+		// it is said once, loudly, and nothing is retried: an event that
+		// cannot be checked is an event nobody may act on, and a queue full of
+		// the same refusal buries the line that says why.
+		m.log.ErrorContext(ctx, "an e-mail event could not be checked with the provider",
+			"provider", event.Provider, "event", event.ID, "error", err)
+		return nil
+	case err != nil:
 		return fmt.Errorf("cannot confirm the %s reported by %s: %w", event.Kind, event.Provider, err)
 	}
 	if !confirmed {
