@@ -746,6 +746,15 @@ domain that answers `550` for an unknown mailbox, which means either turning
 off catch-all on one of these domains for a minute or using an address at some
 other provider.
 
+**The provider spells one event four ways.** Its published specification names
+the event `hardBounce` where a webhook subscribes to it and `hardBounces` where
+its statistics are queried; the body it posts is documented as `hard_bounce`,
+and that documentation is not in the specification. This platform had assumed
+the third spelling, and a forged event written with that same assumption
+confirmed nothing except the assumption. Event names are therefore matched by
+their letters, singular — `hard_bounce`, `hardBounce` and `hardBounces` are one
+event — because a bounce ignored over an underscore is a bounce nobody notices.
+
 ### What the lab proves, and what it does not
 
 Proved against the deployed service, in this order:
