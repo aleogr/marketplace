@@ -74,6 +74,12 @@ type Pipeline struct {
 	// Pages writes the refusals: they are the only part of the pipeline a
 	// person reads, so they come from the catalogue like every other text.
 	Pages Pages
+	// Callbacks are the addresses a machine calls rather than a browser: the
+	// e-mail provider's webhook, and whatever later deliveries add. They are
+	// outside CSRF, for the same reason the task endpoint is — there is no
+	// page to mint a token on — and inside the general rate limit, because a
+	// provider that posts is a caller from the internet like any other.
+	Callbacks []string
 	// Log is where a limiter that cannot decide says so.
 	Log *slog.Logger
 }
@@ -86,7 +92,7 @@ func (p Pipeline) Wrap(handler http.Handler) http.Handler {
 	// (internal/platform/httpx.Tasks). And it is outside the limit because
 	// throttling Cloud Tasks would delay work this service asked for itself,
 	// while the queue's own rate is what bounds it.
-	wrapped := exempt(CSRF(p.Pages), TasksPath)(handler)
+	wrapped := exempt(CSRF(p.Pages), append([]string{TasksPath}, p.Callbacks...)...)(handler)
 
 	if p.General != nil {
 		byAddress := func(r *http.Request) string {

@@ -29,6 +29,12 @@ linters:
         # section 6), and a spell checker with one locale cannot judge the
         # other. They move to translation files in F8.
         - momento
+        # A provider's own API vocabulary. Brevo answers `"code":
+        # "unauthorized"`, and the stub that behaves like it must answer
+        # exactly what it answers; renaming a provider's field would make the
+        # test agree with a server that does not exist
+        # (internal/platform/mail/brevo).
+        - unauthorized
     nolintlint:
       require-explanation: true
       require-specific: true

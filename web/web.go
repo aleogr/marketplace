@@ -14,3 +14,16 @@ import "embed"
 //
 //go:embed locales/*.json
 var Locales embed.FS
+
+// Mail holds one pair of files per template and language: the text part, whose
+// first line is the subject, and the HTML part.
+//
+// They are translation files, which is the one exception to "no user-facing
+// text outside a catalogue" (CLAUDE.md): a mail body is a document with
+// paragraphs, and a document belongs in a file rather than in a JSON string
+// with escaped newlines. A new language is a pair of files here, exactly as it
+// is a catalogue there, and internal/platform/mail refuses to load a template
+// that is missing in a language the platform speaks.
+//
+//go:embed mail/*.txt mail/*.html
+var Mail embed.FS

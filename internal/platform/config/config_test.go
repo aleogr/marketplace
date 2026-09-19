@@ -41,6 +41,10 @@ func TestLoadReadsEveryVariable(t *testing.T) {
 		"LOG_LEVEL":          "debug",
 		"PROVIDERS_MODE":     "real",
 		"TRUSTED_PROXY_HOPS": "1",
+		"MAIL_FROM":          "no-reply@marketplace.example",
+		"MAIL_API_KEY":       "a-key",
+		"MAIL_DIRECTORY":     "/tmp/mailbox",
+		"MAIL_WEBHOOK_TOKEN": "a-token",
 	}))
 	if err != nil {
 		t.Fatalf("Load() returned an error: %v", err)
@@ -52,6 +56,12 @@ func TestLoadReadsEveryVariable(t *testing.T) {
 		LogLevel:      slog.LevelDebug,
 		ProvidersMode: config.ProvidersReal,
 		ProxyHops:     1,
+		Mail: config.Mail{
+			From:         "no-reply@marketplace.example",
+			Key:          "a-key",
+			Directory:    "/tmp/mailbox",
+			WebhookToken: "a-token",
+		},
 	}
 	if got != want {
 		t.Errorf("Load() = %+v, want %+v", got, want)
@@ -193,5 +203,35 @@ func TestLoadWithoutADatabaseIsAValidConfiguration(t *testing.T) {
 	}
 	if cfg.Database.Configured() {
 		t.Error("an empty environment configured a database")
+	}
+}
+
+// A deployment that says it uses real providers and was given no e-mail
+// credential sends nothing, and discovers it the first time somebody is
+// supposed to receive something. Refusing to start is seconds; a sign-up
+// confirmation that never arrives is a person who cannot use the platform
+// (docs/requirements.md, section 7.1).
+func TestLoadRefusesRealProvidersWithNoMailCredential(t *testing.T) {
+	for name, vars := range map[string]map[string]string{
+		"no key at all": {"PROVIDERS_MODE": "real"},
+		"a key and no address": {
+			"PROVIDERS_MODE": "real",
+			"MAIL_API_KEY":   "a-key",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := config.Load(env(vars)); err == nil {
+				t.Fatal("Load() accepted real providers with no e-mail settings, want an error")
+			}
+		})
+	}
+}
+
+// And the fake adapter needs none of it: an environment whose provider account
+// is not ready yet is the mode this platform runs in until F11's owner steps
+// are done (docs/roadmap.md, F11).
+func TestLoadAcceptsFakeProvidersWithNoMailCredential(t *testing.T) {
+	if _, err := config.Load(env(map[string]string{"PROVIDERS_MODE": "fake"})); err != nil {
+		t.Fatalf("Load() = %v, want no error", err)
 	}
 }

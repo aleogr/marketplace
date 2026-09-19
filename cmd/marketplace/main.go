@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -27,6 +28,9 @@ import (
 	"github.com/aleogr/marketplace/internal/platform/i18n"
 	"github.com/aleogr/marketplace/internal/platform/jobs"
 	"github.com/aleogr/marketplace/internal/platform/logging"
+	"github.com/aleogr/marketplace/internal/platform/mail"
+	"github.com/aleogr/marketplace/internal/platform/mail/brevo"
+	"github.com/aleogr/marketplace/internal/platform/mail/mailbox"
 	"github.com/aleogr/marketplace/internal/platform/outbox"
 	"github.com/aleogr/marketplace/internal/platform/ratelimit"
 	"github.com/aleogr/marketplace/internal/platform/seo"
@@ -48,6 +52,11 @@ const (
 	generalBurst     = 120
 	generalPerMinute = 240
 )
+
+// ProbeTemplate is the message the delivery probe sends: the one template that
+// exists to be sent by hand, after a sending domain is configured, to prove
+// that mail leaves the platform and arrives (docs/roadmap.md, F11).
+const ProbeTemplate = "probe"
 
 // DispatchJob is the scheduled job that empties the outbox into the queue.
 // Cloud Scheduler calls it; its name is in the Terraform configuration too
@@ -77,6 +86,8 @@ func run(ctx context.Context, args []string, lookup config.Lookup, stdout io.Wri
 	switch args[0] {
 	case "migrate":
 		return migrate(ctx, cfg, log)
+	case "send-probe":
+		return sendProbe(ctx, cfg, log, args[1:])
 	default:
 		return fmt.Errorf(
 			"unknown command %q: the binary serves when given no arguments, and applies migrations with `migrate`",
@@ -149,11 +160,36 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	pages := httpx.NewPages(catalogue)
 	site := httpx.NewSite(checker, catalogue, preview, cfg.Indexable)
 
+	// The e-mail port. Which adapter is behind it is the configuration's
+	// answer and nothing else's (docs/requirements.md, section 25); what the
+	// process knows is that it has one, and that it refuses to start without
+	// templates it can render.
+	var mailDatabase mail.Database
+	if database != nil {
+		mailDatabase = database
+	}
+	mailer, provider, err := mailing(cfg, catalogue, mailDatabase, log)
+	if err != nil {
+		return err
+	}
+	log.InfoContext(ctx, "e-mail provider", "provider", provider.Name())
+
+	// The addresses a machine calls rather than a browser. They are outside
+	// CSRF and outside the language redirect, for the same reason the task
+	// endpoint is: nothing on the other side follows a redirect or holds a
+	// token (internal/platform/httpx.Pipeline).
+	var callbacks []string
+	if database != nil && cfg.Mail.WebhookToken != "" {
+		webhook := httpx.NewMailWebhook(provider, cfg.Mail.WebhookToken, database, log)
+		site = site.WithMail(webhook)
+		callbacks = append(callbacks, webhook.Path())
+	}
+
 	// Work that must not happen inside a request. A process without a database
 	// has no outbox to move and no lock to take, so it serves pages and
 	// nothing else (docs/design.md, section 2.5).
 	if database != nil {
-		tasks, closeTasks, err := work(ctx, cfg, database, log)
+		tasks, closeTasks, err := work(ctx, cfg, database, mailer, log)
 		if err != nil {
 			return err
 		}
@@ -178,8 +214,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// there is a job that silently never runs.
 	handler = i18n.NewResolver(catalogue, geoip.Nowhere{}).
 		Resolve(httpx.Speaks(catalogue),
-			httpx.HealthPath, httpx.LanguagePath, httpx.RobotsPath,
-			httpx.PreviewPath, httpx.TasksPath)(handler)
+			append([]string{
+				httpx.HealthPath, httpx.LanguagePath, httpx.RobotsPath,
+				httpx.PreviewPath, httpx.TasksPath,
+			}, callbacks...)...)(handler)
 
 	// Host resolution comes before that, because language, session and every
 	// query after it are scoped by the answer (docs/design.md, section 2.3).
@@ -198,6 +236,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		ProxyHops: cfg.ProxyHops,
 		General:   ratelimit.NewMemory(generalBurst, generalPerMinute),
 		Pages:     pages,
+		Callbacks: callbacks,
 		Log:       log,
 	}.Wrap(handler)
 
@@ -217,8 +256,9 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 // token. Anything else — a local run, the end-to-end suite — delivers them
 // inline, which exercises the same registry and the same idempotency with no
 // queue and no network (docs/design.md, section 2.2).
-func work(ctx context.Context, cfg config.Config, database *db.Pool, log *slog.Logger) (httpx.Tasks, func(), error) {
+func work(ctx context.Context, cfg config.Config, database *db.Pool, mailer *mail.Mailer, log *slog.Logger) (httpx.Tasks, func(), error) {
 	registry := outbox.NewRegistry()
+	mail.Register(registry, mailer)
 
 	var queuer outbox.Queuer = outbox.NewInline(database, registry, log)
 	closeQueue := func() {}
@@ -326,4 +366,123 @@ func databaseMode(settings config.Database) string {
 	default:
 		return "none"
 	}
+}
+
+// provider is an adapter that both sends and reads what the provider posts
+// back. Every adapter does both, because sending and being told what became of
+// the message are two halves of one integration.
+type provider interface {
+	mail.Sender
+	mail.Reader
+}
+
+// mailing assembles the e-mail port: the templates, the adapter behind it, and
+// the mailer the rest of the process asks.
+//
+// Which adapter is a configuration answer. The fake writes each message to a
+// directory, which is what the end-to-end suite reads and what an environment
+// whose provider account is not ready yet runs with; the real one talks to
+// Brevo (docs/requirements.md, section 25).
+func mailing(cfg config.Config, catalogue *i18n.Catalogue, database mail.Database, log *slog.Logger) (*mail.Mailer, provider, error) {
+	// Read once, at start-up, for the same reason the catalogues are: a
+	// template that does not render is a person who never receives what they
+	// were promised, and that is a deployment to refuse rather than a message
+	// to lose.
+	templates, err := mail.LoadTemplates()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var adapter provider
+	switch cfg.ProvidersMode {
+	case config.ProvidersReal:
+		client, err := brevo.New(brevo.Settings{
+			Key: cfg.Mail.Key,
+			From: brevo.Address{
+				Name:  catalogue.Printer(i18n.Default).Sprintf("page.platform.title"),
+				Email: cfg.Mail.From,
+			},
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		adapter = client
+	default:
+		box, err := mailbox.New(mailDirectory(cfg))
+		if err != nil {
+			return nil, nil, err
+		}
+		adapter = box
+	}
+
+	return mail.NewMailer(database, templates, adapter, i18n.Default, log), adapter, nil
+}
+
+// mailDirectory is where the fake adapter writes. A default rather than a
+// required setting, so that running the binary locally sends its mail
+// somewhere instead of refusing to start.
+func mailDirectory(cfg config.Config) string {
+	if cfg.Mail.Directory != "" {
+		return cfg.Mail.Directory
+	}
+	return filepath.Join(os.TempDir(), "marketplace-mailbox")
+}
+
+// sendProbe sends one message to the address given and returns.
+//
+// It is how a sending domain is proved to work: the records are published, the
+// provider verifies them, and then somebody has to receive an actual e-mail
+// (docs/roadmap.md, F11). It runs as the migration job does — the same image,
+// a different entry point — so proving it in a deployment needs no second
+// image and no endpoint that could be called by anybody else.
+func sendProbe(ctx context.Context, cfg config.Config, log *slog.Logger, args []string) error {
+	if len(args) == 0 || args[0] == "" {
+		return errors.New("`send-probe` needs the address to send to")
+	}
+	address, language := args[0], i18n.Default
+	if len(args) > 1 {
+		language = args[1]
+	}
+
+	catalogue, err := i18n.Load()
+	if err != nil {
+		return err
+	}
+	if !catalogue.Speaks(language) {
+		return fmt.Errorf("%q is not a language this platform speaks", language)
+	}
+
+	// A database is not required. The probe is one message and its own answer
+	// — it either arrives or it does not — and an environment that has one
+	// gets the suppression check and the record for free.
+	var database mail.Database
+	if cfg.Database.Configured() {
+		pool, err := db.Open(ctx, cfg.Database)
+		if err != nil {
+			return err
+		}
+		defer pool.Close()
+		database = pool
+	}
+
+	mailer, adapter, err := mailing(cfg, catalogue, database, log)
+	if err != nil {
+		return err
+	}
+
+	name := catalogue.Printer(language).Sprintf("page.platform.title")
+	log.InfoContext(ctx, "sending the delivery probe",
+		"provider", adapter.Name(), "language", language)
+
+	if err := mailer.Send(ctx, mail.Message{
+		Template: ProbeTemplate,
+		Language: language,
+		To:       address,
+		From:     name,
+	}); err != nil {
+		return err
+	}
+
+	log.InfoContext(ctx, "the delivery probe was accepted", "provider", adapter.Name())
+	return nil
 }

@@ -123,3 +123,25 @@ variable "marketplaces" {
     error_message = "A marketplace's default language must be one of its languages."
   }
 }
+
+variable "providers_mode" {
+  description = "Whether the service talks to real external providers or to the fakes. `fake` is what an environment runs until the provider accounts exist; `real` needs every credential those adapters read, starting with the e-mail key in Secret Manager (docs/roadmap.md, section 4)."
+  type        = string
+  default     = "fake"
+
+  validation {
+    condition     = contains(["fake", "real"], var.providers_mode)
+    error_message = "providers_mode is fake or real."
+  }
+}
+
+variable "mail_from" {
+  description = "The address every e-mail is sent from: the platform's sending domain, which is what DKIM, SPF and DMARC are published for. Required when providers_mode is real (docs/requirements.md, section 25)."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.providers_mode != "real" || var.mail_from != ""
+    error_message = "providers_mode is real, so mail_from must name the address mail is sent from."
+  }
+}

@@ -168,10 +168,52 @@ resource "google_cloud_run_v2_service" "marketplace" {
 
       env {
         name = "PROVIDERS_MODE"
-        # Every external provider is still a fake: no gateway, no shipping
-        # account and no e-mail provider exists yet, and the deliveries that
-        # add them flip this (docs/roadmap.md, F11 onwards).
-        value = "fake"
+        # `fake` until the provider accounts exist. Turning it to `real` is a
+        # line in the environment's tfvars, and the credentials those adapters
+        # read have to be in Secret Manager first (docs/roadmap.md, F11).
+        value = var.providers_mode
+      }
+
+      # Where the fake e-mail adapter writes the messages it does not send.
+      # Cloud Run gives the container a writable /tmp in memory, which is the
+      # right lifetime for it: the messages of a revision are the revision's.
+      env {
+        name  = "MAIL_DIRECTORY"
+        value = "/tmp/mailbox"
+      }
+
+      env {
+        name  = "MAIL_FROM"
+        value = var.mail_from
+      }
+
+      # The shared token the e-mail provider posts its events with. Cloud Run
+      # reads the secret and sets the variable; nothing in this repository or
+      # in a workflow ever holds the value (infra/terraform/mail.tf).
+      env {
+        name = "MAIL_WEBHOOK_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.mail_webhook_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      # The provider's API key, wired only where a provider is really talked
+      # to. A secret with no version yet would refuse the revision, and until
+      # the owner adds one there is nothing to read.
+      dynamic "env" {
+        for_each = var.providers_mode == "real" ? [1] : []
+        content {
+          name = "MAIL_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.mail_api_key.secret_id
+              version = "latest"
+            }
+          }
+        }
       }
 
       # Traffic reaches a revision only once the process is listening. Without
@@ -211,6 +253,11 @@ resource "google_cloud_run_v2_service" "marketplace" {
     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
     percent = 100
   }
+
+  depends_on = [
+    google_secret_manager_secret_iam_member.service_mail_webhook_token,
+    google_secret_manager_secret_iam_member.service_mail_api_key,
+  ]
 
   lifecycle {
     ignore_changes = [
