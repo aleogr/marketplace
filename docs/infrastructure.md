@@ -536,8 +536,8 @@ address is therefore counted from the right, `TRUSTED_PROXY_HOPS` entries back
 (default 2, for the client address and the front end's own).
 
 **No Cloud Run document states how many entries it adds** — it is not in the
-container contract — so the value is checked against the deployment instead of
-trusted:
+container contract — so the value was measured against the lab, and is measured
+again whenever the infrastructure in front of the service changes:
 
 ```bash
 # Ordinary requests, until the limit answers 429.
@@ -552,6 +552,20 @@ done | sort | uniq -c
 
 Both runs must reach `429`. If the second one does not, set
 `TRUSTED_PROXY_HOPS` to 1 in the environment's `.tfvars` and deploy.
+
+**Measured on 19 September 2026**, against `3a24c19`, 300 requests per arm at
+twenty at a time, the two arms run back to back so that the bucket refilled by
+the same amount during each:
+
+| Arm | Allowed | Refused | Duration |
+|---|---|---|---|
+| Ordinary requests | 133 | 167 | 4 s |
+| A different forged `X-Forwarded-For` on every request | 134 | 166 | 4 s |
+
+Identical. Forging the header buys a client nothing, which is the property the
+limit depends on, and `TRUSTED_PROXY_HOPS = 2` is right for Cloud Run. Had the
+value been wrong, the second arm would have been allowed throughout: every
+request would have presented an address nobody had spent an allowance for.
 
 ## Schema changes that hide rows
 
