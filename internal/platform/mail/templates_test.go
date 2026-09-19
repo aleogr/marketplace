@@ -1,0 +1,107 @@
+package mail_test
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/aleogr/marketplace/internal/platform/i18n"
+	"github.com/aleogr/marketplace/internal/platform/mail"
+)
+
+// templates returns what the binary carries.
+func templates(t *testing.T) *mail.Templates {
+	t.Helper()
+
+	loaded, err := mail.LoadTemplates()
+	if err != nil {
+		t.Fatalf("mail.LoadTemplates() = %v", err)
+	}
+	return loaded
+}
+
+// The definition of done: every user-facing text exists in both languages
+// (CLAUDE.md). A template is user-facing text, and a reader who chose pt-BR
+// and receives nothing is the failure this prevents.
+func TestEveryTemplateExistsInEveryLanguageThePlatformSpeaks(t *testing.T) {
+	catalogue, err := i18n.Load()
+	if err != nil {
+		t.Fatalf("i18n.Load() = %v", err)
+	}
+
+	loaded := templates(t)
+	for _, language := range catalogue.Languages() {
+		for _, name := range loaded.Names() {
+			rendered, err := loaded.Render(mail.Message{
+				Template: name, Language: language, To: "reader@example.test",
+				From: "Marketplace 1",
+			}, i18n.Default)
+			if err != nil {
+				t.Fatalf("the template %q does not render in %s: %v", name, language, err)
+			}
+			if rendered.Language != language {
+				t.Errorf("%q in %s fell back to %s, so that language has no template of its own",
+					name, language, rendered.Language)
+			}
+		}
+	}
+}
+
+func TestATemplateCarriesItsSubjectAndBothParts(t *testing.T) {
+	rendered, err := templates(t).Render(mail.Message{
+		Template: "probe", Language: "pt-BR", To: "reader@example.test",
+		From: "Marketplace 1",
+	}, i18n.Default)
+	if err != nil {
+		t.Fatalf("Render() = %v", err)
+	}
+
+	switch {
+	case rendered.Subject != "Teste de e-mail do Marketplace 1":
+		t.Errorf("subject = %q", rendered.Subject)
+	case strings.HasPrefix(rendered.Text, "Subject:"):
+		t.Errorf("the subject line was left in the body: %q", rendered.Text)
+	case !strings.Contains(rendered.Text, "Marketplace 1"):
+		t.Errorf("the text part did not receive the sender's name: %q", rendered.Text)
+	case !strings.Contains(rendered.HTML, "<p>"):
+		t.Errorf("the HTML part is not HTML: %q", rendered.HTML)
+	}
+}
+
+// A language with no template of its own is answered in the official one. A
+// message in English reaches its reader; a message that failed to render does
+// not (docs/requirements.md, section 6).
+func TestALanguageWithNoTemplateFallsBackToTheOfficialOne(t *testing.T) {
+	rendered, err := templates(t).Render(mail.Message{
+		Template: "probe", Language: "fr-FR", To: "reader@example.test",
+		From: "Marketplace 1",
+	}, i18n.Default)
+	if err != nil {
+		t.Fatalf("Render() = %v", err)
+	}
+
+	if rendered.Language != i18n.Default {
+		t.Errorf("language = %q, want %q", rendered.Language, i18n.Default)
+	}
+	if !strings.Contains(rendered.Text, "can deliver e-mail") {
+		t.Errorf("the message did not come out in the official language: %q", rendered.Text)
+	}
+}
+
+func TestATemplateThatDoesNotExistIsAnError(t *testing.T) {
+	_, err := templates(t).Render(mail.Message{
+		Template: "no-such-template", Language: "en-US", To: "reader@example.test",
+	}, i18n.Default)
+
+	if !errors.Is(err, mail.ErrNoTemplate) {
+		t.Errorf("Render() = %v, want %v", err, mail.ErrNoTemplate)
+	}
+}
+
+func TestAnAddressIsComparedInOneForm(t *testing.T) {
+	for _, given := range []string{"Reader@Example.Test", "  reader@example.test  ", "READER@EXAMPLE.TEST"} {
+		if got := mail.Address(given); got != "reader@example.test" {
+			t.Errorf("Address(%q) = %q", given, got)
+		}
+	}
+}

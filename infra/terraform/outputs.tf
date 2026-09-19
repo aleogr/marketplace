@@ -32,3 +32,8 @@ output "migration_job" {
   description = "Name of the Cloud Run Job the pipeline executes before a revision receives traffic."
   value       = google_cloud_run_v2_job.migrate.name
 }
+
+output "mail_webhook_url" {
+  description = "Where the e-mail provider posts what became of each message. It is typed into the provider's console by hand, with the token from the `mail-webhook-token` secret (docs/roadmap.md, F11)."
+  value       = local.mail_webhook_url
+}

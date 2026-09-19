@@ -1,0 +1,6 @@
+Subject: {{.From}} e-mail check
+
+This message confirms that {{.From}} can deliver e-mail.
+
+It was sent by the platform's delivery probe, which is run by hand after the
+sending domain is configured. Nothing is expected in reply.

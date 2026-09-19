@@ -23,6 +23,10 @@ type Site struct {
 	database  Database
 	catalogue *i18n.Catalogue
 	preview   *seo.Preview
+	// mail answers the e-mail provider's webhooks. It is nil where no shared
+	// token is configured: an endpoint standing in front of nothing is an open
+	// door (internal/platform/config.Mail).
+	mail *MailWebhook
 	// tasks answers the callbacks of Cloud Tasks and Cloud Scheduler. It is
 	// nil in a process with no database, which has no work to hand over.
 	tasks *Tasks
@@ -43,6 +47,12 @@ func (s Site) WithTasks(tasks Tasks) Site {
 	return s
 }
 
+// WithMail returns the site answering one e-mail provider's webhooks too.
+func (s Site) WithMail(webhook MailWebhook) Site {
+	s.mail = &webhook
+	return s
+}
+
 // Handler returns the routes served by the process.
 func (s Site) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -52,6 +62,9 @@ func (s Site) Handler() http.Handler {
 	mux.HandleFunc("POST "+LanguagePath, s.switchLanguage)
 	if s.tasks != nil {
 		mux.HandleFunc("POST "+TasksPath, s.tasks.Handle)
+	}
+	if s.mail != nil {
+		mux.HandleFunc("POST "+MailWebhookPrefix+"{provider}", s.mail.Handle)
 	}
 	mux.HandleFunc("GET /{$}", s.home)
 	return mux

@@ -497,40 +497,49 @@ volume (design §3).
 
 ### F11 — E-mail port and adapter
 
-- [ ] **Objective:** the platform sends transactional e-mail in both languages and stops sending
+- [x] **Objective:** the platform sends transactional e-mail in both languages and stops sending
   to addresses that bounced or complained (§17, §25).
 
 **Depends on:** F10, F8.
 
-**What is needed from the owner** (one at a time):
-1. **Choose the provider.** §25 accepts Amazon SES or Resend; both fit the cost premise. The
-   recommendation is **Amazon SES** in the São Paulo region for the lower per-message cost at
-   volume and the official Go SDK; Resend is the faster start if the owner prefers to avoid an AWS
-   account. This is a decision §25 left open, not a decision being reopened.
-2. Create the account.
-3. Add the DKIM, SPF and DMARC records for the platform's sending domain in Cloudflare — the exact
-   record set is provided one record at a time — and confirm verification.
-4. Request production access (SES accounts start sandboxed, and approval can take a business day).
-5. Store the API credential in Secret Manager with the single command provided; the credential
-   never enters the repository.
+**Provider: Brevo** (§25, updated by this delivery). The section left the choice between Amazon SES
+and Resend; Brevo was chosen with the owner because its free tier covers the platform until it has
+revenue, it needs no AWS account and no sandbox exit, and its transactional API is two endpoints.
+The consequence is written into the adapter: Brevo **does not sign its webhooks**, so every event it
+posts is re-read from its API before the platform acts on it.
+
+**What is needed from the owner** (one at a time, none of them blocking the merge):
+1. Create the API key in the Brevo account (SMTP & API → API Keys).
+2. Store it with the single command provided; the credential never enters the repository.
+3. Publish the DKIM, SPF and DMARC records of the platform's sending domain in Cloudflare — one
+   record at a time — and confirm the sender verifies at the provider.
+4. Turn `providers_mode` to `real` in the environment's tfvars, with `mail_from`.
+5. Paste the webhook address and its token — both are outputs of the infrastructure — into the
+   provider's console, so bounces and complaints reach the platform.
 
 **Scope:**
-- The `mail` port: a message with a template id, a locale, variables and a sender identity.
-- The real adapter for the chosen provider, and a fake writing to a directory the end-to-end suite
-  reads.
+- The `mail` port: a message with a template, a language, variables and the name it is from.
+- The real adapter (Brevo) and a fake writing to a directory the end-to-end suite reads, selected
+  by `PROVIDERS_MODE`.
 - A contract test suite run against **both** adapters, so a second provider can be added later
   without re-deriving the expectations.
-- Templates with a text part and an HTML part, in `en-US` and `pt-BR`.
+- Templates with a text part and an HTML part, in `en-US` and `pt-BR`. A template missing in a
+  language the platform speaks refuses the start-up.
 - `email_suppression`, fed by bounce and complaint webhooks arriving through the F10 webhook path,
-  checked before every send.
-- The sending job, consuming outbox events.
+  checked before every send; `email_send`, the log of what was sent, skipped and failed, under
+  row-level security.
+- The sending job, consuming outbox events, and `send-probe`, which sends one message by hand to
+  prove a sending domain works.
 
 **Verification:**
-- Contract tests green for both adapters.
-- An integration test: a bounce webhook suppresses the address, and a later send to it is skipped
-  and recorded as skipped.
-- An end-to-end test reading the fake mailbox.
-- One real e-mail delivered from the lab to the owner's address, screenshot attached.
+- Contract tests green for both adapters (`make test`).
+- An integration test against a real PostgreSQL: a bounce webhook suppresses the address, and a
+  later send to it is skipped and recorded as skipped; an event the provider does not confirm
+  suppresses nobody; the sending log of one marketplace is invisible to another.
+- End-to-end tests reading the fake mailbox, in both languages (`make e2e`).
+- **Waits on the owner steps above:** one real e-mail delivered from the lab to the owner's
+  address, with the screenshot attached. Until then the lab runs the fake adapter, which is the
+  mode `PROVIDERS_MODE` exists for.
 
 **If the owner steps are not ready:** the delivery merges with the fake adapter selected in the
 lab by the `PROVIDERS_MODE` variable, and the real adapter is switched on by a one-line Terraform

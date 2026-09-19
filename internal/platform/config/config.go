@@ -77,6 +77,8 @@ type Config struct {
 	// Tasks is how this deployment reaches its queues and how it recognises
 	// the calls coming back from them.
 	Tasks Tasks
+	// Mail is how this deployment sends e-mail.
+	Mail Mail
 	// SeedMarketplaces declares, as JSON, the marketplaces this environment
 	// should have. Only the `migrate` command reads it. Marketplaces are
 	// seeded from the environment rather than from a migration because their
@@ -107,6 +109,29 @@ type Tasks struct {
 // Configured reports whether a queue was declared at all.
 func (t Tasks) Configured() bool {
 	return t.Project != "" && t.Location != "" && t.URL != "" && t.Invoker != ""
+}
+
+// Mail is how this deployment sends e-mail, and how it recognises what the
+// provider posts back.
+//
+// The provider's key is the only credential the running service holds. It is
+// read from Secret Manager into the environment by Cloud Run and never appears
+// in this repository (docs/requirements.md, section 24).
+type Mail struct {
+	// From is the address every message is sent from: the platform's sending
+	// domain, which is what DKIM, SPF and DMARC are published for. The name
+	// beside it is the marketplace's and travels with each message.
+	From string
+	// Key is the provider's API key.
+	Key string
+	// Directory is where the fake adapter writes messages instead of sending
+	// them. It is what the end-to-end suite reads.
+	Directory string
+	// WebhookToken is the shared secret the provider is configured to send
+	// with each event it posts. Empty means the endpoint is not mounted at
+	// all: an endpoint with no secret is an open door, and this provider does
+	// not sign what it posts (docs/requirements.md, section 25).
+	WebhookToken string
 }
 
 // Lookup reports the value of an environment variable and whether it was set.
@@ -250,17 +275,61 @@ func Load(lookup Lookup) (Config, error) {
 		return nil
 	})
 
+	read("MAIL_FROM", func(value string) error {
+		cfg.Mail.From = value
+		return nil
+	})
+
+	read("MAIL_API_KEY", func(value string) error {
+		cfg.Mail.Key = value
+		return nil
+	})
+
+	read("MAIL_DIRECTORY", func(value string) error {
+		cfg.Mail.Directory = value
+		return nil
+	})
+
+	read("MAIL_WEBHOOK_TOKEN", func(value string) error {
+		cfg.Mail.WebhookToken = value
+		return nil
+	})
+
 	read("SEED_MARKETPLACES", func(value string) error {
 		cfg.SeedMarketplaces = value
 		return nil
 	})
 
 	problems = append(problems, cfg.Database.problems()...)
+	problems = append(problems, cfg.Mail.problems(cfg.ProvidersMode)...)
 
 	if len(problems) > 0 {
 		return Config{}, fmt.Errorf("invalid configuration: %w", errors.Join(problems...))
 	}
 	return cfg, nil
+}
+
+// problems reports what a real e-mail provider needs and was not given.
+//
+// A deployment that reached production without a key would send nothing, and
+// would discover it the first time somebody was supposed to receive something
+// — a sign-up confirmation that never arrives is a person who cannot use the
+// platform at all (docs/requirements.md, section 7.1).
+func (m Mail) problems(mode ProvidersMode) []error {
+	if mode != ProvidersReal {
+		return nil
+	}
+
+	var problems []error
+	if m.Key == "" {
+		problems = append(problems, errors.New(
+			"PROVIDERS_MODE is real but MAIL_API_KEY is not set"))
+	}
+	if m.From == "" {
+		problems = append(problems, errors.New(
+			"PROVIDERS_MODE is real but MAIL_FROM is not set"))
+	}
+	return problems
 }
 
 // problems reports every way the declared database settings contradict each

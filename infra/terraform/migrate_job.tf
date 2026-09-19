@@ -97,6 +97,44 @@ resource "google_cloud_run_v2_job" "migrate" {
           name  = "LOG_LEVEL"
           value = "info"
         }
+
+        # The job is also how one e-mail is sent by hand, to prove a sending
+        # domain works: the same image, a different entry point
+        # (`gcloud run jobs execute ... --args=send-probe,<address>`). It
+        # therefore reads what sending needs (docs/roadmap.md, F11).
+        env {
+          name  = "PROVIDERS_MODE"
+          value = var.providers_mode
+        }
+
+        # Declared only where there is one, for the reason the service's own
+        # declaration gives (infra/terraform/cloud_run.tf): a variable set to
+        # nothing refuses the start.
+        dynamic "env" {
+          for_each = var.mail_from != "" ? [1] : []
+          content {
+            name  = "MAIL_FROM"
+            value = var.mail_from
+          }
+        }
+
+        env {
+          name  = "MAIL_DIRECTORY"
+          value = "/tmp/mailbox"
+        }
+
+        dynamic "env" {
+          for_each = var.providers_mode == "real" ? [1] : []
+          content {
+            name = "MAIL_API_KEY"
+            value_source {
+              secret_key_ref {
+                secret  = google_secret_manager_secret.mail_api_key.secret_id
+                version = "latest"
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -112,7 +150,10 @@ resource "google_cloud_run_v2_job" "migrate" {
     ]
   }
 
-  depends_on = [google_secret_manager_secret_iam_member.migrator_password]
+  depends_on = [
+    google_secret_manager_secret_iam_member.migrator_password,
+    google_secret_manager_secret_iam_member.migrator_mail_api_key,
+  ]
 }
 
 # The pipeline rolls the job forward and executes it, on this job alone.

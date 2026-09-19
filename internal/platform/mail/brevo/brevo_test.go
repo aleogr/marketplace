@@ -1,0 +1,246 @@
+package brevo_test
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/aleogr/marketplace/internal/platform/mail"
+	"github.com/aleogr/marketplace/internal/platform/mail/brevo"
+	"github.com/aleogr/marketplace/internal/platform/mail/mailtest"
+)
+
+const key = "a-key-that-is-never-in-this-repository"
+
+// provider is a server that behaves like Brevo's API: it accepts a message
+// against the key, names it, and afterwards reports events about the messages
+// it named and about no others.
+//
+// A stub and not the real service, because tests never reach a real provider
+// (docs/requirements.md, section 25). What it is for is the adapter's own
+// half of the conversation: the header the key travels in, the shape of the
+// body, the field the identifier comes back in, and what an answer that is not
+// a success does to a caller.
+type provider struct {
+	mu sync.Mutex
+	// sent maps the identifier this server issued to the address it was for.
+	sent map[string]string
+	// status, when set, is answered to every call instead.
+	status int
+}
+
+func newProvider() *provider { return &provider{sent: map[string]string{}} }
+
+func (p *provider) start(t *testing.T) string {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(p.handle))
+	t.Cleanup(server.Close)
+	return server.URL
+}
+
+func (p *provider) handle(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("api-key") != key {
+		// What the real API answers a call with no key or the wrong one.
+		http.Error(w, `{"code":"unauthorized","message":"Key not found"}`, http.StatusUnauthorized)
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.status != 0 {
+		http.Error(w, `{"code":"invalid_parameter","message":"sender not recognised"}`, p.status)
+		return
+	}
+
+	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/v3/smtp/email":
+		var body struct {
+			To []struct {
+				Email string `json:"email"`
+			} `json:"to"`
+			Subject     string `json:"subject"`
+			TextContent string `json:"textContent"`
+			HTMLContent string `json:"htmlContent"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.To) == 0 {
+			http.Error(w, `{"code":"invalid_parameter"}`, http.StatusBadRequest)
+			return
+		}
+
+		id := "<20260919." + body.To[0].Email + "@smtp-relay.mailin.fr>"
+		p.sent[id] = body.To[0].Email
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"messageId": id})
+
+	case r.Method == http.MethodGet && r.URL.Path == "/v3/smtp/statistics/events":
+		events := []map[string]string{}
+		query := r.URL.Query()
+		if address, ok := p.sent[query.Get("messageId")]; ok && address == query.Get("email") {
+			events = append(events, map[string]string{
+				"email":     address,
+				"event":     "hardBounce",
+				"messageId": query.Get("messageId"),
+				"reason":    "the mailbox does not exist",
+			})
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"events": events})
+
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// client returns the adapter talking to a stub of the provider.
+func client(t *testing.T, stub *provider) *brevo.Client {
+	t.Helper()
+
+	adapter, err := brevo.New(brevo.Settings{
+		Key:  key,
+		From: brevo.Address{Name: "Marketplace platform", Email: "no-reply@marketplace.example"},
+		API:  stub.start(t) + "/v3",
+	})
+	if err != nil {
+		t.Fatalf("brevo.New() = %v", err)
+	}
+	return adapter
+}
+
+func TestTheRealAdapterMeetsTheContract(t *testing.T) {
+	mailtest.Contract(t, func(t *testing.T) mailtest.Adapter {
+		t.Helper()
+		return client(t, newProvider())
+	})
+}
+
+func TestTheAdapterNeedsAKeyAndAnAddress(t *testing.T) {
+	for name, settings := range map[string]brevo.Settings{
+		"no key":     {From: brevo.Address{Email: "no-reply@marketplace.example"}},
+		"no address": {Key: key},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := brevo.New(settings); err == nil {
+				t.Error("brevo.New() accepted settings it cannot send with")
+			}
+		})
+	}
+}
+
+// A refusal must reach the caller as a refusal: a send that reported success
+// for a 400 would be a message nobody receives and nobody misses.
+func TestARefusalIsReported(t *testing.T) {
+	stub := newProvider()
+	adapter := client(t, stub)
+	stub.status = http.StatusBadRequest
+
+	_, err := adapter.Send(t.Context(), mailtest.Message("reader@example.test"))
+	if err == nil {
+		t.Fatal("Send() reported success for a refusal")
+	}
+	if !strings.Contains(err.Error(), "400") {
+		t.Errorf("the error does not say what the provider answered: %v", err)
+	}
+	if strings.Contains(err.Error(), key) {
+		t.Errorf("the error carries the API key: %v", err)
+	}
+}
+
+// The key travels in the provider's own header. A key in the wrong place is a
+// deployment that sends nothing, which is exactly the failure the stub's 401
+// stands for here.
+func TestTheKeyIsSentWhereTheProviderExpectsIt(t *testing.T) {
+	stub := newProvider()
+	adapter, err := brevo.New(brevo.Settings{
+		Key:  "the-wrong-key",
+		From: brevo.Address{Email: "no-reply@marketplace.example"},
+		API:  stub.start(t) + "/v3",
+	})
+	if err != nil {
+		t.Fatalf("brevo.New() = %v", err)
+	}
+
+	if _, err := adapter.Send(t.Context(), mailtest.Message("reader@example.test")); err == nil {
+		t.Error("Send() reported success while authenticating with the wrong key")
+	}
+}
+
+func TestTheWebhookBecomesPlatformEvents(t *testing.T) {
+	adapter := client(t, newProvider())
+
+	// The body Brevo posts for a hard bounce, as its documentation describes
+	// it: the event name, the address, its own event id, the identifier the
+	// send returned, and the receiving server's reason.
+	mailtest.Reader(t, adapter, []byte(`{
+		"event": "hard_bounce",
+		"email": "Bouncer@Example.Test",
+		"id": 1234567,
+		"date": "2026-09-19 10:00:00",
+		"message-id": "<20260919.1@smtp-relay.mailin.fr>",
+		"reason": "550 5.1.1 the mailbox does not exist",
+		"tag": "probe"
+	}`), mail.Event{
+		Address:  "bouncer@example.test",
+		Kind:     mail.Bounce,
+		Message:  "<20260919.1@smtp-relay.mailin.fr>",
+		Reported: "hard_bounce",
+	})
+}
+
+func TestAComplaintSuppressesTooAndABatchIsRead(t *testing.T) {
+	adapter := client(t, newProvider())
+
+	events, err := adapter.Events([]byte(`[
+		{"event":"spam","email":"annoyed@example.test","id":1,"message-id":"<a>"},
+		{"event":"hard_bounce","email":"gone@example.test","id":2,"message-id":"<b>"}
+	]`))
+	if err != nil {
+		t.Fatalf("Events() = %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("Events() returned %d events, want 2", len(events))
+	}
+	if events[0].Kind != mail.Complaint {
+		t.Errorf("a spam report became %q, want %q", events[0].Kind, mail.Complaint)
+	}
+}
+
+// A soft bounce is a full mailbox or a server that was busy. Suppressing an
+// address for one would lose a reader who did nothing wrong, and the provider
+// retries those itself.
+func TestWhatSuppressesNobodyIsIgnored(t *testing.T) {
+	adapter := client(t, newProvider())
+
+	for _, event := range []string{"soft_bounce", "deferred", "delivered", "opened", "click"} {
+		events, err := adapter.Events([]byte(`{"event":"` + event + `","email":"reader@example.test","id":1}`))
+		if err != nil {
+			t.Fatalf("Events(%s) = %v", event, err)
+		}
+		if len(events) != 0 {
+			t.Errorf("%s became %d events, want none", event, len(events))
+		}
+	}
+}
+
+func TestABodyThatCannotBeReadIsAnError(t *testing.T) {
+	adapter := client(t, newProvider())
+
+	for name, body := range map[string]string{
+		"empty":      "",
+		"not JSON":   "hard_bounce reader@example.test",
+		"wrong type": `{"event": 5}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := adapter.Events([]byte(body)); err == nil {
+				t.Error("Events() accepted a body it cannot read")
+			}
+		})
+	}
+}
