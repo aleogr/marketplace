@@ -118,12 +118,13 @@ func (p *Pool) Ping(ctx context.Context) error {
 }
 
 // InTx runs fn inside a transaction, committing when it returns nil and
-// rolling back otherwise.
+// rolling back otherwise, without naming a marketplace.
 //
-// Every write goes through here rather than through the pool directly, because
-// this is where the tenant session variable is set once row-level security
-// arrives (docs/design.md, section 2.6): a write that bypassed it would be a
-// write with no tenant.
+// What it can reach is therefore what belongs to no marketplace — the markets,
+// the schema itself — and, when the connection is the owning role, everything.
+// Tenant data is reached through InTxFor, because row-level security answers a
+// transaction that named no marketplace with no rows at all
+// (docs/design.md, section 2.6).
 func (p *Pool) InTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	tx, err := p.Begin(ctx)
 	if err != nil {
@@ -142,6 +143,32 @@ func (p *Pool) InTx(ctx context.Context, fn func(pgx.Tx) error) error {
 		return fmt.Errorf("cannot commit: %w", err)
 	}
 	return nil
+}
+
+// InTxFor runs fn inside a transaction serving one marketplace.
+//
+// The marketplace is set with SET LOCAL, which the transaction's end undoes.
+// That matters more than it looks: the connection goes back to a pool and is
+// handed to the next request, and a setting that outlived its transaction
+// would serve one marketplace's rows to another's request. It is set through
+// set_config rather than by interpolating the identifier into SET LOCAL, which
+// takes no parameters.
+//
+// Every query inside fn is then answered by the policies of
+// migrations/00004_row_level_security.sql: rows of another marketplace do not
+// exist, whether or not the query remembered to say so.
+func (p *Pool) InTxFor(ctx context.Context, marketplaceID string, fn func(pgx.Tx) error) error {
+	if marketplaceID == "" {
+		return errors.New("a transaction for a marketplace needs its id")
+	}
+
+	return p.InTx(ctx, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx,
+			"SELECT set_config('app.marketplace_id', $1, true)", marketplaceID); err != nil {
+			return fmt.Errorf("cannot scope the transaction to marketplace %s: %w", marketplaceID, err)
+		}
+		return fn(tx)
+	})
 }
 
 // Close releases the pool and the connector behind it.

@@ -26,31 +26,27 @@ func NewRepository(queryer Queryer) *Repository {
 
 // hostQuery reads every host with the marketplace behind it.
 //
+// Through a function, not from the tables: resolution runs before a
+// marketplace is known — it is what decides which one — so it cannot be scoped
+// by the answer it is looking for, and the tables are under row-level security
+// (migrations/00004_row_level_security.sql). The function runs as the owning
+// role and returns the routing map and nothing else.
+//
 // One query, not one per host: the whole map is small — a marketplace is
 // created by a person, not by traffic — and reading it in one go is what lets
 // resolution be a map lookup on the hot path.
-const hostQuery = `
-SELECT h.host,
-       m.id::text,
-       m.slug,
-       m.name,
-       m.market_code,
-       m.revenue_model,
-       m.state,
-       m.detect_contact_data,
-       m.reveal_contact,
-       m.default_language,
-       COALESCE(
-           ARRAY(
-               SELECT l.language
-               FROM marketplace_language l
-               WHERE l.marketplace_id = m.id
-               ORDER BY l.language
-           ),
-           ARRAY[]::text[]
-       ) AS languages
-FROM marketplace_host h
-JOIN marketplace m ON m.id = h.marketplace_id
+const hostQuery = `SELECT host,
+       marketplace_id,
+       slug,
+       name,
+       market_code,
+       revenue_model,
+       state,
+       detect_contact_data,
+       reveal_contact,
+       default_language,
+       languages
+FROM tenancy_host_map()
 `
 
 // Hosts returns every configured host and the marketplace it belongs to.

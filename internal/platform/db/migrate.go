@@ -94,6 +94,13 @@ func grant(ctx context.Context, sqlDB *sql.DB, database, appUser string) error {
 			"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO " + user,
 		"ALTER DEFAULT PRIVILEGES IN SCHEMA public " +
 			"GRANT USAGE, SELECT ON SEQUENCES TO " + user,
+		// Functions the application calls. One of them is how host resolution
+		// reads a table row-level security would otherwise hide from it
+		// (migrations/00004_row_level_security.sql), and it is granted by name
+		// to this role because the migration revoked it from everyone.
+		"GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO " + user,
+		"ALTER DEFAULT PRIVILEGES IN SCHEMA public " +
+			"GRANT EXECUTE ON FUNCTIONS TO " + user,
 	}
 
 	for _, statement := range statements {

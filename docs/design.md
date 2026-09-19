@@ -99,7 +99,7 @@ Alternatives rejected: in-process goroutines with a minimum instance (pays for a
 
 Two layers, closing the §29 item on isolation:
 - **Application:** the marketplace is part of every request's context; every repository query is scoped by it. Authorization between stores uses the store id of the session and is covered by dedicated tests.
-- **Database:** every tenant table carries `marketplace_id`; the application sets a session variable when it opens a transaction, and row-level security policies refuse rows of other marketplaces even when a query forgets the filter. Staff use a database role without RLS; their marketplace scope comes from their role assignments (§19).
+- **Database:** every tenant table carries `marketplace_id`; the application sets a session variable when it opens a transaction, and row-level security policies refuse rows of other marketplaces even when a query forgets the filter. A transaction that named no marketplace reads nothing, rather than everything. Host resolution is the one thing that runs before a marketplace is known — it is what decides which one — and reads the routing map through a single function that runs as the owning role, so the routing tables are covered by the policies like any other. Staff use a database role without RLS; their marketplace scope comes from their role assignments (§19).
 
 ### 2.7 Search
 
