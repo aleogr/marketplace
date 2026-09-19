@@ -341,7 +341,7 @@ infrastructure checklist is written in F19 and the wizard belongs to a later pha
 
 ### F7 — Request pipeline: security headers, CSRF and rate limiting
 
-- [ ] **Objective:** the binary defends itself, because there is no load balancer and no web
+- [x] **Objective:** the binary defends itself, because there is no load balancer and no web
   application firewall in front of it (§24).
 
 **Depends on:** F5.
@@ -358,7 +358,14 @@ infrastructure checklist is written in F19 and the wizard belongs to a later pha
   **database-backed counter** for the sensitive endpoints (sign-in, sign-up, recovery, and later
   checkout), because Cloud Run runs several instances and a per-instance counter would multiply
   the effective limit by the instance count.
-- The request-origin context — client IP and user agent — that auditing consumes in F12.
+- The request-origin context — client IP and user agent — that auditing consumes in F12. The client
+  address is read from the **right** of `X-Forwarded-For`, not the left: Google's front end appends
+  to that header rather than replacing it, so everything to the left of what the infrastructure
+  added is written by whoever is being limited. How many entries it appends is in no document that
+  could be found, so it is configuration (`TRUSTED_PROXY_HOPS`, default 2) and it is measured
+  against the deployment rather than assumed.
+- The database-backed limiter is built and proved here; the endpoints it guards arrive with
+  sign-in (F10), which mounts it.
 
 **Verification:**
 - Unit tests per middleware, including a CSRF token replayed from another session being refused.

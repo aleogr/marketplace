@@ -68,6 +68,12 @@ type Config struct {
 	// data because it belongs to the deployment and exists before any
 	// marketplace does (docs/requirements.md, section 7).
 	PlatformHost string
+	// ProxyHops is how many entries the infrastructure in front of this
+	// process appends to `X-Forwarded-For`. It decides which entry of that
+	// header is the client's address and which are written by the client
+	// itself (internal/platform/httpx.ClientIP). Two is what Cloud Run was
+	// measured to add; it is configuration because no document states it.
+	ProxyHops int
 	// SeedMarketplaces declares, as JSON, the marketplaces this environment
 	// should have. Only the `migrate` command reads it. Marketplaces are
 	// seeded from the environment rather than from a migration because their
@@ -90,6 +96,7 @@ func Load(lookup Lookup) (Config, error) {
 		Indexable:     false,
 		LogLevel:      slog.LevelInfo,
 		ProvidersMode: ProvidersFake,
+		ProxyHops:     2,
 	}
 
 	var problems []error
@@ -174,6 +181,15 @@ func Load(lookup Lookup) (Config, error) {
 
 	read("DATABASE_APP_USER", func(value string) error {
 		cfg.Database.AppUser = value
+		return nil
+	})
+
+	read("TRUSTED_PROXY_HOPS", func(value string) error {
+		hops, err := strconv.Atoi(value)
+		if err != nil || hops < 0 {
+			return fmt.Errorf("%q is not a count of proxies; use a whole number, 0 or more", value)
+		}
+		cfg.ProxyHops = hops
 		return nil
 	})
 

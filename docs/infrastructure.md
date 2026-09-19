@@ -524,6 +524,35 @@ that belongs to no marketplace is therefore what an address the edge *does*
 route answers with — the service's `run.app` address, which no marketplace
 claims. That is where every deployment proves it (`e2e/test_hosts.py`).
 
+## Which entry of `X-Forwarded-For` is the client
+
+Rate limiting keys on the client's address, so reading the wrong entry of that
+header is not a detail: read one the client wrote, and a client picks a fresh
+address per request and is never limited.
+
+Google's front end **appends** to the header rather than replacing it, so the
+entries to the left of what it added come from the request as it arrived. The
+address is therefore counted from the right, `TRUSTED_PROXY_HOPS` entries back
+(default 2, for the client address and the front end's own).
+
+**No Cloud Run document states how many entries it adds** — it is not in the
+container contract — so the value is checked against the deployment instead of
+trusted:
+
+```bash
+# Ordinary requests, until the limit answers 429.
+for i in $(seq 1 400); do curl -s -o /dev/null -w '%{http_code}\n' https://<host>/ ; done | sort | uniq -c
+
+# The same, each with a different forged address. If forging changes the
+# answer, the hop count is wrong and the limit is not a limit.
+for i in $(seq 1 400); do
+  curl -s -o /dev/null -w '%{http_code}\n' -H "X-Forwarded-For: 203.0.113.$((RANDOM % 254 + 1))" https://<host>/
+done | sort | uniq -c
+```
+
+Both runs must reach `429`. If the second one does not, set
+`TRUSTED_PROXY_HOPS` to 1 in the environment's `.tfvars` and deploy.
+
 ## Schema changes that hide rows
 
 A migration that puts a table under row-level security hides its rows from any

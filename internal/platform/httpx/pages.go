@@ -2,7 +2,9 @@ package httpx
 
 import (
 	"net/http"
+	"time"
 
+	"github.com/aleogr/marketplace/internal/platform/ratelimit"
 	"github.com/aleogr/marketplace/internal/tenancy"
 )
 
@@ -27,7 +29,41 @@ var (
 		"en-US": "This marketplace is being prepared and is not open yet.",
 		"pt-BR": "Este marketplace está em preparação e ainda não abriu.",
 	}
+	forbiddenRequest = text{
+		"en-US": "This request could not be verified. Reload the page and try again.",
+		"pt-BR": "Não foi possível verificar esta solicitação. Recarregue a página e tente novamente.",
+	}
+	tooManyRequests = text{
+		"en-US": "Too many requests. Wait a moment and try again.",
+		"pt-BR": "Solicitações demais. Espere um momento e tente novamente.",
+	}
 )
+
+// bothLanguages writes a short message in every language the platform speaks.
+//
+// These are the answers given before a marketplace is known, or instead of
+// what the visitor asked for, so there is no marketplace to take a language
+// from — and guessing one would be a worse answer than showing both
+// (docs/requirements.md, section 6).
+func bothLanguages(w http.ResponseWriter, status int, message text) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(message["en-US"] + "\n" + message["pt-BR"] + "\n"))
+}
+
+// forbidden answers a request that could not prove where it came from.
+func forbidden(w http.ResponseWriter) {
+	bothLanguages(w, http.StatusForbidden, forbiddenRequest)
+}
+
+// Refused answers a request that has come too often.
+//
+// It is exported because the rate limiter mounts it, and the limiter knows
+// nothing about pages (internal/platform/ratelimit).
+func Refused(w http.ResponseWriter, _ *http.Request, retryAfter time.Duration) {
+	ratelimit.RetryAfter(w, retryAfter)
+	bothLanguages(w, http.StatusTooManyRequests, tooManyRequests)
+}
 
 // UnknownHost answers a request whose host belongs to no marketplace.
 //

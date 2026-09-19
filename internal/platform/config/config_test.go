@@ -27,6 +27,7 @@ func TestLoadAppliesDefaultsWhenNothingIsSet(t *testing.T) {
 		Indexable:     false,
 		LogLevel:      slog.LevelInfo,
 		ProvidersMode: config.ProvidersFake,
+		ProxyHops:     2,
 	}
 	if got != want {
 		t.Errorf("Load() = %+v, want %+v", got, want)
@@ -35,10 +36,11 @@ func TestLoadAppliesDefaultsWhenNothingIsSet(t *testing.T) {
 
 func TestLoadReadsEveryVariable(t *testing.T) {
 	got, err := config.Load(env(map[string]string{
-		"PORT":           "9090",
-		"INDEXABLE":      "true",
-		"LOG_LEVEL":      "debug",
-		"PROVIDERS_MODE": "real",
+		"PORT":               "9090",
+		"INDEXABLE":          "true",
+		"LOG_LEVEL":          "debug",
+		"PROVIDERS_MODE":     "real",
+		"TRUSTED_PROXY_HOPS": "1",
 	}))
 	if err != nil {
 		t.Fatalf("Load() returned an error: %v", err)
@@ -49,6 +51,7 @@ func TestLoadReadsEveryVariable(t *testing.T) {
 		Indexable:     true,
 		LogLevel:      slog.LevelDebug,
 		ProvidersMode: config.ProvidersReal,
+		ProxyHops:     1,
 	}
 	if got != want {
 		t.Errorf("Load() = %+v, want %+v", got, want)
