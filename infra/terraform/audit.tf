@@ -43,3 +43,12 @@ resource "google_kms_crypto_key_iam_member" "service" {
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
   member        = "serviceAccount:${google_service_account.service.email}"
 }
+
+# The migration job runs the same binary as the service and reads the same
+# variable, so it needs the same access. It will also audit what it declares,
+# in the transaction that declares it (docs/roadmap.md, F12).
+resource "google_kms_crypto_key_iam_member" "migrator" {
+  crypto_key_id = google_kms_crypto_key.audit.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${google_service_account.migrator.email}"
+}
