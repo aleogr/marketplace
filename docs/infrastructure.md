@@ -603,6 +603,27 @@ The dispatcher runs every minute, so an empty answer means the schedule is not
 firing or the callbacks are being refused — and a refusal says so in the log of
 the service, with the reason.
 
+**Read on 19 September 2026**, minutes after the first deployment that let the
+callbacks through:
+
+```
+2026-09-19T05:22:03Z  dispatch-outbox  13.917183ms
+2026-09-19T05:21:02Z  dispatch-outbox  13.670649ms
+2026-09-19T05:20:02Z  dispatch-outbox  12.474012ms
+2026-09-19T05:19:03Z  dispatch-outbox  12.300203ms
+2026-09-19T05:18:03Z  dispatch-outbox  31.075831ms
+```
+
+One run a minute, each a few milliseconds on an empty outbox. The endpoint
+refuses everything else: asked without a token, and with a made-up one, the
+same address answers `401`.
+
+**The first deployment did not let them through**, and every check was green
+while the job silently never ran: the callback address was inside language
+resolution and answered `302`, which Cloud Tasks and Cloud Scheduler do not
+follow. An end-to-end test now asks for that address without following
+redirects, which is the check that was missing.
+
 ## Schema changes that hide rows
 
 A migration that puts a table under row-level security hides its rows from any
