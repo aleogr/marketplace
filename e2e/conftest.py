@@ -165,6 +165,23 @@ def server(request: pytest.FixtureRequest) -> Server:
     return request.getfixturevalue("run_server")()
 
 
+@pytest.fixture
+def site_url(server: Server) -> str:
+    """An address that serves pages, as opposed to one that merely answers.
+
+    Against a deployment, the service's own ``run.app`` address belongs to no
+    marketplace, so every page there is the 404 that says exactly that
+    (docs/roadmap.md, F5). The pages therefore have to be asked for at a host
+    some marketplace claims, which is what ``MARKETPLACE_HOSTS`` names. A local
+    process runs without a database, resolves no hosts and serves every
+    address, so there its own base URL is the answer.
+    """
+    for host in os.environ.get("MARKETPLACE_HOSTS", "").split(","):
+        if host.strip():
+            return f"https://{host.strip()}"
+    return server.base_url
+
+
 @pytest.fixture(scope="session")
 def screenshots() -> Path:
     """The directory CI keeps as the verification evidence."""
