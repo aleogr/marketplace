@@ -101,6 +101,13 @@ func grant(ctx context.Context, sqlDB *sql.DB, database, appUser string) error {
 		"GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO " + user,
 		"ALTER DEFAULT PRIVILEGES IN SCHEMA public " +
 			"GRANT EXECUTE ON FUNCTIONS TO " + user,
+		// And one table the application may only add to. The blanket grant
+		// above is applied after every migration, so a revoke written inside a
+		// migration would be undone by the next deployment; here it is the
+		// last word (migrations/00008_audit_log.sql). The trigger on that
+		// table is the second belt, for the day a backup is restored under
+		// different permissions.
+		"REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM " + user,
 	}
 
 	for _, statement := range statements {

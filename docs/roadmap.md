@@ -559,7 +559,7 @@ change afterwards. Nothing downstream waits for it.
 
 ### F12 — Audit log
 
-- [ ] **Objective:** every operation is traceable — who, what, when, from where, and the state
+- [x] **Objective:** every operation is traceable — who, what, when, from where, and the state
   before and after — and a deletion request erases the personal content without breaking the
   chain (§21, §18.3).
 
@@ -583,10 +583,15 @@ version, noted in the cost inventory of F19.
 - A Cloud Scheduler job verifying the chain and raising an alert on a break.
 
 **Verification:**
-- Integration tests: `UPDATE` and `DELETE` refused by permissions and by the trigger; a record
-  altered out of band is detected by the verification job; destroying a key leaves the content
-  unrecoverable while the chain still verifies; a record contains no personal data in clear text.
-- The verification job's output attached.
+- Integration tests against a real PostgreSQL: `UPDATE` and `DELETE` refused by permissions and by
+  the trigger; a record altered out of band is detected and named by the verification; destroying a
+  key leaves the content unrecoverable while the chain still verifies; a record holds no personal
+  data in clear text; each marketplace's chain is its own and a marketplace sees only its records.
+- Both belts were mutation-checked, and each one catches what the other does not: with the revoke
+  removed the application role is stopped by the trigger, and with the trigger removed the role
+  that owns the table is stopped by nothing.
+- Delivered in two pull requests, because one was too large to review: the key keeper first, the
+  log itself second.
 
 **Note:** the retention periods that delay key destruction are an open §29 topic awaiting the
 lawyer. The provisional defaults of design decision 22 are implemented as parameters in F17, so

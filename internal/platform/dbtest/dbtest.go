@@ -14,14 +14,21 @@
 package dbtest
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // binDir holds the PostgreSQL programs. The version is pinned to the one the
@@ -34,29 +41,128 @@ const binDir = "/usr/lib/postgresql/16/bin"
 // outside the session's scratchpad and handed over.
 const owner = "postgres"
 
+// timeout bounds the calls this package makes on its own account, so that a
+// server that accepts a connection and then says nothing fails the run with a
+// message instead of holding it until CI gives up.
+const timeout = 30 * time.Second
+
 var url string
 
-// Run starts a database, runs the tests, and stops it again.
+// Run gives the tests a database of their own, runs them, and takes it away.
 //
 // Integration tests call it from TestMain. It returns the exit code rather than
 // calling os.Exit, so the deferred cleanup actually runs.
 func Run(m *testing.M) int {
-	if fromEnvironment := os.Getenv("TEST_DATABASE_URL"); fromEnvironment != "" {
-		url = fromEnvironment
-		return m.Run()
+	server := os.Getenv("TEST_DATABASE_URL")
+	if server == "" {
+		started, stop, err := start()
+		if err != nil {
+			fmt.Fprintf(os.Stderr,
+				"dbtest: cannot start PostgreSQL: %v\n"+
+					"Set TEST_DATABASE_URL to use a database that is already running.\n", err)
+			return 1
+		}
+		defer stop()
+		server = started
 	}
 
-	dataDir, stop, err := start()
+	own, drop, err := ownDatabase(server)
 	if err != nil {
-		fmt.Fprintf(os.Stderr,
-			"dbtest: cannot start PostgreSQL: %v\n"+
-				"Set TEST_DATABASE_URL to use a database that is already running.\n", err)
+		fmt.Fprintf(os.Stderr, "dbtest: %v\n", err)
 		return 1
 	}
-	defer stop()
+	defer drop()
 
-	_ = dataDir
+	url = own
 	return m.Run()
+}
+
+// ownDatabase creates a database for this test binary and returns the function
+// that drops it again.
+//
+// Every package that touches the database applies the migrations, and
+// `go test ./...` runs those packages at the same time against the one address
+// CI hands over. Sharing a database means two processes both finding a
+// migration unapplied and both applying it, and the second one failing on a
+// CREATE that has just happened. A database per package removes that, and the
+// rest of the class with it: no schema, fixture or grant of one package is
+// another package's surprise.
+func ownDatabase(server string) (string, func(), error) {
+	name, err := databaseName()
+	if err != nil {
+		return "", nil, err
+	}
+	quoted := pgx.Identifier{name}.Sanitize() //nolint:misspell // pgx's own method name.
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	if err := onServer(ctx, server, "CREATE DATABASE "+quoted); err != nil {
+		return "", nil, fmt.Errorf("cannot create the database %s: %w", name, err)
+	}
+
+	own, err := addressOf(server, name)
+	if err != nil {
+		return "", nil, err
+	}
+
+	drop := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		// FORCE, because a pool a test forgot to close would otherwise hold
+		// the database open and leave it behind on a shared server.
+		if err := onServer(ctx, server, "DROP DATABASE IF EXISTS "+quoted+" WITH (FORCE)"); err != nil {
+			fmt.Fprintf(os.Stderr, "dbtest: cannot drop the database %s: %v\n", name, err)
+		}
+	}
+	return own, drop, nil
+}
+
+// databaseName names the database after the test binary, so that a database
+// left behind by a killed run says which package left it, with enough of a
+// random tail that two runs of the same package never collide.
+func databaseName() (string, error) {
+	var tail [6]byte
+	if _, err := rand.Read(tail[:]); err != nil {
+		return "", fmt.Errorf("cannot name a database: %w", err)
+	}
+
+	binary := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '_'
+	}, strings.ToLower(filepath.Base(os.Args[0])))
+
+	// PostgreSQL truncates an identifier at 63 bytes, and a truncated name
+	// could collide with another package's.
+	if len(binary) > 32 {
+		binary = binary[:32]
+	}
+	return "dbtest_" + binary + "_" + hex.EncodeToString(tail[:]), nil
+}
+
+// onServer runs one statement on the address the environment gave, which is
+// the only database that exists before this package makes one.
+func onServer(ctx context.Context, server, statement string) error {
+	conn, err := pgx.Connect(ctx, server)
+	if err != nil {
+		return fmt.Errorf("cannot reach the server: %w", err)
+	}
+	defer func() { _ = conn.Close(ctx) }()
+
+	_, err = conn.Exec(ctx, statement)
+	return err
+}
+
+// addressOf is the server's address pointed at another database on it.
+func addressOf(server, name string) (string, error) {
+	parsed, err := neturl.Parse(server)
+	if err != nil {
+		return "", fmt.Errorf("the database address is not a URL: %w", err)
+	}
+	parsed.Path = "/" + name
+	return parsed.String(), nil
 }
 
 // URL is the connection string the tests connect with.
@@ -68,7 +174,8 @@ func URL(tb testing.TB) string {
 	return url
 }
 
-// start brings up a cluster and returns the function that stops it.
+// start brings up a cluster and returns its address and the function that
+// stops it again.
 func start() (string, func(), error) {
 	if _, err := os.Stat(binDir); err != nil {
 		return "", nil, fmt.Errorf("%s is not installed: %w", binDir, err)
@@ -117,13 +224,13 @@ func start() (string, func(), error) {
 		cleanup()
 	}
 
-	url = fmt.Sprintf("postgres://%s@127.0.0.1:%d/postgres?sslmode=disable", owner, port)
-	if err := waitFor(url); err != nil {
+	address := fmt.Sprintf("postgres://%s@127.0.0.1:%d/postgres?sslmode=disable", owner, port)
+	if err := waitFor(address); err != nil {
 		stop()
 		return "", nil, err
 	}
 
-	return dataDir, stop, nil
+	return address, stop, nil
 }
 
 // asOwner runs a PostgreSQL program as the account that owns the data
@@ -156,10 +263,10 @@ func freePort() (int, error) {
 
 // waitFor gives the server a moment to accept connections. pg_ctl -w already
 // waits, so this is the second line of defence rather than the first.
-func waitFor(url string) error {
+func waitFor(address string) error {
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		if err := run(binDir+"/pg_isready", "-d", url, "-q"); err == nil {
+		if err := run(binDir+"/pg_isready", "-d", address, "-q"); err == nil {
 			return nil
 		}
 		time.Sleep(200 * time.Millisecond)

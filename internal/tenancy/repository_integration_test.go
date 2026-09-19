@@ -62,7 +62,8 @@ func seeded(t *testing.T, specs []tenancy.Spec) *db.Pool {
 	}
 
 	if err := pool.InTx(t.Context(), func(tx pgx.Tx) error {
-		return tenancy.Seed(t.Context(), tx, specs)
+		_, err := tenancy.Seed(t.Context(), tx, specs)
+		return err
 	}); err != nil {
 		t.Fatalf("tenancy.Seed() = %v, want nil", err)
 	}
@@ -115,7 +116,8 @@ func TestSeedIsRepeatable(t *testing.T) {
 	pool := seeded(t, declared)
 
 	if err := pool.InTx(t.Context(), func(tx pgx.Tx) error {
-		return tenancy.Seed(t.Context(), tx, declared)
+		_, err := tenancy.Seed(t.Context(), tx, declared)
+		return err
 	}); err != nil {
 		t.Fatalf("the second Seed() = %v, want nil", err)
 	}
@@ -139,7 +141,8 @@ func TestSeedRemovesAHostTheEnvironmentNoLongerDeclares(t *testing.T) {
 	withdrawn[1].Hosts = []string{"marketplace2-renamed." + platformHost}
 
 	if err := pool.InTx(t.Context(), func(tx pgx.Tx) error {
-		return tenancy.Seed(t.Context(), tx, withdrawn)
+		_, err := tenancy.Seed(t.Context(), tx, withdrawn)
+		return err
 	}); err != nil {
 		t.Fatalf("Seed() = %v, want nil", err)
 	}
