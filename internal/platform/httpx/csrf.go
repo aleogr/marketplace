@@ -55,18 +55,20 @@ func CSRFToken(ctx context.Context) string {
 // `SameSite=Lax` is a second lock on the same door rather than a replacement:
 // it is not honoured by every browser in use, and its protection disappears on
 // a top-level POST from a site the visitor was already on.
-func CSRF(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		secret := csrfSecret(w, r)
+func CSRF(pages Pages) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			secret := csrfSecret(w, r)
 
-		if !safeMethod(r.Method) && !validCSRF(r, secret) {
-			forbidden(w)
-			return
-		}
+			if !safeMethod(r.Method) && !validCSRF(r, secret) {
+				pages.forbidden(w)
+				return
+			}
 
-		token := mintCSRF(secret)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), csrfKey{}, token)))
-	})
+			token := mintCSRF(secret)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), csrfKey{}, token)))
+		})
+	}
 }
 
 // safeMethod reports whether the method is one that does not change state, and

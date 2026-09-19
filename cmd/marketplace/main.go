@@ -22,7 +22,9 @@ import (
 
 	"github.com/aleogr/marketplace/internal/platform/config"
 	"github.com/aleogr/marketplace/internal/platform/db"
+	"github.com/aleogr/marketplace/internal/platform/geoip"
 	"github.com/aleogr/marketplace/internal/platform/httpx"
+	"github.com/aleogr/marketplace/internal/platform/i18n"
 	"github.com/aleogr/marketplace/internal/platform/logging"
 	"github.com/aleogr/marketplace/internal/platform/ratelimit"
 	"github.com/aleogr/marketplace/internal/platform/version"
@@ -113,6 +115,14 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		"platform_host", cfg.PlatformHost,
 	)
 
+	// The catalogues are read once, at start-up. A catalogue that cannot be
+	// read is a process that cannot say anything to anybody, so it refuses to
+	// start rather than serving pages of empty strings.
+	catalogue, err := i18n.Load()
+	if err != nil {
+		return err
+	}
+
 	// A nil *db.Pool in an interface is not a nil interface, so the handler is
 	// given one only when there is one to give.
 	var checker httpx.Database
@@ -120,15 +130,24 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		checker = database
 	}
 
-	handler := httpx.Handler(checker)
+	pages := httpx.NewPages(catalogue)
+	handler := httpx.NewSite(checker, catalogue).Handler()
 
-	// Host resolution comes before the handler, because language, session and
-	// every query after it are scoped by the answer (docs/design.md, section
-	// 2.3). It needs the database to know the hosts, so a process running
-	// without one serves every host as before.
+	// Language comes next, and it redirects: the language is part of the URL,
+	// so a page is never served at an address that does not say which language
+	// it is in (docs/design.md, decision 10). Country detection is a port with
+	// no adapter yet, which is a working deployment — everyone gets the
+	// official language until they choose otherwise (docs/roadmap.md, F18).
+	handler = i18n.NewResolver(catalogue, geoip.Nowhere{}).
+		Resolve(httpx.Speaks(catalogue), httpx.HealthPath, httpx.LanguagePath)(handler)
+
+	// Host resolution comes before that, because language, session and every
+	// query after it are scoped by the answer (docs/design.md, section 2.3).
+	// It needs the database to know the hosts, so a process running without
+	// one serves every host as before.
 	if database != nil {
 		resolver := tenancy.NewResolver(tenancy.NewRepository(database), cfg.PlatformHost)
-		handler = tenancy.Resolve(resolver, httpx.Pages{}, httpx.HealthPath)(handler)
+		handler = tenancy.Resolve(resolver, pages, httpx.HealthPath)(handler)
 	}
 
 	// And the defences come before that. There is no load balancer and no web
@@ -138,6 +157,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Indexable: cfg.Indexable,
 		ProxyHops: cfg.ProxyHops,
 		General:   ratelimit.NewMemory(generalBurst, generalPerMinute),
+		Pages:     pages,
 		Log:       log,
 	}.Wrap(handler)
 

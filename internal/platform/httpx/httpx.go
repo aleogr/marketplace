@@ -45,16 +45,6 @@ type Database interface {
 	Ping(ctx context.Context) error
 }
 
-// Handler returns the routes served by the process.
-//
-// database may be nil, which is how a process configured without one runs; the
-// health check then says so rather than pretending.
-func Handler(database Database) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+HealthPath, health(database))
-	return mux
-}
-
 // Pipeline is what a request passes through before it reaches a handler.
 //
 // The order is the one in docs/design.md, section 2.3, and each step is in its
@@ -81,20 +71,23 @@ type Pipeline struct {
 	ProxyHops int
 	// General bounds ordinary traffic. Nil mounts no general limit.
 	General ratelimit.Limiter
+	// Pages writes the refusals: they are the only part of the pipeline a
+	// person reads, so they come from the catalogue like every other text.
+	Pages Pages
 	// Log is where a limiter that cannot decide says so.
 	Log *slog.Logger
 }
 
 // Wrap mounts the pipeline around handler.
 func (p Pipeline) Wrap(handler http.Handler) http.Handler {
-	wrapped := CSRF(handler)
+	wrapped := CSRF(p.Pages)(handler)
 
 	if p.General != nil {
 		byAddress := func(r *http.Request) string {
 			origin, _ := OriginFrom(r.Context())
 			return "general:" + origin.IP
 		}
-		wrapped = exempt(HealthPath, ratelimit.Limit(p.General, byAddress, Refused, p.Log))(wrapped)
+		wrapped = exempt(HealthPath, ratelimit.Limit(p.General, byAddress, p.Pages.Refused, p.Log))(wrapped)
 	}
 
 	wrapped = Secure(p.Indexable)(wrapped)

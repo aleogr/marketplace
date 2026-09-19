@@ -1,0 +1,29 @@
+package web
+
+// Home is what a marketplace's address answers with in this phase: proof that
+// the host resolved, that the language resolved, and that both languages are
+// real. The catalogue of a marketplace arrives in phase 2.
+templ Home(page Page) {
+	@Layout(page, page.T("page.home.title", page.Marketplace)) {
+		<p>{ page.T("page.home.welcome", page.Marketplace) }</p>
+	}
+}
+
+// Preparing is what a marketplace answers with before it opens.
+//
+// It answers rather than refuses, on purpose: a marketplace leaves
+// `in_preparation` only once its host is shown to answer (docs/design.md,
+// decision 16).
+templ Preparing(page Page) {
+	@Layout(page, page.T("page.home.title", page.Marketplace)) {
+		<p>{ page.T("page.home.preparing") }</p>
+	}
+}
+
+// Platform is what the platform's own host answers with: the console lives
+// here, and no marketplace does (docs/requirements.md, section 7).
+templ Platform(page Page) {
+	@Layout(page, page.T("page.platform.title")) {
+		<p>{ page.T("page.platform.welcome") }</p>
+	}
+}

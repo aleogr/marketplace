@@ -12,7 +12,7 @@ VERSION ?= $(shell git describe --tags --dirty 2>/dev/null \
 	|| echo "$$(git rev-parse --short HEAD 2>/dev/null || echo unknown)-$$(date -u +%Y%m%d)")
 LDFLAGS := -X $(PKG)/internal/platform/version.version=$(VERSION)
 
-.PHONY: all build run check toolchain vet staticcheck lint sec vuln test cover integration e2e e2e-lab e2e-deps tf terraform-deps fmt clean version
+.PHONY: all build run check toolchain templates vet staticcheck lint sec vuln test cover integration e2e e2e-lab e2e-deps tf terraform-deps fmt clean version generate
 
 all: check test
 
@@ -25,7 +25,7 @@ run: build
 version:
 	@echo $(VERSION)
 
-check: toolchain vet staticcheck lint sec vuln
+check: toolchain templates vet staticcheck lint sec vuln
 
 # The Dockerfile and go.mod must name the same Go release. The toolchain line
 # wins at build time, so a Dockerfile ahead of it is decoration: the image would
@@ -45,6 +45,22 @@ toolchain:
 	   exit 1; \
 	 fi; \
 	 echo "Go $$pinned in both the Dockerfile and go.mod"
+
+# The generated template code is committed, so that a build needs no code
+# generator and a reviewer sees what changed. This is what keeps it honest: a
+# template edited without regenerating fails here rather than serving the old
+# markup.
+templates:
+	@$(GO) tool templ generate > /dev/null
+	@if ! git diff --quiet -- '*_templ.go'; then \
+	   echo "the generated template code is out of date; run 'make generate' and commit the result"; \
+	   git --no-pager diff --stat -- '*_templ.go'; \
+	   exit 1; \
+	 fi
+	@echo "the generated template code is current"
+
+generate:
+	$(GO) tool templ generate
 
 vet:
 	$(GO) vet ./...
