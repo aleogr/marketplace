@@ -295,6 +295,11 @@ Cloud Shell):
 - An end-to-end test against the lab reaching both hosts, with screenshots. It names the hosts in
   `MARKETPLACE_HOSTS` and is not part of the deployment pipeline: a newly mapped host waits for a
   certificate that can take a day, and a deployment must not fail for a wait that was expected.
+- The page for an address no marketplace claims, checked on every deployment. It is asked of the
+  service's own `run.app` address, named in `MARKETPLACE_UNCLAIMED_URL`: that address waits for no
+  certificate, and marketplaces are reached through the domains mapped to them, never through it.
+  An unknown `Host:` header sent to a mapped address would prove nothing — Google's front end routes
+  by that header and refuses one it has no mapping for before the request reaches the binary.
 
 **Not in this delivery:** the console wizard that creates a marketplace (design decision 16); its
 infrastructure checklist is written in F19 and the wizard belongs to a later phase.
