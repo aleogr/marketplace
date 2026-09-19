@@ -11,9 +11,10 @@
 -- still be explicable by the rules that applied to it, which a table that only
 -- holds today's answer cannot do.
 --
--- No table here carries `marketplace_id`: these describe the platform and its
--- marketplaces, not data belonging to one. Row-level security arrives with the
--- tenant tables it protects (docs/design.md, section 2.6).
+-- The market tables describe the platform, not one marketplace's data. The
+-- three that do carry `marketplace_id` — the marketplace itself, its languages
+-- and its hosts — are placed under row-level security by
+-- migrations/00004_row_level_security.sql (docs/design.md, section 2.6).
 
 -- +goose Up
 

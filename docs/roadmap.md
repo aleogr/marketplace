@@ -310,7 +310,7 @@ infrastructure checklist is written in F19 and the wizard belongs to a later pha
 
 ### F6 — Row-level security and tenant isolation
 
-- [ ] **Objective:** a query that forgets the marketplace filter returns nothing, instead of
+- [x] **Objective:** a query that forgets the marketplace filter returns nothing, instead of
   returning another marketplace's rows (design §2.6).
 
 **Depends on:** F5.
@@ -318,13 +318,18 @@ infrastructure checklist is written in F19 and the wizard belongs to a later pha
 **What is needed from the owner:** nothing.
 
 **Scope:**
-- Migrations creating the application database role **without** `BYPASSRLS`, and the separate role
-  used by migrations; the Cloud Run service connects as the application role.
+- The application database role is **without** `BYPASSRLS`, and is not the owner of the tables; the
+  separate role that runs the migrations owns them and is therefore the one that still sees every
+  marketplace, which the seed needs. Both roles already exist (F4); this delivery is what makes the
+  difference between them matter.
 - `ENABLE ROW LEVEL SECURITY` plus policies on every tenant table, keyed on a session variable.
 - The transaction helper sets that variable with `SET LOCAL`, so it cannot leak to another
   connection in the pool.
 - A schema-wide test that fails when **any** table carrying `marketplace_id` lacks row-level
   security or a policy, so a future table cannot forget it.
+- Host resolution reads the routing map through one function that runs as the owning role, because
+  it runs before a marketplace is known and would otherwise see nothing. One named exception, so
+  the routing tables are covered by the policies rather than left outside them.
 
 **Verification:**
 - Integration tests: the same query under two tenants returns disjoint rows; a deliberately

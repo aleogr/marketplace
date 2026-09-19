@@ -524,6 +524,21 @@ that belongs to no marketplace is therefore what an address the edge *does*
 route answers with — the service's `run.app` address, which no marketplace
 claims. That is where every deployment proves it (`e2e/test_hosts.py`).
 
+## Schema changes that hide rows
+
+A migration that puts a table under row-level security hides its rows from any
+revision that reads it the old way — and the migration job runs **before** the
+new revision serves, so for the couple of minutes between them the revision
+still serving is the old one. In the lab, with no traffic and a service that
+scales to zero, that window was accepted for the delivery that turned the
+policies on.
+
+For an environment with traffic it is two deployments, not one: first the code
+that reads through the function, then the migration that turns the policies on.
+The same rule covers dropping a column or renaming one — the schema and the
+code that expects it are only ever in step if the change that hides something
+comes second (`docs/roadmap.md`, F6).
+
 ## Branch protection
 
 The `main` branch is covered by the `protect-main` ruleset: a pull request is
