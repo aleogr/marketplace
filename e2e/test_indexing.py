@@ -14,13 +14,25 @@ import pytest
 
 # Every kind of response the process writes, not only HTML: a preview image or
 # a plain-text file listed in a search result is still a listing.
-ROUTES = ["/health", "/robots.txt", "/preview.png", "/en-US/", "/"]
+#
+# They are asked for at a host a marketplace claims, because that is where
+# pages exist; the health check is the exception, and belongs to the service
+# rather than to any marketplace (e2e/conftest.py, `site_url`).
+ROUTES = ["/robots.txt", "/preview.png", "/en-US/", "/"]
 
 
-def head(base_url: str, path: str):
+class Stop(urllib.request.HTTPRedirectHandler):
+    """A redirect is an answer here, not a step on the way to one."""
+
+    def redirect_request(self, *args, **kwargs):  # noqa: D102
+        return None
+
+
+def head(base_url: str, path: str, follow: bool = True):
     request = urllib.request.Request(base_url + path, method="HEAD")
+    opener = urllib.request.build_opener() if follow else urllib.request.build_opener(Stop)
     try:
-        return urllib.request.urlopen(request, timeout=15)
+        return opener.open(request, timeout=15)
     except urllib.error.HTTPError as error:
         return error
 
@@ -32,19 +44,38 @@ def body(base_url: str, path: str) -> str:
         return error.read().decode()
 
 
-def test_every_response_refuses_indexing_by_default(server):
+def test_every_response_refuses_indexing_by_default(server, site_url):
     """Not indexable is the default, and it applies to every response."""
-    for path in ROUTES:
-        response = head(server.base_url, path)
+    for path in ROUTES + ["/"]:
+        response = head(site_url, path)
         assert response.headers["X-Robots-Tag"] == "noindex, nofollow", (
             f"{path} does not refuse indexing"
         )
 
+    # The health check too: it is a response this process writes, and a probe
+    # is reached at the service's own address rather than at a marketplace's.
+    assert head(server.base_url, "/health").headers["X-Robots-Tag"] == "noindex, nofollow"
 
-def test_crawling_stays_allowed(server):
+
+def test_the_files_read_by_machines_have_no_language(site_url):
+    """A crawler asks for /robots.txt and a scraper asks for the preview.
+
+    Neither is a page, so neither is served in a language: robots.txt is
+    defined to live at the root, and a scraper that does not follow redirects
+    would find no image at all (docs/design.md, decision 10).
+    """
+    for path in ("/robots.txt", "/preview.png"):
+        response = head(site_url, path, follow=False)
+        assert response.status == 200, (
+            f"{path} answered {response.status}, "
+            f"sending a machine to {response.headers.get('Location')}"
+        )
+
+
+def test_crawling_stays_allowed(site_url):
     """To refuse indexing, crawling has to be allowed: a crawler that cannot
     fetch the page never reads the header refusing to list it."""
-    robots = body(server.base_url, "/robots.txt")
+    robots = body(site_url, "/robots.txt")
 
     assert "Allow: /" in robots
     assert "Disallow: /" not in robots
@@ -52,9 +83,9 @@ def test_crawling_stays_allowed(server):
     assert "# No sitemap" in robots, "the missing line carries no explanation"
 
 
-def test_the_link_preview_works_in_both_modes(server):
+def test_the_link_preview_works_in_both_modes(site_url):
     """That is exactly why crawling stays allowed."""
-    response = head(server.base_url, "/preview.png")
+    response = head(site_url, "/preview.png")
 
     assert response.status == 200
     assert response.headers["Content-Type"] == "image/png"
