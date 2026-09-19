@@ -24,6 +24,7 @@ import (
 	"github.com/aleogr/marketplace/internal/platform/db"
 	"github.com/aleogr/marketplace/internal/platform/httpx"
 	"github.com/aleogr/marketplace/internal/platform/logging"
+	"github.com/aleogr/marketplace/internal/platform/ratelimit"
 	"github.com/aleogr/marketplace/internal/platform/version"
 	"github.com/aleogr/marketplace/internal/tenancy"
 )
@@ -31,6 +32,16 @@ import (
 // shutdownGrace is how long in-flight requests have to finish after SIGTERM.
 // Cloud Run allows up to ten seconds before it kills the instance.
 const shutdownGrace = 8 * time.Second
+
+// The general limit, per client address and per instance. It is deliberately
+// generous: it is there to blunt a flood, not to pace a visitor who is loading
+// a page with its images and a few HTMX fragments. The sensitive endpoints are
+// bounded far more tightly, and in the database, by the delivery that adds them
+// (docs/roadmap.md, F7 and F10). Both become console parameters in F17.
+const (
+	generalBurst     = 120
+	generalPerMinute = 240
+)
 
 func main() {
 	if err := run(context.Background(), os.Args[1:], os.LookupEnv, os.Stdout); err != nil {
@@ -111,14 +122,24 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	handler := httpx.Handler(checker)
 
-	// Host resolution is the first thing a request meets, because language,
-	// session and every query after it are scoped by the answer
-	// (docs/design.md, section 2.3). It needs the database to know the hosts,
-	// so a process running without one serves every host as before.
+	// Host resolution comes before the handler, because language, session and
+	// every query after it are scoped by the answer (docs/design.md, section
+	// 2.3). It needs the database to know the hosts, so a process running
+	// without one serves every host as before.
 	if database != nil {
 		resolver := tenancy.NewResolver(tenancy.NewRepository(database), cfg.PlatformHost)
 		handler = tenancy.Resolve(resolver, httpx.Pages{}, httpx.HealthPath)(handler)
 	}
+
+	// And the defences come before that. There is no load balancer and no web
+	// application firewall in front of this process, so the binary is what
+	// applies them (docs/requirements.md, section 24).
+	handler = httpx.Pipeline{
+		Indexable: cfg.Indexable,
+		ProxyHops: cfg.ProxyHops,
+		General:   ratelimit.NewMemory(generalBurst, generalPerMinute),
+		Log:       log,
+	}.Wrap(handler)
 
 	if err := httpx.Serve(ctx, listener, handler, shutdownGrace); err != nil {
 		return err

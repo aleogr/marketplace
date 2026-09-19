@@ -10,10 +10,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
 
+	"github.com/aleogr/marketplace/internal/platform/ratelimit"
 	"github.com/aleogr/marketplace/internal/platform/version"
 )
 
@@ -51,6 +53,66 @@ func Handler(database Database) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+HealthPath, health(database))
 	return mux
+}
+
+// Pipeline is what a request passes through before it reaches a handler.
+//
+// The order is the one in docs/design.md, section 2.3, and each step is in its
+// place for a reason:
+//
+//   - the origin first, because everything after it keys on the address;
+//   - the security headers next, so that they are on the response whatever
+//     happens later, including a refusal;
+//   - the general rate limit, which turns a flood away before it costs a
+//     database round trip;
+//   - marketplace resolution, which is mounted by the caller because it needs
+//     the database;
+//   - CSRF, which is last, because a forged request should be counted by the
+//     limiter like any other.
+//
+// The health check is exempt from the limit and from resolution: it is called
+// by the platform's probes and by every deployment, from an address that is
+// not a visitor's and for a host no marketplace claims.
+type Pipeline struct {
+	// Indexable is the deployment's own setting.
+	Indexable bool
+	// ProxyHops is how many entries Google's front end adds to
+	// `X-Forwarded-For` (internal/platform/httpx.ClientIP).
+	ProxyHops int
+	// General bounds ordinary traffic. Nil mounts no general limit.
+	General ratelimit.Limiter
+	// Log is where a limiter that cannot decide says so.
+	Log *slog.Logger
+}
+
+// Wrap mounts the pipeline around handler.
+func (p Pipeline) Wrap(handler http.Handler) http.Handler {
+	wrapped := CSRF(handler)
+
+	if p.General != nil {
+		byAddress := func(r *http.Request) string {
+			origin, _ := OriginFrom(r.Context())
+			return "general:" + origin.IP
+		}
+		wrapped = exempt(HealthPath, ratelimit.Limit(p.General, byAddress, Refused, p.Log))(wrapped)
+	}
+
+	wrapped = Secure(p.Indexable)(wrapped)
+	return Origins(p.ProxyHops)(wrapped)
+}
+
+// exempt mounts middleware on everything but one path.
+func exempt(path string, middleware func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		limited := middleware(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == path {
+				next.ServeHTTP(w, r)
+				return
+			}
+			limited.ServeHTTP(w, r)
+		})
+	}
 }
 
 // health answers what this process is and whether it can do its work.

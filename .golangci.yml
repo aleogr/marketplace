@@ -20,6 +20,11 @@ linters:
       ignore-rules:
         # Go's own identifiers: context.Canceled, http.ErrServerClosed's docs.
         - canceled
+        # Portuguese words the checker reads as misspelled English. User-facing
+        # text exists in both languages by definition (docs/requirements.md,
+        # section 6), and a spell checker with one locale cannot judge the
+        # other. They move to translation files in F8.
+        - momento
     nolintlint:
       require-explanation: true
       require-specific: true
