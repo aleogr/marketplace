@@ -15,12 +15,43 @@ import (
 // a soft bounce — is read and ignored on purpose. A soft bounce is a full
 // mailbox or a server that was busy, and suppressing an address for it would
 // lose a reader who did nothing wrong; the provider retries those itself.
+// The keys are normalised, because the provider spells the same event two ways
+// and this platform has seen only one of them. Its API names the event
+// `hardBounce` when a webhook subscribes to it and `hardBounces` when its
+// statistics are queried; the body it posts is documented as `hard_bounce`,
+// which is a third spelling and the one nothing here has verified against a
+// real bounce. Matching on letters alone costs nothing and makes all three the
+// same event — the alternative is a bounce silently ignored because a provider
+// changed an underscore.
 var acted = map[string]mail.Kind{
-	"hard_bounce":   mail.Bounce,
-	"invalid_email": mail.Bounce,
-	"blocked":       mail.Bounce,
-	"spam":          mail.Complaint,
-	"unsubscribed":  mail.Complaint,
+	"hardbounce":   mail.Bounce,
+	"invalidemail": mail.Bounce,
+	"invalid":      mail.Bounce,
+	"blocked":      mail.Bounce,
+	"spam":         mail.Complaint,
+	"unsubscribed": mail.Complaint,
+}
+
+// normalise reduces a provider's name for an event to its letters, singular,
+// so that `hard_bounce`, `hardBounce`, `HARD-BOUNCE` and `hardBounces` are one
+// name. The provider uses the plural in its statistics and the singular in the
+// webhook it posts, which is the same event either way.
+func normalise(event string) string {
+	var letters strings.Builder
+	for _, character := range strings.ToLower(strings.TrimSpace(event)) {
+		if character >= 'a' && character <= 'z' {
+			letters.WriteRune(character)
+		}
+	}
+
+	// Only a plural of something: `spam`, `blocked`, `invalid` and
+	// `unsubscribed` end in no `s`, so nothing this platform acts on loses a
+	// letter it needed.
+	name := letters.String()
+	if len(name) > 1 && strings.HasSuffix(name, "s") {
+		name = strings.TrimSuffix(name, "s")
+	}
+	return name
 }
 
 // notification is one event as the provider posts it.
@@ -63,7 +94,7 @@ func (c *Client) Events(body []byte) ([]mail.Event, error) {
 
 	var events []mail.Event
 	for _, item := range posted {
-		kind, ok := acted[item.Event]
+		kind, ok := acted[normalise(item.Event)]
 		if !ok || mail.Address(item.Email) == "" {
 			continue
 		}

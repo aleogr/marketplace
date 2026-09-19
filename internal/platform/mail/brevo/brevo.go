@@ -171,12 +171,16 @@ func (c *Client) Send(ctx context.Context, rendered mail.Rendered) (mail.Sent, e
 // this platform acts on. The two vocabularies differ — the webhook says
 // `hard_bounce` and the query wants `hardBounces` — and this is where that
 // ends.
+// The keys are normalised for the reason internal/platform/mail/brevo's
+// webhook reader gives: the provider spells one event several ways, and the
+// query it accepts is a fourth spelling again.
 var queries = map[string]string{
-	"hard_bounce":   "hardBounces",
-	"invalid_email": "invalid",
-	"blocked":       "blocked",
-	"spam":          "spam",
-	"unsubscribed":  "unsubscribed",
+	"hardbounce":   "hardBounces",
+	"invalidemail": "invalid",
+	"invalid":      "invalid",
+	"blocked":      "blocked",
+	"spam":         "spam",
+	"unsubscribed": "unsubscribed",
 }
 
 // Confirm asks the provider whether the event really happened.
@@ -194,7 +198,7 @@ func (c *Client) Confirm(ctx context.Context, event mail.Event) (bool, error) {
 	// would become "does this message exist at all", which any delivered
 	// message answers yes to — and a bounce claimed about a delivered message
 	// would confirm. An event this adapter cannot name is not confirmable.
-	named, ok := queries[event.Reported]
+	named, ok := queries[normalise(event.Reported)]
 	if !ok {
 		return false, nil
 	}

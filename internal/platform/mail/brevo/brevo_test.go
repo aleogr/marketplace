@@ -337,3 +337,53 @@ func TestAnEventTheAdapterCannotNameIsNotConfirmed(t *testing.T) {
 		t.Error("an event the adapter has no name for was confirmed by the mere existence of the message")
 	}
 }
+
+// The provider spells one event several ways: `hardBounce` where a webhook
+// subscribes to it, `hardBounces` where its statistics are queried, and
+// `hard_bounce` in the body it posts. Only the first two are in its published
+// specification; the third is documentation this platform cannot read from
+// here, and a bounce ignored because of an underscore is a bounce nobody
+// notices.
+func TestEverySpellingOfAnEventIsTheSameEvent(t *testing.T) {
+	adapter := client(t, newProvider())
+
+	for _, spelling := range []string{"hard_bounce", "hardBounce", "HARD_BOUNCE", "hard-bounce", "hardBounces"} {
+		events, err := adapter.Events([]byte(
+			`{"event":"` + spelling + `","email":"gone@example.test","id":1,"message-id":"<a>"}`))
+		if err != nil {
+			t.Fatalf("Events(%s) = %v", spelling, err)
+		}
+		if len(events) != 1 {
+			t.Errorf("%q became %d events, want 1", spelling, len(events))
+			continue
+		}
+		if events[0].Kind != mail.Bounce {
+			t.Errorf("%q became %q, want %q", spelling, events[0].Kind, mail.Bounce)
+		}
+	}
+}
+
+// And the same spelling travels into the question the provider is asked, which
+// takes a fourth form again.
+func TestAnySpellingIsConfirmedByTheProvidersOwnName(t *testing.T) {
+	stub := newProvider()
+	adapter := client(t, stub)
+
+	sent, err := adapter.Send(t.Context(), mailtest.Message("gone@example.test"))
+	if err != nil {
+		t.Fatalf("Send() = %v", err)
+	}
+
+	for _, spelling := range []string{"hard_bounce", "hardBounce"} {
+		confirmed, err := adapter.Confirm(t.Context(), mail.Event{
+			Provider: brevo.Name, ID: "1", Message: sent.ProviderMessage,
+			Address: "gone@example.test", Kind: mail.Bounce, Reported: spelling,
+		})
+		if err != nil {
+			t.Fatalf("Confirm(%s) = %v", spelling, err)
+		}
+		if !confirmed {
+			t.Errorf("an event reported as %q was not confirmed", spelling)
+		}
+	}
+}
