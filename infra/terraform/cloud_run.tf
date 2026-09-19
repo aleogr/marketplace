@@ -182,9 +182,19 @@ resource "google_cloud_run_v2_service" "marketplace" {
         value = "/tmp/mailbox"
       }
 
-      env {
-        name  = "MAIL_FROM"
-        value = var.mail_from
+      # The address mail is sent from, declared when this environment has one.
+      #
+      # Not declared empty, and that is not a departure from "every variable
+      # this process reads is declared here" (docs/requirements.md, section
+      # 7.1): a variable set to nothing is not a declaration, and this binary
+      # refuses to start on one, by design. An environment on the fake adapter
+      # sends from no address at all, because it sends nothing.
+      dynamic "env" {
+        for_each = var.mail_from != "" ? [1] : []
+        content {
+          name  = "MAIL_FROM"
+          value = var.mail_from
+        }
       }
 
       # The shared token the e-mail provider posts its events with. Cloud Run

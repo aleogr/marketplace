@@ -107,9 +107,15 @@ resource "google_cloud_run_v2_job" "migrate" {
           value = var.providers_mode
         }
 
-        env {
-          name  = "MAIL_FROM"
-          value = var.mail_from
+        # Declared only where there is one, for the reason the service's own
+        # declaration gives (infra/terraform/cloud_run.tf): a variable set to
+        # nothing refuses the start.
+        dynamic "env" {
+          for_each = var.mail_from != "" ? [1] : []
+          content {
+            name  = "MAIL_FROM"
+            value = var.mail_from
+          }
         }
 
         env {
