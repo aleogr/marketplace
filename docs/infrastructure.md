@@ -729,16 +729,48 @@ could not be reached: the first is said once, loudly, and not retried; the
 second is retried. One wrong parameter used to become a retry for every event
 that followed.
 
-**Where a bounce comes from matters.** `lab.aleogr.dev` has no MX record, and
-the provider classifies "no MX" as a **soft** bounce — transient, retried by
-it, and deliberately ignored here, because a soft bounce is a full mailbox or a
-busy server and suppressing on one loses a reader who did nothing wrong. The
-alias domain `id.aleogr.dev` is catch-all, so it accepts everything and bounces
-nothing. Proving suppression from end to end therefore needs an address at a
-domain that answers `550` for an unknown mailbox; until one is used, what is
-proved in the lab is the path (the endpoint accepts a call carrying the token,
-writes it, and the consumer refuses to act on what the provider does not
-confirm) and what is proved by the integration tests is the suppression itself.
+**Where a bounce comes from matters**, and none of this platform's own domains
+produces the one that suppresses:
+
+| address | what the provider records |
+|---|---|
+| anything `@lab.aleogr.dev` | `softBounces`, "Unable to find MX of domain" |
+| anything `@aleogr.dev` | delivered — the domain is catch-all |
+| anything `@id.aleogr.dev` | delivered — the alias domain is catch-all |
+
+A soft bounce is transient: the provider retries it itself, and this platform
+ignores it on purpose, because a full mailbox or a busy server is not a reader
+to stop writing to. Sending to the no-MX domain three times did not make the
+provider escalate it to `blocked` either. A hard bounce needs an address at a
+domain that answers `550` for an unknown mailbox, which means either turning
+off catch-all on one of these domains for a minute or using an address at some
+other provider.
+
+### What the lab proves, and what it does not
+
+Proved against the deployed service, in this order:
+
+- a real message delivered to a real inbox, in Portuguese, signed by the
+  authenticated domain;
+- the endpoint refuses a call with no token, with an empty token and with the
+  wrong one, answers `202` to a call carrying it, and never redirects;
+- it is mounted per provider: the address of the provider not in use is not
+  served;
+- a call that succeeds says so in the log, with the provider and how many
+  events it carried, including none;
+- the event reaches the outbox, the scheduled dispatcher hands it over within a
+  minute, and the consumer runs;
+- **the re-read decides**: an event the provider does not report is answered
+  "not confirmed", ignored, and suppresses nobody — which is the whole reason
+  it exists, since this provider does not sign what it posts
+  (`docs/requirements.md`, §25).
+
+Not proved against the deployed service: a suppression following a **real**
+hard bounce, for want of an address that produces one. The suppression itself —
+a bounce event suppressing the address, and the next message to it being
+skipped and recorded as skipped — is proved by the integration tests against a
+real PostgreSQL, over the same code path the lab exercised up to the
+confirmation.
 
 ## Schema changes that hide rows
 
