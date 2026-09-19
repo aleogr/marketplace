@@ -54,7 +54,7 @@ jobs:
           # tags and the history behind them (docs/requirements.md, section 27).
           fetch-depth: 0
 
-      - name: Read the region and the build identifier
+      - name: Read the region, the build identifier and the hosts
         id: facts
         run: |
           region=$(sed -n 's/^region *= *"\(.*\)"/\1/p' infra/terraform/lab/lab.tfvars)
@@ -62,6 +62,24 @@ jobs:
           echo "region=$region" >> "$GITHUB_OUTPUT"
           echo "image=${region}-docker.pkg.dev/${PROJECT}/${REPOSITORY}/${SERVICE}" >> "$GITHUB_OUTPUT"
           echo "version=$(make version)" >> "$GITHUB_OUTPUT"
+
+          # Every host this environment answers on: the platform's own, and
+          # each marketplace's. They are read from the same file Terraform maps
+          # them from, so the suite checks the hosts the deployment declares
+          # rather than a list kept in step with it by hand.
+          hosts=$(awk '
+            /^[[:space:]]*platform_host[[:space:]]*=/ {
+              if (match($0, /"[^"]+"/)) print substr($0, RSTART + 1, RLENGTH - 2)
+            }
+            /^[[:space:]]*hosts[[:space:]]*=/ { inside = 1 }
+            inside {
+              n = split($0, parts, "\"")
+              for (i = 2; i <= n; i += 2) print parts[i]
+              if ($0 ~ /\]/) inside = 0
+            }
+          ' infra/terraform/lab/lab.tfvars | paste -sd, -)
+          test -n "$hosts" || { echo "no hosts in infra/terraform/lab/lab.tfvars"; exit 1; }
+          echo "hosts=$hosts" >> "$GITHUB_OUTPUT"
 
       # Third-party actions are pinned to a commit, not to a tag: a tag can be
       # moved onto different code, and this one hands the job credentials for
@@ -175,9 +193,18 @@ jobs:
       # marketplaces are reached through the domains mapped to them, never
       # through this one. That makes it the place where the page for a host
       # nobody configured can be proved (e2e/test_hosts.py).
+      #
+      # Every mapped host is reached too, in a browser, and the screenshots are
+      # kept below. The cost is deliberate: a host mapped for the first time
+      # fails this step until Cloud Run has issued its certificate, which
+      # usually takes about fifteen minutes and may take a day. Re-running the
+      # deployment once the certificate exists is the way through, and the
+      # alternative — not checking the hosts — leaves the thing the delivery is
+      # about unproved on every deployment after the first.
       - name: Run the end-to-end suite against the deployment
         env:
           MARKETPLACE_UNCLAIMED_URL: ${{ steps.deployed.outputs.url }}
+          MARKETPLACE_HOSTS: ${{ steps.facts.outputs.hosts }}
         run: make e2e-lab MARKETPLACE_BASE_URL='${{ steps.deployed.outputs.url }}'
 
       - name: Keep the screenshots as evidence

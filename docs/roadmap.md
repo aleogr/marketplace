@@ -293,8 +293,10 @@ Cloud Shell):
   with a port, an uppercase host, a marketplace still `in_preparation`.
 - An integration test with two marketplaces proving the context carries the right one.
 - An end-to-end test against the lab reaching both hosts, with screenshots. It names the hosts in
-  `MARKETPLACE_HOSTS` and is not part of the deployment pipeline: a newly mapped host waits for a
-  certificate that can take a day, and a deployment must not fail for a wait that was expected.
+  `MARKETPLACE_HOSTS`, and the deployment pipeline passes every host the environment declares, so
+  each deployment proves them in a browser and keeps the screenshots. The cost is accepted: a host
+  mapped for the first time fails that step until Cloud Run has issued its certificate, and the
+  deployment is re-run once it exists.
 - The page for an address no marketplace claims, checked on every deployment. It is asked of the
   service's own `run.app` address, named in `MARKETPLACE_UNCLAIMED_URL`: that address waits for no
   certificate, and marketplaces are reached through the domains mapped to them, never through it.

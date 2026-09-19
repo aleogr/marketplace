@@ -506,6 +506,13 @@ own host above. Domain mapping supports no wildcard, so every marketplace costs
 one record, one mapping and one certificate, and the certificate is why
 creating a marketplace is not instant (`docs/requirements.md`, section 7).
 
+**Adding a host therefore takes two deployments.** The deployment's end-to-end
+step reaches every host the environment declares, so the first deployment after
+a host is mapped fails while Cloud Run is still issuing that host's
+certificate — usually about fifteen minutes, sometimes a day. Re-run the
+deployment once the certificate exists. That failure is the price of checking
+the hosts on every other deployment, which is what the delivery is about.
+
 **Which marketplace serves a request is decided inside the process**, from the
 host it receives. Every mapping points at the one Cloud Run service; there is
 no routing layer and nothing to keep in step with the database.
