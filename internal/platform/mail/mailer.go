@@ -93,16 +93,20 @@ func NewMailer(database Database, templates *Templates, sender Sender, fallback 
 }
 
 // Send renders one message and hands it to the provider, unless the address is
-// suppressed.
+// suppressed, and reports which of those happened.
+//
+// The state is returned rather than only written down because a caller that
+// says "sent" for a message nobody received is a caller that lies to whoever
+// reads its log (cmd/marketplace, `send-probe`).
 //
 // The suppression check is a query and not a cache: an address suppressed a
 // second ago must not receive the message this call was about to send, and the
 // alternative — a list held in memory by each instance — would be wrong for as
 // long as that instance lives.
-func (m *Mailer) Send(ctx context.Context, message Message) error {
+func (m *Mailer) Send(ctx context.Context, message Message) (State, error) {
 	message.To = Address(message.To)
 	if message.To == "" {
-		return errors.New("a message with no address cannot be sent")
+		return StateFailed, errors.New("a message with no address cannot be sent")
 	}
 
 	var suppressed bool
@@ -112,14 +116,14 @@ func (m *Mailer) Send(ctx context.Context, message Message) error {
 			suppressed, err = Suppressed(ctx, tx, message.To)
 			return err
 		}); err != nil {
-			return err
+			return StateFailed, err
 		}
 	}
 
 	if suppressed {
 		m.log.InfoContext(ctx, "a message was not sent to a suppressed address",
 			"template", message.Template, "provider", m.sender.Name())
-		return m.record(ctx, Sending{
+		return StateSkipped, m.record(ctx, Sending{
 			Marketplace: message.Marketplace,
 			Address:     message.To,
 			Template:    message.Template,
@@ -142,9 +146,9 @@ func (m *Mailer) Send(ctx context.Context, message Message) error {
 			State:       StateFailed,
 			Detail:      err.Error(),
 		}); recordErr != nil {
-			return recordErr
+			return StateFailed, recordErr
 		}
-		return err
+		return StateFailed, err
 	}
 
 	// The provider is called outside a transaction, on purpose: a network call
@@ -160,12 +164,12 @@ func (m *Mailer) Send(ctx context.Context, message Message) error {
 			State:       StateFailed,
 			Detail:      err.Error(),
 		}); recordErr != nil {
-			return recordErr
+			return StateFailed, recordErr
 		}
-		return fmt.Errorf("%s did not accept the message: %w", m.sender.Name(), err)
+		return StateFailed, fmt.Errorf("%s did not accept the message: %w", m.sender.Name(), err)
 	}
 
-	return m.record(ctx, Sending{
+	return StateSent, m.record(ctx, Sending{
 		Marketplace:     rendered.Marketplace,
 		Address:         rendered.To,
 		Template:        rendered.Template,
@@ -260,7 +264,8 @@ func Register(registry *outbox.Registry, mailer *Mailer) {
 			if err := json.Unmarshal(event.Payload, &message); err != nil {
 				return fmt.Errorf("cannot read the message of event %s: %w", event.ID, err)
 			}
-			return mailer.Send(ctx, message)
+			_, err := mailer.Send(ctx, message)
+			return err
 		},
 	})
 

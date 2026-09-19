@@ -742,9 +742,10 @@ A soft bounce is transient: the provider retries it itself, and this platform
 ignores it on purpose, because a full mailbox or a busy server is not a reader
 to stop writing to. Sending to the no-MX domain three times did not make the
 provider escalate it to `blocked` either. A hard bounce needs an address at a
-domain that answers `550` for an unknown mailbox, which means either turning
-off catch-all on one of these domains for a minute or using an address at some
-other provider.
+domain that answers `550` for an unknown mailbox, which in the end meant an
+unregistered address at a large provider — Google answers `550 5.1.1 The email
+account that you tried to reach does not exist` in the handshake, so nothing is
+delivered to anybody and the bounce is immediate.
 
 **The provider spells one event four ways.** Its published specification names
 the event `hardBounce` where a webhook subscribes to it and `hardBounces` where
@@ -774,12 +775,35 @@ Proved against the deployed service, in this order:
   it exists, since this provider does not sign what it posts
   (`docs/requirements.md`, §25).
 
-Not proved against the deployed service: a suppression following a **real**
-hard bounce, for want of an address that produces one. The suppression itself —
-a bounce event suppressing the address, and the next message to it being
-skipped and recorded as skipped — is proved by the integration tests against a
-real PostgreSQL, over the same code path the lab exercised up to the
-confirmation.
+And then the whole of it, on 19 September 2026, from one message sent to an
+unregistered address at a large provider:
+
+```
+08:37:35  sending the delivery probe
+08:37:36  the delivery probe was accepted
+08:37:37  (the provider) hardBounces — 550-5.1.1 The email account … does not exist
+08:37:38  mail events received                     ← the webhook, a second after the bounce
+08:38:08  events handed to the queue               ← the scheduled job, the next minute
+08:38:08  an address was suppressed    bounce  hard_bounce: 550-5.1.1 …
+```
+
+and then, six minutes later, the same message to the same address:
+
+```
+08:43:40  sending the delivery probe
+08:43:40  a message was not sent to a suppressed address   probe
+```
+
+Three things only a real bounce could show. The confirmation works in the
+affirmative — the query found the event at the provider and only then was the
+address suppressed; until then every confirmation this platform had seen was a
+negative one. The body the provider posts does spell the event `hard_bounce`,
+which the code no longer depends on. And the reason kept beside the suppression
+is the receiving server's own sentence, which is what answers "why did this
+address stop receiving" months later.
+
+The probe itself was the last thing this test corrected: it announced "the
+delivery probe was accepted" for the message it had deliberately not sent.
 
 ## Schema changes that hide rows
 
