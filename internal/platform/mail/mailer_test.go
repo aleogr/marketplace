@@ -133,7 +133,7 @@ func TestAMessageIsRenderedAndHandedToTheProvider(t *testing.T) {
 	switch {
 	case sent.To != "reader@example.test":
 		t.Errorf("to = %q, want the address in the form it is compared in", sent.To)
-	case sent.Subject != "Teste de e-mail do Marketplace 1":
+	case sent.Subject != "Teste de entrega de e-mail — Marketplace 1":
 		t.Errorf("subject = %q, want the reader's own language", sent.Subject)
 	case sent.HTML == "" || sent.Text == "":
 		t.Error("the message was sent with only one part")

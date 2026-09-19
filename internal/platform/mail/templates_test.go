@@ -57,7 +57,7 @@ func TestATemplateCarriesItsSubjectAndBothParts(t *testing.T) {
 	}
 
 	switch {
-	case rendered.Subject != "Teste de e-mail do Marketplace 1":
+	case rendered.Subject != "Teste de entrega de e-mail — Marketplace 1":
 		t.Errorf("subject = %q", rendered.Subject)
 	case strings.HasPrefix(rendered.Text, "Subject:"):
 		t.Errorf("the subject line was left in the body: %q", rendered.Text)
