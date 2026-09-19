@@ -27,6 +27,9 @@ import (
 	"github.com/aleogr/marketplace/internal/platform/httpx"
 	"github.com/aleogr/marketplace/internal/platform/i18n"
 	"github.com/aleogr/marketplace/internal/platform/jobs"
+	"github.com/aleogr/marketplace/internal/platform/keys"
+	"github.com/aleogr/marketplace/internal/platform/keys/kms"
+	"github.com/aleogr/marketplace/internal/platform/keys/local"
 	"github.com/aleogr/marketplace/internal/platform/logging"
 	"github.com/aleogr/marketplace/internal/platform/mail"
 	"github.com/aleogr/marketplace/internal/platform/mail/brevo"
@@ -116,6 +119,17 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		}
 		database = pool
 	}
+
+	// What protects the audit log's contents, built and proved before the port
+	// is opened: a deployment that can wrap and cannot unwrap looks configured,
+	// serves, and loses everything it writes (docs/requirements.md, section
+	// 21).
+	keeper, closeKeeper, err := protection(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer closeKeeper()
+	log.InfoContext(ctx, "audit keys", "keeper", keeper.Name())
 
 	var listenConfig net.ListenConfig
 	listener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf(":%d", cfg.Port))
@@ -246,6 +260,48 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	log.InfoContext(context.WithoutCancel(ctx), "server stopped")
 	return nil
+}
+
+// protection returns the keeper that wraps every person's key, and the
+// function that releases it.
+//
+// A deployment uses Cloud KMS, where the wrapping key cannot be read by
+// anything — which is what makes destroying a person's key final. An
+// environment with no key manager wraps with a key of its own, and one with no
+// key at all wraps with a key that dies when the process does. The last of
+// those is a local run and says so out loud: what it wrote yesterday cannot be
+// read today.
+func protection(ctx context.Context, cfg config.Config, log *slog.Logger) (keys.Keeper, func(), error) {
+	switch {
+	case cfg.Audit.Key != "":
+		keeper, err := kms.New(ctx, cfg.Audit.Key)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := keys.Check(ctx, keeper); err != nil {
+			_ = keeper.Close()
+			return nil, nil, err
+		}
+		return keeper, func() { _ = keeper.Close() }, nil
+
+	case cfg.Audit.LocalKey != "":
+		keeper, err := local.Parse(cfg.Audit.LocalKey)
+		if err != nil {
+			return nil, nil, err
+		}
+		log.WarnContext(ctx, "the audit keys are wrapped by a key this process holds",
+			"keeper", keeper.Name())
+		return keeper, func() {}, keys.Check(ctx, keeper)
+
+	default:
+		keeper, err := local.Generate()
+		if err != nil {
+			return nil, nil, err
+		}
+		log.WarnContext(ctx, "the audit keys are wrapped by a key that dies with this process",
+			"keeper", keeper.Name())
+		return keeper, func() {}, keys.Check(ctx, keeper)
+	}
 }
 
 // work assembles the asynchronous half of the process: who consumes which

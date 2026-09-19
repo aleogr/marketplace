@@ -79,6 +79,8 @@ type Config struct {
 	Tasks Tasks
 	// Mail is how this deployment sends e-mail.
 	Mail Mail
+	// Audit is how this deployment protects what its audit log holds.
+	Audit Audit
 	// SeedMarketplaces declares, as JSON, the marketplaces this environment
 	// should have. Only the `migrate` command reads it. Marketplaces are
 	// seeded from the environment rather than from a migration because their
@@ -132,6 +134,23 @@ type Mail struct {
 	// all: an endpoint with no secret is an open door, and this provider does
 	// not sign what it posts (docs/requirements.md, section 25).
 	WebhookToken string
+}
+
+// Audit is how this deployment protects what its audit log holds.
+//
+// Every person whose data appears in the log has a key of their own, and those
+// keys are themselves encrypted by a key this process cannot read. A deletion
+// request destroys the person's key and leaves the log whole
+// (docs/requirements.md, sections 21 and 18.3).
+type Audit struct {
+	// Key is the full resource name of the Cloud KMS key that wraps them. Set
+	// means the deployment uses the key manager, which is what makes a
+	// destroyed key final.
+	Key string
+	// LocalKey is a base64 32-byte key wrapping them in this process instead,
+	// for an environment that has no key manager. It protects nothing from
+	// anyone who can read the environment, and the start-up log says so.
+	LocalKey string
 }
 
 // Lookup reports the value of an environment variable and whether it was set.
@@ -295,6 +314,16 @@ func Load(lookup Lookup) (Config, error) {
 		return nil
 	})
 
+	read("AUDIT_KEY", func(value string) error {
+		cfg.Audit.Key = value
+		return nil
+	})
+
+	read("AUDIT_LOCAL_KEY", func(value string) error {
+		cfg.Audit.LocalKey = value
+		return nil
+	})
+
 	read("SEED_MARKETPLACES", func(value string) error {
 		cfg.SeedMarketplaces = value
 		return nil
@@ -302,11 +331,34 @@ func Load(lookup Lookup) (Config, error) {
 
 	problems = append(problems, cfg.Database.problems()...)
 	problems = append(problems, cfg.Mail.problems(cfg.ProvidersMode)...)
+	problems = append(problems, cfg.Audit.problems(cfg.ProvidersMode)...)
 
 	if len(problems) > 0 {
 		return Config{}, fmt.Errorf("invalid configuration: %w", errors.Join(problems...))
 	}
 	return cfg, nil
+}
+
+// problems reports an audit log that would be protected by nothing.
+//
+// A deployment talking to real providers is a deployment with real people's
+// data in its log, and a key held in this process is a key anyone who reads the
+// environment holds too. Refusing to start is seconds; discovering it the day
+// somebody asks to be forgotten is a promise already broken
+// (docs/requirements.md, section 21).
+func (a Audit) problems(mode ProvidersMode) []error {
+	if mode != ProvidersReal {
+		return nil
+	}
+	if a.Key == "" {
+		return []error{errors.New(
+			"PROVIDERS_MODE is real but AUDIT_KEY names no key manager key")}
+	}
+	if a.LocalKey != "" {
+		return []error{errors.New(
+			"AUDIT_KEY and AUDIT_LOCAL_KEY are both set; keys are wrapped one way or the other")}
+	}
+	return nil
 }
 
 // problems reports what a real e-mail provider needs and was not given.
