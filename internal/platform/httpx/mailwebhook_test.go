@@ -1,6 +1,7 @@
 package httpx_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -52,6 +53,14 @@ func (r *recorder) Exec(_ context.Context, sql string, _ ...any) (pgconn.Command
 func webhook(t *testing.T, store *written) (http.Handler, string) {
 	t.Helper()
 
+	handler, path, _ := webhookLogging(t, store)
+	return handler, path
+}
+
+// webhookLogging is the same endpoint with its log readable.
+func webhookLogging(t *testing.T, store *written) (http.Handler, string, *bytes.Buffer) {
+	t.Helper()
+
 	box, err := mailbox.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("mailbox.New() = %v", err)
@@ -65,11 +74,12 @@ func webhook(t *testing.T, store *written) (http.Handler, string) {
 		t.Fatalf("seo.NewPreview() = %v", err)
 	}
 
+	written := &bytes.Buffer{}
 	endpoint := httpx.NewMailWebhook(box, webhookToken, store,
-		slog.New(slog.NewTextHandler(io.Discard, nil)))
+		slog.New(slog.NewTextHandler(written, nil)))
 
 	return httpx.NewSite(nil, catalogue, preview, false).
-		WithMail(endpoint).Handler(), endpoint.Path()
+		WithMail(endpoint).Handler(), endpoint.Path(), written
 }
 
 // bounce is what the fake provider posts when an address does not exist.
@@ -224,5 +234,43 @@ func TestTheWebhookIsOutsideTheCSRFGuard(t *testing.T) {
 
 	if response.Code != http.StatusAccepted {
 		t.Errorf("status = %d, want %d: a provider has no token to send", response.Code, http.StatusAccepted)
+	}
+}
+
+// An endpoint that is silent when it works cannot be told apart from an
+// endpoint nobody is calling. That distinction is not academic: the first
+// bounce that did not arrive in the lab took a search through request logs to
+// establish that the provider had never called at all.
+func TestASuccessfulCallIsVisibleInTheLog(t *testing.T) {
+	store := &written{}
+	handler, path, log := webhookLogging(t, store)
+
+	if status := deliver(t, handler, path, webhookToken, bounce).Code; status != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", status, http.StatusAccepted)
+	}
+
+	line := log.String()
+	switch {
+	case !strings.Contains(line, "mail events received"):
+		t.Errorf("the call left nothing in the log: %q", line)
+	case !strings.Contains(line, "events=1"):
+		t.Errorf("the log does not say how many events arrived: %q", line)
+	case !strings.Contains(line, "provider=mailbox"):
+		t.Errorf("the log does not say which provider called: %q", line)
+	}
+}
+
+// And a body that reports nothing this platform acts on is still a call that
+// happened, which is the case that says the provider is configured and
+// talking.
+func TestACallThatCarriesNothingToActOnIsStillVisible(t *testing.T) {
+	store := &written{}
+	handler, path, log := webhookLogging(t, store)
+
+	deliver(t, handler, path, webhookToken,
+		`{"ID":"1","Address":"reader@example.test","Kind":"delivered"}`)
+
+	if !strings.Contains(log.String(), "events=0") {
+		t.Errorf("a call reporting nothing left nothing in the log: %q", log.String())
 	}
 }

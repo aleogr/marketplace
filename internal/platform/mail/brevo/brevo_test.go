@@ -2,11 +2,13 @@ package brevo_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aleogr/marketplace/internal/platform/mail"
 	"github.com/aleogr/marketplace/internal/platform/mail/brevo"
@@ -80,8 +82,33 @@ func (p *provider) handle(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"messageId": id})
 
 	case r.Method == http.MethodGet && r.URL.Path == "/v3/smtp/statistics/events":
-		events := []map[string]string{}
 		query := r.URL.Query()
+
+		// The provider's own rules about the window, which it enforces and
+		// this stub therefore enforces too. A date in the future was accepted
+		// here for as long as the stub ignored it, and refused by the real
+		// service every single time — the confirmation never worked in the
+		// lab, and no test said so.
+		for _, name := range []string{"startDate", "endDate"} {
+			value := query.Get(name)
+			if value == "" {
+				continue
+			}
+			day, err := time.Parse(time.DateOnly, value)
+			if err != nil {
+				http.Error(w, `{"code":"invalid_parameter","message":"`+name+` is not a date"}`,
+					http.StatusBadRequest)
+				return
+			}
+			if day.After(time.Now().UTC()) {
+				http.Error(w,
+					`{"code":"invalid_parameter","message":"`+name+` should not be greater than current date"}`,
+					http.StatusBadRequest)
+				return
+			}
+		}
+
+		events := []map[string]string{}
 		if address, ok := p.sent[query.Get("messageId")]; ok && address == query.Get("email") {
 			events = append(events, map[string]string{
 				"email":     address,
@@ -242,5 +269,63 @@ func TestABodyThatCannotBeReadIsAnError(t *testing.T) {
 				t.Error("Events() accepted a body it cannot read")
 			}
 		})
+	}
+}
+
+// A refusal and a failure are different work. The provider rejecting the call
+// is this deployment being wrong, which the next attempt is rejected for too;
+// the provider being unreachable is a moment, which the next attempt may not
+// find (internal/platform/mail.ErrRefused).
+func TestARefusalIsToldApartFromAFailure(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		status  int
+		refused bool
+	}{
+		"the call is wrong":           {status: http.StatusBadRequest, refused: true},
+		"the key is not accepted":     {status: http.StatusForbidden, refused: true},
+		"the provider is in trouble":  {status: http.StatusInternalServerError, refused: false},
+		"the provider is overwhelmed": {status: http.StatusBadGateway, refused: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := newProvider()
+			adapter := client(t, stub)
+			stub.status = testCase.status
+
+			_, err := adapter.Confirm(t.Context(), mail.Event{
+				Provider: brevo.Name, ID: "1", Message: "<a-message>",
+				Address: "reader@example.test", Kind: mail.Bounce, Reported: "hard_bounce",
+			})
+			if err == nil {
+				t.Fatalf("Confirm() reported success for a %d", testCase.status)
+			}
+			if got := errors.Is(err, mail.ErrRefused); got != testCase.refused {
+				t.Errorf("a %d refused = %v, want %v: %v", testCase.status, got, testCase.refused, err)
+			}
+		})
+	}
+}
+
+// An event this adapter cannot name is not confirmable. Without the mapping,
+// the question degenerates into "does this message exist at all", and any
+// delivered message answers yes — so a bounce claimed about a message that was
+// delivered would confirm.
+func TestAnEventTheAdapterCannotNameIsNotConfirmed(t *testing.T) {
+	stub := newProvider()
+	adapter := client(t, stub)
+
+	sent, err := adapter.Send(t.Context(), mailtest.Message("reader@example.test"))
+	if err != nil {
+		t.Fatalf("Send() = %v", err)
+	}
+
+	confirmed, err := adapter.Confirm(t.Context(), mail.Event{
+		Provider: brevo.Name, ID: "1", Message: sent.ProviderMessage,
+		Address: "reader@example.test", Kind: mail.Bounce, Reported: "something_new",
+	})
+	if err != nil {
+		t.Fatalf("Confirm() = %v", err)
+	}
+	if confirmed {
+		t.Error("an event the adapter has no name for was confirmed by the mere existence of the message")
 	}
 }

@@ -101,6 +101,14 @@ func (m MailWebhook) Handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Said on the way out, including when the body reported nothing this
+	// platform acts on. An endpoint whose whole job is to be called from
+	// outside, and which is silent when it works, cannot be told apart from an
+	// endpoint nobody is calling — which is exactly the question asked of it
+	// the first time a bounce did not arrive.
+	m.log.InfoContext(r.Context(), "mail events received",
+		"provider", m.reader.Name(), "events", len(events))
+
 	// Accepted, not done. The events are in the outbox and the consumer is
 	// what acts on them.
 	w.WriteHeader(http.StatusAccepted)

@@ -10,6 +10,7 @@ package mail
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -142,3 +143,14 @@ type Rendered struct {
 // ErrNoTemplate is returned when a message names a template that does not
 // exist in that language.
 var ErrNoTemplate = fmt.Errorf("no such template")
+
+// ErrRefused is what an adapter reports when the provider understood the call
+// and rejected it.
+//
+// It separates "the provider is unreachable, try again" from "the provider
+// says this call is wrong", and the difference decides whether the work is
+// retried. A call the provider rejects is rejected identically on every
+// attempt: retrying it turns one defect into a retry for every event that
+// follows, which is how a wrong date in a query was first seen — as a queue
+// storm rather than as the one line it is.
+var ErrRefused = errors.New("the provider refused the request")

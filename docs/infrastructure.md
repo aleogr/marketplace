@@ -699,6 +699,40 @@ Neither redirects. A 302 there is an event that is silently never delivered,
 with every check green — the failure this deployment has already had twice, on
 the language prefix and on the callback endpoint.
 
+### What the first bounce test taught
+
+The webhook was configured in the provider's console — the address, the five
+events this platform acts on, and the shared token as a custom header — and
+then a message was sent to an address that cannot receive, to watch a bounce
+travel the whole way. Three things came out of it, and two were defects.
+
+**The confirmation never worked.** Every re-read was answered
+`400 invalid_parameter: End date should not be greater than current date`,
+because the query asked for a window ending tomorrow. The effect was not a
+missing feature but a queue storm: the consumer returned an error, Cloud Tasks
+retried, and each retry failed identically. No test saw it, because the stub
+that stands in for the provider ignored the dates the real one enforces. The
+stub now enforces them, and the fix is to send no end date at all — "current"
+is the account's own time zone, which this process does not know, so any date
+computed here is tomorrow's for part of every day.
+
+**A refusal is not a failure.** A provider that rejects a call rejects it
+identically on the next attempt, so it is now told apart from a provider that
+could not be reached: the first is said once, loudly, and not retried; the
+second is retried. One wrong parameter used to become a retry for every event
+that followed.
+
+**Where a bounce comes from matters.** `lab.aleogr.dev` has no MX record, and
+the provider classifies "no MX" as a **soft** bounce — transient, retried by
+it, and deliberately ignored here, because a soft bounce is a full mailbox or a
+busy server and suppressing on one loses a reader who did nothing wrong. The
+alias domain `id.aleogr.dev` is catch-all, so it accepts everything and bounces
+nothing. Proving suppression from end to end therefore needs an address at a
+domain that answers `550` for an unknown mailbox; until one is used, what is
+proved in the lab is the path (the endpoint accepts a call carrying the token,
+writes it, and the consumer refuses to act on what the provider does not
+confirm) and what is proved by the integration tests is the suppression itself.
+
 ## Schema changes that hide rows
 
 A migration that puts a table under row-level security hides its rows from any

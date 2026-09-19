@@ -190,20 +190,32 @@ func (c *Client) Confirm(ctx context.Context, event mail.Event) (bool, error) {
 		return false, nil
 	}
 
+	// What the provider calls this event. Without the mapping the question
+	// would become "does this message exist at all", which any delivered
+	// message answers yes to — and a bounce claimed about a delivered message
+	// would confirm. An event this adapter cannot name is not confirmable.
+	named, ok := queries[event.Reported]
+	if !ok {
+		return false, nil
+	}
+
 	query := url.Values{}
 	query.Set("email", address)
+	query.Set("event", named)
 	if event.Message != "" {
 		query.Set("messageId", event.Message)
 	}
-	if named, ok := queries[event.Reported]; ok {
-		query.Set("event", named)
-	}
-	// The window the provider is asked about. Its statistics endpoint defaults
-	// to a few days; a webhook that was retried for a day is still recent
-	// enough to be found, and a wider window would make a stale event look
-	// like a current one.
+	// How far back to look. A webhook that the provider retried for a day is
+	// still found, and a window with no beginning would make a stale event
+	// look like a current one.
+	//
+	// There is deliberately no end date. The provider refuses one that is
+	// greater than the current date, and "current" is the account's own time
+	// zone, which this process does not know: a date computed here in UTC is
+	// tomorrow's for an account behind UTC for part of every day. The default
+	// end is now, which is what was wanted anyway. A start date in the past is
+	// in the past in every time zone.
 	query.Set("startDate", time.Now().UTC().AddDate(0, 0, -7).Format(time.DateOnly))
-	query.Set("endDate", time.Now().UTC().AddDate(0, 0, 1).Format(time.DateOnly))
 
 	request, err := c.request(ctx, http.MethodGet, "/smtp/statistics/events?"+query.Encode(), nil)
 	if err != nil {
@@ -258,7 +270,17 @@ func (c *Client) do(request *http.Request, into any) error {
 		// The body is the provider's own message, which names the problem
 		// ("unrecognised sender", "invalid parameter"). It never carries the
 		// key, which is only ever sent.
-		return fmt.Errorf("brevo answered %d: %s", response.StatusCode, summary(body))
+		err := fmt.Errorf("brevo answered %d: %s", response.StatusCode, summary(body))
+
+		// A refusal is not a failure to try again. The provider understood the
+		// call and rejected it, so the next attempt is rejected identically —
+		// what is wrong is this deployment, not the moment. Saying so is what
+		// keeps one bad call from becoming a retry for every event that
+		// follows (internal/platform/mail.Mailer.Apply).
+		if response.StatusCode >= 400 && response.StatusCode < 500 {
+			return fmt.Errorf("%w: %w", mail.ErrRefused, err)
+		}
+		return err
 	}
 
 	if into == nil {
