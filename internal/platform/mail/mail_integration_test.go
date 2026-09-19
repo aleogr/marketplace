@@ -222,7 +222,7 @@ func TestABounceStopsTheNextMessage(t *testing.T) {
 	site := assemble(t)
 	bounced := address("gone")
 
-	if err := site.mailer.Send(t.Context(), site.message(bounced)); err != nil {
+	if _, err := site.mailer.Send(t.Context(), site.message(bounced)); err != nil {
 		t.Fatalf("the first message could not be sent: %v", err)
 	}
 	if site.delivered(t) != 1 {
@@ -252,7 +252,7 @@ func TestABounceStopsTheNextMessage(t *testing.T) {
 		t.Fatal("the bounce was delivered and suppressed nobody")
 	}
 
-	if err := site.mailer.Send(t.Context(), site.message(bounced)); err != nil {
+	if _, err := site.mailer.Send(t.Context(), site.message(bounced)); err != nil {
 		t.Fatalf("the second message returned %v; a suppressed address is not a failure", err)
 	}
 	if got := site.delivered(t); got != 1 {
@@ -303,7 +303,7 @@ func TestAnEventTheProviderNeverReportedSuppressesNobody(t *testing.T) {
 		t.Error("an address was suppressed by an event the provider does not report")
 	}
 
-	if err := site.mailer.Send(t.Context(), site.message(victim)); err != nil {
+	if _, err := site.mailer.Send(t.Context(), site.message(victim)); err != nil {
 		t.Fatalf("Send() = %v", err)
 	}
 	if site.delivered(t) != 1 {
@@ -328,7 +328,7 @@ func TestTheSendingLogBelongsToItsMarketplace(t *testing.T) {
 
 	message := site.message(reader)
 	message.Marketplace = mine
-	if err := site.mailer.Send(t.Context(), message); err != nil {
+	if _, err := site.mailer.Send(t.Context(), message); err != nil {
 		t.Fatalf("Send() = %v", err)
 	}
 

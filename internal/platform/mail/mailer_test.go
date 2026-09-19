@@ -123,7 +123,7 @@ func message(to string) mail.Message {
 func TestAMessageIsRenderedAndHandedToTheProvider(t *testing.T) {
 	store, sender := &database{tx: &transaction{}}, &adapter{}
 
-	if err := mailer(t, store, sender).Send(t.Context(), message("Reader@Example.Test")); err != nil {
+	if _, err := mailer(t, store, sender).Send(t.Context(), message("Reader@Example.Test")); err != nil {
 		t.Fatalf("Send() = %v", err)
 	}
 
@@ -153,7 +153,7 @@ func TestAMessageIsRenderedAndHandedToTheProvider(t *testing.T) {
 func TestASuppressedAddressIsSkippedAndRecorded(t *testing.T) {
 	store, sender := &database{tx: &transaction{suppressed: true}}, &adapter{}
 
-	if err := mailer(t, store, sender).Send(t.Context(), message("gone@example.test")); err != nil {
+	if _, err := mailer(t, store, sender).Send(t.Context(), message("gone@example.test")); err != nil {
 		t.Fatalf("Send() = %v, want no error: a suppressed address is not a failure", err)
 	}
 
@@ -173,7 +173,7 @@ func TestASuppressedAddressIsSkippedAndRecorded(t *testing.T) {
 func TestAMessageWithNoAddressIsRefused(t *testing.T) {
 	store, sender := &database{tx: &transaction{}}, &adapter{}
 
-	if err := mailer(t, store, sender).Send(t.Context(), message("  ")); err == nil {
+	if _, err := mailer(t, store, sender).Send(t.Context(), message("  ")); err == nil {
 		t.Error("Send() accepted a message with no address")
 	}
 }
@@ -184,7 +184,7 @@ func TestAProviderThatRefusesIsReportedAndRecorded(t *testing.T) {
 	store := &database{tx: &transaction{}}
 	sender := &adapter{failSend: errors.New("the provider is down")}
 
-	err := mailer(t, store, sender).Send(t.Context(), message("reader@example.test"))
+	_, err := mailer(t, store, sender).Send(t.Context(), message("reader@example.test"))
 	if err == nil {
 		t.Fatal("Send() reported success although the provider refused")
 	}
@@ -289,5 +289,41 @@ func TestAnEventTheProviderRefusesToCheckIsNotRetried(t *testing.T) {
 	}
 	if _, ok := wrote(store.tx.calls, "email_suppression"); ok {
 		t.Error("an address was suppressed on an answer the provider never gave")
+	}
+}
+
+// What a send reports back, which is what its caller writes in a log somebody
+// will read months later (cmd/marketplace, `send-probe`).
+func TestASendSaysWhichOfTheThreeThingsHappened(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		store  *database
+		sender *adapter
+		want   mail.State
+		fails  bool
+	}{
+		"handed to the provider": {
+			store: &database{tx: &transaction{}}, sender: &adapter{}, want: mail.StateSent,
+		},
+		"not sent, because the address is suppressed": {
+			store: &database{tx: &transaction{suppressed: true}}, sender: &adapter{},
+			want: mail.StateSkipped,
+		},
+		"refused by the provider": {
+			store:  &database{tx: &transaction{}},
+			sender: &adapter{failSend: errors.New("the provider is down")},
+			want:   mail.StateFailed, fails: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			state, err := mailer(t, testCase.store, testCase.sender).
+				Send(t.Context(), message("reader@example.test"))
+
+			if testCase.fails != (err != nil) {
+				t.Fatalf("Send() = %v, want an error: %v", err, testCase.fails)
+			}
+			if state != testCase.want {
+				t.Errorf("state = %q, want %q", state, testCase.want)
+			}
+		})
 	}
 }

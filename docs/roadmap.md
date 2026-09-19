@@ -544,13 +544,12 @@ posts is re-read from its API before the platform acts on it.
   with no token and a call with the wrong one are refused, a call carrying it is accepted and
   written to the outbox, and an event the provider does not confirm suppresses nobody. That test
   found two defects, both fixed and both now held by tests (`docs/infrastructure.md`).
-- **Not observed in the lab, and recorded as such:** a suppression following a real hard bounce.
-  None of the platform's domains produces one — the sending domain has no MX, which the provider
-  calls a *soft* bounce and this platform ignores on purpose, and the other two are catch-all and
-  bounce nothing (`docs/infrastructure.md`). Getting one means turning off catch-all for a minute
-  or using another provider's address, and it is the owner's call, not a blocker: the suppression
-  is proved by the integration tests against a real PostgreSQL, over the same path the lab
-  exercised up to the confirmation.
+- A suppression following a **real** hard bounce, observed in the lab on 19 September 2026: one
+  message to an unregistered address at a large provider, the bounce reported by the provider a
+  second later, the address suppressed within the minute, and the next message to it skipped and
+  recorded as skipped. The sequence is in `docs/infrastructure.md`. None of the platform's own
+  domains could produce it — the sending domain has no MX, which the provider calls a *soft*
+  bounce, and the other two are catch-all.
 
 **If the owner steps are not ready:** the delivery merges with the fake adapter selected in the
 lab by the `PROVIDERS_MODE` variable, and the real adapter is switched on by a one-line Terraform

@@ -474,15 +474,26 @@ func sendProbe(ctx context.Context, cfg config.Config, log *slog.Logger, args []
 	log.InfoContext(ctx, "sending the delivery probe",
 		"provider", adapter.Name(), "language", language)
 
-	if err := mailer.Send(ctx, mail.Message{
+	state, err := mailer.Send(ctx, mail.Message{
 		Template: ProbeTemplate,
 		Language: language,
 		To:       address,
 		From:     name,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
-	log.InfoContext(ctx, "the delivery probe was accepted", "provider", adapter.Name())
+	// What happened, not what was hoped for. A probe that announces success
+	// for a message the platform deliberately did not send is a probe that
+	// misleads the person reading its last line — which is how this was found
+	// (docs/infrastructure.md).
+	switch state {
+	case mail.StateSkipped:
+		log.InfoContext(ctx, "the delivery probe was not sent: the address is suppressed",
+			"provider", adapter.Name())
+	default:
+		log.InfoContext(ctx, "the delivery probe was accepted", "provider", adapter.Name())
+	}
 	return nil
 }
