@@ -85,10 +85,18 @@ func (p *provider) handle(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query()
 
 		// The provider's own rules about the window, which it enforces and
-		// this stub therefore enforces too. A date in the future was accepted
-		// here for as long as the stub ignored it, and refused by the real
-		// service every single time — the confirmation never worked in the
-		// lab, and no test said so.
+		// this stub therefore enforces too. Both were learned from the lab,
+		// one refusal at a time, because the stub used to ignore the dates the
+		// real service validates: a date in the future was refused every
+		// single time, and so was one date sent without the other. The
+		// confirmation never worked, and no test said so.
+		if (query.Get("startDate") == "") != (query.Get("endDate") == "") {
+			http.Error(w,
+				`{"code":"missing_parameter","message":"Start and end date both required together"}`,
+				http.StatusBadRequest)
+			return
+		}
+
 		for _, name := range []string{"startDate", "endDate"} {
 			value := query.Get(name)
 			if value == "" {

@@ -706,15 +706,22 @@ events this platform acts on, and the shared token as a custom header — and
 then a message was sent to an address that cannot receive, to watch a bounce
 travel the whole way. Three things came out of it, and two were defects.
 
-**The confirmation never worked.** Every re-read was answered
-`400 invalid_parameter: End date should not be greater than current date`,
-because the query asked for a window ending tomorrow. The effect was not a
-missing feature but a queue storm: the consumer returned an error, Cloud Tasks
-retried, and each retry failed identically. No test saw it, because the stub
-that stands in for the provider ignored the dates the real one enforces. The
-stub now enforces them, and the fix is to send no end date at all — "current"
-is the account's own time zone, which this process does not know, so any date
-computed here is tomorrow's for part of every day.
+**The confirmation never worked**, and it took two refusals to learn why. The
+first was `400 invalid_parameter: End date should not be greater than current
+date`, because the query asked for a window ending tomorrow; the second, after
+that end date was dropped, was `400 missing_parameter: Start and end date both
+required together`. So the provider takes both dates or neither, and any end
+date computed here is tomorrow's for an account behind UTC during part of every
+day — "current" is the account's time zone, which this process does not know.
+The query therefore carries no window at all and relies on the provider's
+default, which is the only form with no time zone in it.
+
+The effect of the failure was not a missing feature but a queue storm: the
+consumer returned an error, Cloud Tasks retried, and each retry failed
+identically. No test saw any of it, because the stub that stands in for the
+provider ignored the dates the real one validates — the fake was more
+permissive than the service it represents. It now enforces both rules, with the
+provider's own words, so either mistake fails the contract suite.
 
 **A refusal is not a failure.** A provider that rejects a call rejects it
 identically on the next attempt, so it is now told apart from a provider that
