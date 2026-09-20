@@ -98,9 +98,8 @@ resource "google_cloud_run_v2_job" "migrate" {
           value = "info"
         }
 
-        # The same key the service uses. The job runs the same binary, which
-        # refuses to start in `real` mode without a key manager — and the job
-        # is in that mode too, so the variable is not the service's alone
+        # The job audits the marketplaces it declares, in the transaction that
+        # declares them, so it wraps keys with the same key the service uses
         # (infra/terraform/audit.tf).
         env {
           name  = "AUDIT_KEY"

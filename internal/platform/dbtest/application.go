@@ -31,12 +31,18 @@ const ApplicationRole = "app_probe"
 func AsApplication(t *testing.T, pool *db.Pool) {
 	t.Helper()
 
+	// A role belongs to the cluster, not to a database, so the packages that
+	// run at the same time all create this one on the same server. The check
+	// alone loses that race — both see it missing, both create it, one gets an
+	// error — so the exception is what actually makes this repeatable.
 	if _, err := pool.Exec(t.Context(), fmt.Sprintf(`
 		DO $$
 		BEGIN
 		    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%s') THEN
 		        CREATE ROLE %s NOLOGIN;
 		    END IF;
+		EXCEPTION
+		    WHEN duplicate_object THEN NULL;
 		END
 		$$
 	`, ApplicationRole, ApplicationRole)); err != nil {

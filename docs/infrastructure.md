@@ -833,6 +833,38 @@ wraps with a key of its own is readable by anyone who can read its environment,
 and what it wraps with a key it generated cannot be read after a restart at
 all.
 
+## The audit log
+
+Three properties, each of which had to be built in rather than added later
+(`docs/requirements.md`, section 21).
+
+**Append-only, twice over.** The application role is granted everything on every
+table by default, so the grant that runs after each migration takes `UPDATE` and
+`DELETE` back on this one — and because that grant runs *after* the migrations,
+a revoke written inside a migration would be undone by the next deployment. A
+trigger refuses both again, for every role. The two are not redundant: with the
+revoke removed the application role is stopped by the trigger, and with the
+trigger removed the role that owns the table is stopped by nothing. Both were
+checked that way.
+
+**Tamper-evident.** Each record carries the hash of the one before it, over
+every field including the ciphertexts — so altering what a record says about
+somebody, even unreadably, breaks the chain. Fields are hashed with their length
+in front of them, which is what stops content being moved across a boundary to
+produce the same bytes. The chain is per marketplace, plus one for the platform:
+a single chain would make every write in the system queue behind one row.
+
+A Cloud Scheduler job walks every chain daily and **fails** when a record does
+not verify, which is what makes a break something somebody hears about rather
+than something a report would have shown if anybody had opened it.
+
+**Erasable without a hole.** Records name people by internal identifier only.
+The origin address is encrypted with the actor's key and the state before and
+after with the **subject's**, which is the difference that makes a buyer's
+deletion request reach what staff wrote about the buyer. Destroying a key leaves
+the record, its position and its hash exactly as they were: the chain still
+verifies and the content is gone.
+
 ## Schema changes that hide rows
 
 A migration that puts a table under row-level security hides its rows from any

@@ -20,8 +20,8 @@ func TestMain(m *testing.M) {
 	os.Exit(dbtest.Run(m))
 }
 
-// open connects to a database of this test's own, so that one test's schema is
-// never another's surprise.
+// open connects to the database dbtest made for this package, which no other
+// package is migrating at the same time (internal/platform/dbtest).
 func open(t *testing.T) (*db.Pool, config.Database) {
 	t.Helper()
 
