@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/aleogr/marketplace/internal/platform/audit"
 	"github.com/aleogr/marketplace/internal/platform/config"
 	"github.com/aleogr/marketplace/internal/platform/db"
 	"github.com/aleogr/marketplace/internal/platform/geoip"
@@ -60,6 +62,11 @@ const (
 // exists to be sent by hand, after a sending domain is configured, to prove
 // that mail leaves the platform and arrives (docs/roadmap.md, F11).
 const ProbeTemplate = "probe"
+
+// VerifyAuditJob is the scheduled job that walks every audit chain and
+// recomputes it. A chain that does not verify is not a thing to discover during
+// an investigation (docs/requirements.md, section 21).
+const VerifyAuditJob = "verify-audit-chain"
 
 // DispatchJob is the scheduled job that empties the outbox into the queue.
 // Cloud Scheduler calls it; its name is in the Terraform configuration too
@@ -203,7 +210,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// has no outbox to move and no lock to take, so it serves pages and
 	// nothing else (docs/design.md, section 2.5).
 	if database != nil {
-		tasks, closeTasks, err := work(ctx, cfg, database, mailer, log)
+		tasks, closeTasks, err := work(ctx, cfg, database, mailer,
+			audit.NewLog(audit.NewKeys(keeper), log), log)
 		if err != nil {
 			return err
 		}
@@ -312,7 +320,7 @@ func protection(ctx context.Context, cfg config.Config, log *slog.Logger) (keys.
 // token. Anything else — a local run, the end-to-end suite — delivers them
 // inline, which exercises the same registry and the same idempotency with no
 // queue and no network (docs/design.md, section 2.2).
-func work(ctx context.Context, cfg config.Config, database *db.Pool, mailer *mail.Mailer, log *slog.Logger) (httpx.Tasks, func(), error) {
+func work(ctx context.Context, cfg config.Config, database *db.Pool, mailer *mail.Mailer, trail *audit.Log, log *slog.Logger) (httpx.Tasks, func(), error) {
 	registry := outbox.NewRegistry()
 	mail.Register(registry, mailer)
 
@@ -348,6 +356,26 @@ func work(ctx context.Context, cfg config.Config, database *db.Pool, mailer *mai
 				log.InfoContext(ctx, "events handed to the queue", "count", handed)
 			}
 			return err
+		},
+	})
+
+	// The audit chains, walked on a schedule. A break is a failed job, which is
+	// what makes it something somebody hears about rather than something a
+	// report would have shown if anybody had opened it.
+	runner.Register(jobs.JobFunc{
+		Named: VerifyAuditJob,
+		Do: func(ctx context.Context) error {
+			report, err := trail.Verify(ctx, database)
+			if err != nil {
+				return err
+			}
+			log.InfoContext(ctx, "audit chains verified",
+				"chains", report.Chains, "records", report.Records,
+				"breaks", len(report.Breaks))
+			if len(report.Breaks) > 0 {
+				return fmt.Errorf("%d audit records do not verify", len(report.Breaks))
+			}
+			return nil
 		},
 	})
 
@@ -396,8 +424,23 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return nil
 	}
 
+	// The audit log of the job's own work. A marketplace appearing or changing
+	// is a parameter change, and every parameter change is audited
+	// (docs/requirements.md, section 21) — including the ones nobody
+	// personally made, which is what the `system` actor is for.
+	keeper, closeKeeper, err := protection(ctx, cfg, log)
+	if err != nil {
+		return err
+	}
+	defer closeKeeper()
+	trail := audit.NewLog(audit.NewKeys(keeper), log)
+
 	if err := pool.InTx(ctx, func(tx pgx.Tx) error {
-		return tenancy.Seed(ctx, tx, specs)
+		applied, err := tenancy.Seed(ctx, tx, specs)
+		if err != nil {
+			return err
+		}
+		return record(ctx, tx, trail, applied)
 	}); err != nil {
 		return err
 	}
@@ -407,6 +450,38 @@ func migrate(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		slugs = append(slugs, spec.Slug)
 	}
 	log.InfoContext(ctx, "marketplaces seeded", "slugs", slugs)
+	return nil
+}
+
+// record writes one audit record per marketplace the job declared.
+//
+// In the same transaction as the seeding, which is the whole point: a
+// deployment that rolled back declared nothing and recorded nothing, and one
+// that committed cannot have committed without its record
+// (internal/platform/audit).
+func record(ctx context.Context, tx pgx.Tx, trail *audit.Log, applied []tenancy.Applied) error {
+	for _, one := range applied {
+		after, err := json.Marshal(one.Spec)
+		if err != nil {
+			return fmt.Errorf("cannot describe %s: %w", one.Spec.Slug, err)
+		}
+
+		action := "marketplace.updated"
+		if one.Created {
+			action = "marketplace.created"
+		}
+
+		if err := trail.Append(ctx, tx, audit.Entry{
+			// The platform's own chain: declaring a marketplace is the
+			// platform's act, not the marketplace's.
+			Actor:   audit.Actor{Kind: audit.System},
+			Action:  action,
+			Subject: audit.Subject{Kind: "marketplace", ID: one.ID},
+			After:   after,
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

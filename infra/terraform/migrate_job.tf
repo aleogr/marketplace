@@ -98,6 +98,14 @@ resource "google_cloud_run_v2_job" "migrate" {
           value = "info"
         }
 
+        # The job audits the marketplaces it declares, in the transaction that
+        # declares them, so it wraps keys with the same key the service uses
+        # (infra/terraform/audit.tf).
+        env {
+          name  = "AUDIT_KEY"
+          value = google_kms_crypto_key.audit.id
+        }
+
         # The job is also how one e-mail is sent by hand, to prove a sending
         # domain works: the same image, a different entry point
         # (`gcloud run jobs execute ... --args=send-probe,<address>`). It
@@ -153,6 +161,7 @@ resource "google_cloud_run_v2_job" "migrate" {
   depends_on = [
     google_secret_manager_secret_iam_member.migrator_password,
     google_secret_manager_secret_iam_member.migrator_mail_api_key,
+    google_kms_crypto_key_iam_member.migrator,
   ]
 }
 

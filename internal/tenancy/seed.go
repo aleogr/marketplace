@@ -82,16 +82,33 @@ func (s Spec) validate() error {
 // the database unchanged. Hosts the environment no longer declares are removed,
 // because the environment is what decides which hosts it answers on — a host
 // left behind would keep resolving to a marketplace nobody is pointing DNS at.
-func Seed(ctx context.Context, tx pgx.Tx, specs []Spec) error {
+func Seed(ctx context.Context, tx pgx.Tx, specs []Spec) ([]Applied, error) {
+	applied := make([]Applied, 0, len(specs))
 	for _, spec := range specs {
-		if err := seedOne(ctx, tx, spec); err != nil {
-			return fmt.Errorf("cannot seed %q: %w", spec.Slug, err)
+		one, err := seedOne(ctx, tx, spec)
+		if err != nil {
+			return nil, fmt.Errorf("cannot seed %q: %w", spec.Slug, err)
 		}
+		applied = append(applied, one)
 	}
-	return nil
+	return applied, nil
 }
 
-func seedOne(ctx context.Context, tx pgx.Tx, spec Spec) error {
+// Applied is what seeding did to one marketplace.
+//
+// It is returned rather than logged, because the caller is what writes the
+// audit record of it: a marketplace appearing or changing is a parameter change
+// (docs/requirements.md, section 21), and this package has no business knowing
+// how those are recorded.
+type Applied struct {
+	Spec Spec
+	ID   string
+	// Created is true when this deployment is the one that brought the
+	// marketplace into existence.
+	Created bool
+}
+
+func seedOne(ctx context.Context, tx pgx.Tx, spec Spec) (Applied, error) {
 	state := spec.State
 	if state == "" {
 		state = string(Active)
@@ -102,6 +119,7 @@ func seedOne(ctx context.Context, tx pgx.Tx, spec Spec) error {
 	}
 
 	var id string
+	var created bool
 	err := tx.QueryRow(ctx, `
 		INSERT INTO marketplace (
 		    slug, name, market_code, revenue_model, state,
@@ -116,11 +134,13 @@ func seedOne(ctx context.Context, tx pgx.Tx, spec Spec) error {
 		    detect_contact_data = EXCLUDED.detect_contact_data,
 		    reveal_contact      = EXCLUDED.reveal_contact,
 		    default_language    = EXCLUDED.default_language
-		RETURNING id::text
+		-- xmax = 0 is true of a row this statement inserted and false of one
+		-- it updated, which is how an upsert says which of the two it did.
+		RETURNING id::text, (xmax = 0)
 	`, spec.Slug, spec.Name, spec.Market, spec.RevenueModel, state,
-		spec.DetectContactData, spec.RevealContact, language).Scan(&id)
+		spec.DetectContactData, spec.RevealContact, language).Scan(&id, &created)
 	if err != nil {
-		return fmt.Errorf("cannot write the marketplace: %w", err)
+		return Applied{}, fmt.Errorf("cannot write the marketplace: %w", err)
 	}
 
 	languages := spec.Languages
@@ -134,7 +154,7 @@ func seedOne(ctx context.Context, tx pgx.Tx, spec Spec) error {
 		DELETE FROM marketplace_language
 		WHERE marketplace_id = $1 AND language <> ALL($2::text[])
 	`, id, languages); err != nil {
-		return fmt.Errorf("cannot remove languages: %w", err)
+		return Applied{}, fmt.Errorf("cannot remove languages: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -142,7 +162,7 @@ func seedOne(ctx context.Context, tx pgx.Tx, spec Spec) error {
 		SELECT $1, language FROM unnest($2::text[]) AS language
 		ON CONFLICT DO NOTHING
 	`, id, languages); err != nil {
-		return fmt.Errorf("cannot add languages: %w", err)
+		return Applied{}, fmt.Errorf("cannot add languages: %w", err)
 	}
 
 	hosts := make([]string, 0, len(spec.Hosts))
@@ -154,7 +174,7 @@ func seedOne(ctx context.Context, tx pgx.Tx, spec Spec) error {
 		DELETE FROM marketplace_host
 		WHERE marketplace_id = $1 AND host <> ALL($2::text[])
 	`, id, hosts); err != nil {
-		return fmt.Errorf("cannot remove hosts: %w", err)
+		return Applied{}, fmt.Errorf("cannot remove hosts: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -162,8 +182,8 @@ func seedOne(ctx context.Context, tx pgx.Tx, spec Spec) error {
 		SELECT host, $1 FROM unnest($2::text[]) AS host
 		ON CONFLICT (host) DO UPDATE SET marketplace_id = EXCLUDED.marketplace_id
 	`, id, hosts); err != nil {
-		return fmt.Errorf("cannot add hosts: %w", err)
+		return Applied{}, fmt.Errorf("cannot add hosts: %w", err)
 	}
 
-	return nil
+	return Applied{Spec: spec, ID: id, Created: created}, nil
 }
