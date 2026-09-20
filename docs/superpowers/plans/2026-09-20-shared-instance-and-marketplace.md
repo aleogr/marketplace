@@ -546,15 +546,34 @@ fi
 echo "the instance matches the design"
 ```
 
-- [ ] **Step 2: Run it and verify it fails**
+- [ ] **Step 2: Run it against an instance that exists and differs**
+
+Owner-executed, in Cloud Shell: this session has no `gcloud`.
+
+Running it against `lab-postgres` before that instance exists would only prove
+that `gcloud` errors on a missing name — which is not what this check is for.
+Point it instead at the **old marketplace instance**, which is real and differs
+from the design in exactly two known ways: its backup window is 06:00 rather
+than noon, and it keeps one day of transaction log rather than seven.
 
 ```sh
-chmod +x gcp/tools/check-instance.sh
-./gcp/tools/check-instance.sh "$PROJECT" lab-postgres
+curl -fsSL https://raw.githubusercontent.com/aleogr/shared-infra/claude/shared-instance/gcp/tools/check-instance.sh \
+  -o /tmp/check-instance.sh && chmod +x /tmp/check-instance.sh
+
+/tmp/check-instance.sh aleogr-marketplace-lab-a4j5 marketplace
 ```
 
-Expected: FAIL, `ERROR: (gcloud.sql.instances.describe) ... was not found`. The
-instance does not exist yet; that is the point.
+Expected: FAIL, naming those two settings and their real values, and exiting
+non-zero:
+
+```
+settings.backupConfiguration.startTime      "06:00", want "12:00"
+settings.backupConfiguration.transactionLogRetentionDays  1, want 7
+2 setting(s) do not match the design
+```
+
+That is a check that discriminates. A check that only knew how to say "not
+found" would pass against any instance that happened to exist.
 
 - [ ] **Step 3: instance.tf**
 
