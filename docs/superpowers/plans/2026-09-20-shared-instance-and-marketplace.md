@@ -490,6 +490,30 @@ Expected: the plan creates the service account, the pool, the provider and the
 IAM bindings — and **no instance**, which comes in Task 4. This is the one
 apply that does not come from CI, and the reason is written above.
 
+- [ ] **Step 11: Let the deploy identity reach the state bucket**
+
+The deployer now exists and holds `cloudsql.admin` and `projectIamAdmin` on the
+project — and nothing at all on the bucket. CI's very first `terraform init`
+fails on that: *"does not have storage.objects.list access"*. The project roles
+do not reach a bucket.
+
+This grant stays **outside Terraform**, and not by omission. The bucket is
+already outside it, because a configuration cannot create the place it stores
+its state; and a `google_storage_bucket_iam_member` here would be Terraform
+managing the access it needs in order to run, so a `terraform destroy` would
+revoke its own reach halfway through. It is recorded in `docs/infrastructure.md`
+beside the bucket.
+
+```sh
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+  --member="serviceAccount:deployer@${PROJECT}.iam.gserviceaccount.com" \
+  --role=roles/storage.objectAdmin
+```
+
+`objectAdmin` on the bucket and not `storage.admin`: the state backend lists,
+reads, writes and deletes objects — the lock file is an object it creates and
+removes — and none of that needs the right to delete the bucket itself.
+
 ---
 
 ### Task 4: The instance, and a check that proves its settings
