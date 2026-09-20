@@ -30,6 +30,11 @@ database_tier               = "db-f1-micro"
 database_backup_count       = 7
 database_log_retention_days = 1
 
+# The lab databases of this project and of `schooling` share one instance,
+# in a project neither of them owns (aleogr/shared-infra). This configuration
+# declares its own database inside it and cannot change the instance.
+shared_project_id = "aleogr-lab-shared-dacd"
+
 # The lab's first marketplace. Its host is mapped by Terraform and seeded into
 # the database by the migration job, from this one declaration.
 marketplaces = [

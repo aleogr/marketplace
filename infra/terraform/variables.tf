@@ -145,3 +145,14 @@ variable "mail_from" {
     error_message = "providers_mode is real, so mail_from must name the address mail is sent from."
   }
 }
+
+variable "shared_project_id" {
+  description = "The project holding the shared lab database instance. This configuration declares its own database inside it and has no rights over the instance itself (aleogr/shared-infra)."
+  type        = string
+}
+
+variable "shared_instance" {
+  description = "The shared instance's name. The connection name is assembled from this, the project and the region, in locals.tf."
+  type        = string
+  default     = "lab-postgres"
+}

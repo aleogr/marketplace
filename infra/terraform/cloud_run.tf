@@ -112,7 +112,7 @@ resource "google_cloud_run_v2_service" "marketplace" {
       # account with IAM (infra/terraform/cloud_sql.tf).
       env {
         name  = "DATABASE_INSTANCE"
-        value = google_sql_database_instance.main.connection_name
+        value = local.database_instance
       }
 
       env {

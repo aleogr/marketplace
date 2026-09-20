@@ -52,7 +52,7 @@ resource "google_cloud_run_v2_job" "migrate" {
 
         env {
           name  = "DATABASE_INSTANCE"
-          value = google_sql_database_instance.main.connection_name
+          value = local.database_instance
         }
 
         env {
