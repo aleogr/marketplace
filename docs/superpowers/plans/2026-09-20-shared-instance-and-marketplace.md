@@ -508,7 +508,20 @@ beside the bucket.
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
   --member="serviceAccount:deployer@${PROJECT}.iam.gserviceaccount.com" \
   --role=roles/storage.objectAdmin
+
+# And the pool it authenticates itself with. The first plan run AS the deployer
+# refreshes `google_iam_workload_identity_pool.github`, and neither
+# cloudsql.admin nor projectIamAdmin can read one. The bootstrap plan does not
+# catch it, because that one runs as the project's owner.
+gcloud projects add-iam-policy-binding "$PROJECT" \
+  --member="serviceAccount:deployer@${PROJECT}.iam.gserviceaccount.com" \
+  --role=roles/iam.workloadIdentityPoolAdmin --condition=None
 ```
+
+The second is granted by hand here **and** declared in `deployer.tf`, because
+the chicken and egg only bites once: the deployer cannot read the pool in order
+to apply the binding that lets it read the pool. After that, the declaration is
+what keeps it true.
 
 `objectAdmin` on the bucket and not `storage.admin`: the state backend lists,
 reads, writes and deletes objects — the lock file is an object it creates and
