@@ -232,7 +232,7 @@ git push -u origin claude/shared-instance
 ### Task 3: The deploy identity, so CI can apply
 
 **Files:**
-- Create: `gcp/terraform/versions.tf`, `providers.tf`, `backend.tf`, `variables.tf`, `services.tf`, `deployer.tf`, `lab/backend.hcl`, `lab/lab.tfvars` in `aleogr/shared-infra`
+- Create: `gcp/terraform/versions.tf`, `.terraform-version`, `providers.tf`, `backend.tf`, `variables.tf`, `services.tf`, `deployer.tf`, `lab/backend.hcl`, `lab/lab.tfvars` in `aleogr/shared-infra`
 
 **Interfaces:**
 - Consumes: the project id and bucket from Task 1.
@@ -242,16 +242,30 @@ git push -u origin claude/shared-instance
 
 ```hcl
 terraform {
-  required_version = ">= 1.9.0"
+  # The same floors as aleogr/marketplace. Two configurations that address one
+  # instance on different provider majors is a difference nobody chose and
+  # nobody tests.
+  required_version = "~> 1.16.0"
 
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 6.0"
+      version = "~> 8.3"
     }
   }
 }
 ```
+
+And `gcp/terraform/.terraform-version`, one line:
+
+```
+1.16.3
+```
+
+The floor and the pin are two different jobs: `required_version` refuses a
+Terraform that cannot read the configuration, and this file names the exact
+release a session and CI both run. Without it the two drift, and state written
+by the newer one stops being readable by the older.
 
 - [ ] **Step 2: providers.tf**
 
@@ -663,17 +677,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.8
+      - name: Read the pinned Terraform release
+        id: release
+        run: echo "version=$(cat gcp/terraform/.terraform-version)" >> "$GITHUB_OUTPUT"
 
-      - uses: google-github-actions/auth@v2
+      # THIRD-PARTY ACTIONS ARE PINNED TO A COMMIT, NOT TO A TAG. A tag can be
+      # moved onto different code, and this repository holds a federation that
+      # can change a GCP project — which is the case the marketplace's own
+      # workflow gives for the same rule. The two SHAs below are the ones that
+      # repository already vetted.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           project_id: ${{ vars.GCP_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SA }}
 
-      - uses: google-github-actions/setup-gcloud@v2
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ steps.release.outputs.version }}
+          terraform_wrapper: false
+
+      # No setup-gcloud: the runner already has the CLI, and the auth step
+      # above exports the credential file it reads. One fewer unpinned action
+      # in the repository that holds the federation.
 
       - name: Format
         run: terraform -chdir=gcp/terraform fmt -check -recursive
@@ -708,13 +734,14 @@ jobs:
         run: ./gcp/tools/check-instance.sh "${{ vars.GCP_PROJECT_ID }}" lab-postgres
 ```
 
-- [ ] **Step 6: Owner sets the three repository variables**
+- [ ] **Step 6: Owner sets the four repository variables**
 
 ```sh
 # Settings → Secrets and variables → Actions → Variables, in aleogr/shared-infra:
-#   GCP_PROJECT_ID              the project id from Task 1
-#   TF_STATE_BUCKET             the bucket from Task 1
-#   WORKLOAD_IDENTITY_PROVIDER  printed by this:
+#   GCP_PROJECT_ID     the project id from Task 1
+#   TF_STATE_BUCKET    the bucket from Task 1
+#   GCP_TERRAFORM_SA   deployer@aleogr-lab-shared-dacd.iam.gserviceaccount.com
+#   GCP_WIF_PROVIDER   printed by this:
 gcloud iam workload-identity-pools providers describe github \
   --project="$PROJECT" --location=global --workload-identity-pool=github \
   --format='value(name)'
@@ -722,7 +749,7 @@ gcloud iam workload-identity-pools providers describe github \
 
 Expected: a value shaped
 `projects/<number>/locations/global/workloadIdentityPools/github/providers/github`.
-These are **variables, not secrets** — none of the three is confidential, and
+These are **variables, not secrets** — none of the four is confidential, and
 putting a non-secret in the secret store only makes logs harder to read.
 
 - [ ] **Step 7: Validate, commit, open the pull request**
