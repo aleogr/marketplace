@@ -34,22 +34,22 @@ plan. Deleting it belongs to Plan 2's cool-down.
 
 ## File structure
 
-**New repository `aleogr/lab-shared`:**
+**New repository `aleogr/shared-infra`:**
 
 | file | responsibility |
 |---|---|
-| `infra/terraform/versions.tf` | provider and Terraform version floors |
-| `infra/terraform/providers.tf` | the Google provider, with `billing_project` stated |
-| `infra/terraform/backend.tf` | `backend "gcs" {}`, configured by `-backend-config` |
-| `infra/terraform/variables.tf` | `project_id`, `region`, instance sizing |
-| `infra/terraform/services.tf` | the project services Terraform needs enabled |
-| `infra/terraform/instance.tf` | `lab-postgres`, and nothing else |
-| `infra/terraform/tenants.tf` | the IAM that lets each tenant's deployer declare its own database |
-| `infra/terraform/deployer.tf` | this repository's own deploy identity |
-| `infra/terraform/outputs.tf` | `connection_name`, for tenants to read |
-| `infra/terraform/lab/backend.hcl` | the state prefix |
-| `infra/terraform/lab/lab.tfvars` | the environment's values |
-| `tools/check-instance.sh` | asserts the live instance matches the design |
+| `gcp/terraform/versions.tf` | provider and Terraform version floors |
+| `gcp/terraform/providers.tf` | the Google provider, with `billing_project` stated |
+| `gcp/terraform/backend.tf` | `backend "gcs" {}`, configured by `-backend-config` |
+| `gcp/terraform/variables.tf` | `project_id`, `region`, instance sizing |
+| `gcp/terraform/services.tf` | the project services Terraform needs enabled |
+| `gcp/terraform/instance.tf` | `lab-postgres`, and nothing else |
+| `gcp/terraform/tenants.tf` | the IAM that lets each tenant's deployer declare its own database |
+| `gcp/terraform/deployer.tf` | this repository's own deploy identity |
+| `gcp/terraform/outputs.tf` | `connection_name`, for tenants to read |
+| `gcp/terraform/lab/backend.hcl` | the state prefix |
+| `gcp/terraform/lab/lab.tfvars` | the environment's values |
+| `gcp/tools/check-instance.sh` | asserts the live instance matches the design |
 | `.github/workflows/ci.yml` | plan on a pull request, apply on `main` |
 | `README.md` | what this repository is and what it is not |
 | `CLAUDE.md` | the working agreements, pointing at this repository's own rules |
@@ -139,15 +139,15 @@ into the plan's own notes when reporting back.
 ### Task 2: The repository exists and this session can write to it
 
 **Files:**
-- Create: `README.md`, `CLAUDE.md` in `aleogr/lab-shared`
+- Create: `README.md`, `CLAUDE.md` in `aleogr/shared-infra`
 
 **Interfaces:**
 - Consumes: the project id from Task 1.
-- Produces: a clone at `/home/user/lab-shared` this session can push to.
+- Produces: a clone at `/home/user/shared-infra` this session can push to.
 
 - [ ] **Step 1: Confirm the repository name with the owner**
 
-Proposed: `aleogr/lab-shared`. Public, like the others, which is why the
+Proposed: `aleogr/shared-infra`. Public, like the others, which is why the
 no-secrets rule applies to it too.
 
 - [ ] **Step 2: Owner creates it**
@@ -155,15 +155,15 @@ no-secrets rule applies to it too.
 ```sh
 # In the browser, or with the GitHub CLI if the owner has it:
 #   https://github.com/organizations/aleogr/repositories/new
-#   name: lab-shared   visibility: public   no README, no .gitignore, no licence
+#   name: shared-infra   visibility: public   no README, no .gitignore, no licence
 ```
 
-Expected: an empty repository at `https://github.com/aleogr/lab-shared`.
+Expected: an empty repository at `https://github.com/aleogr/shared-infra`.
 
 - [ ] **Step 3: Attach it to this session with push access**
 
 ```
-add_repo(owner="aleogr", repo="lab-shared", access="push")
+add_repo(owner="aleogr", repo="shared-infra", access="push")
 ```
 
 Expected: `status: attached` and a clone path. If the call is refused, stop:
@@ -173,7 +173,7 @@ that does not put a credential somewhere it should not be.
 - [ ] **Step 4: Write README.md**
 
 ```markdown
-# lab-shared
+# shared-infra
 
 The Cloud SQL instance the lab databases of `aleogr/marketplace` and
 `codeschool-ing/schooling` share, and nothing else.
@@ -220,7 +220,7 @@ protect against.
 - [ ] **Step 6: Commit and push**
 
 ```sh
-cd /home/user/lab-shared
+cd /home/user/shared-infra
 git checkout -b claude/shared-instance
 git add README.md CLAUDE.md
 git commit -m "The repository that owns the shared lab instance, and only that"
@@ -232,11 +232,11 @@ git push -u origin claude/shared-instance
 ### Task 3: The deploy identity, so CI can apply
 
 **Files:**
-- Create: `infra/terraform/versions.tf`, `providers.tf`, `backend.tf`, `variables.tf`, `services.tf`, `deployer.tf`, `lab/backend.hcl`, `lab/lab.tfvars` in `aleogr/lab-shared`
+- Create: `gcp/terraform/versions.tf`, `providers.tf`, `backend.tf`, `variables.tf`, `services.tf`, `deployer.tf`, `lab/backend.hcl`, `lab/lab.tfvars` in `aleogr/shared-infra`
 
 **Interfaces:**
 - Consumes: the project id and bucket from Task 1.
-- Produces: a service account `deployer@<shared project>.iam.gserviceaccount.com` federated to `aleogr/lab-shared`, which Task 4's CI uses.
+- Produces: a service account `deployer@<shared project>.iam.gserviceaccount.com` federated to `aleogr/shared-infra`, which Task 4's CI uses.
 
 - [ ] **Step 1: versions.tf**
 
@@ -348,7 +348,7 @@ resource "google_project_service" "enabled" {
 resource "google_service_account" "deployer" {
   account_id   = "deployer"
   display_name = "GitHub Actions, applying this configuration"
-  description  = "Federated to aleogr/lab-shared. Owns the instance, and no tenant's data."
+  description  = "Federated to aleogr/shared-infra. Owns the instance, and no tenant's data."
 }
 
 resource "google_iam_workload_identity_pool" "github" {
@@ -367,7 +367,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 
   # WITHOUT THIS, ANY REPOSITORY ON GITHUB CAN ASK. The condition is what makes
   # the federation an authorisation rather than an introduction.
-  attribute_condition = "assertion.repository == 'aleogr/lab-shared'"
+  attribute_condition = "assertion.repository == 'aleogr/shared-infra'"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
@@ -377,7 +377,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 resource "google_service_account_iam_member" "deployer_federation" {
   service_account_id = google_service_account.deployer.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}/attribute.repository/aleogr/lab-shared"
+  member             = "principalSet://iam.googleapis.com/projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}/attribute.repository/aleogr/shared-infra"
 }
 
 resource "google_project_iam_member" "deployer_sql" {
@@ -415,10 +415,10 @@ tenants = {}
 - [ ] **Step 8: Validate locally**
 
 ```sh
-cd /home/user/lab-shared
-terraform -chdir=infra/terraform fmt -check
-terraform -chdir=infra/terraform init -backend=false
-terraform -chdir=infra/terraform validate
+cd /home/user/shared-infra
+terraform -chdir=gcp/terraform fmt -check
+terraform -chdir=gcp/terraform init -backend=false
+terraform -chdir=gcp/terraform validate
 ```
 
 Expected: `Success! The configuration is valid.` and no output from `fmt`.
@@ -426,7 +426,7 @@ Expected: `Success! The configuration is valid.` and no output from `fmt`.
 - [ ] **Step 9: Commit**
 
 ```sh
-git add infra/terraform
+git add gcp/terraform
 git commit -m "The deploy identity, federated to this repository and nothing else"
 git push
 ```
@@ -437,11 +437,11 @@ The federation cannot apply itself: the first `apply` must come from an
 identity that already exists. Hand the owner this, and wait:
 
 ```sh
-terraform -chdir=infra/terraform init \
+terraform -chdir=gcp/terraform init \
   -backend-config="bucket=$BUCKET" -backend-config="prefix=lab"
-terraform -chdir=infra/terraform plan \
+terraform -chdir=gcp/terraform plan \
   -var="project_id=$PROJECT" -var-file=lab/lab.tfvars     # read it
-terraform -chdir=infra/terraform apply \
+terraform -chdir=gcp/terraform apply \
   -var="project_id=$PROJECT" -var-file=lab/lab.tfvars
 ```
 
@@ -454,7 +454,7 @@ apply that does not come from CI, and the reason is written above.
 ### Task 4: The instance, and a check that proves its settings
 
 **Files:**
-- Create: `infra/terraform/instance.tf`, `infra/terraform/outputs.tf`, `tools/check-instance.sh`, `.github/workflows/ci.yml` in `aleogr/lab-shared`
+- Create: `gcp/terraform/instance.tf`, `gcp/terraform/outputs.tf`, `gcp/tools/check-instance.sh`, `.github/workflows/ci.yml` in `aleogr/shared-infra`
 
 **Interfaces:**
 - Consumes: the deployer from Task 3.
@@ -462,7 +462,7 @@ apply that does not come from CI, and the reason is written above.
 
 - [ ] **Step 1: Write the check first, and watch it fail**
 
-`tools/check-instance.sh`. It is the test: it reads the live instance and
+`gcp/tools/check-instance.sh`. It is the test: it reads the live instance and
 asserts every setting the design commits to. Written before the instance
 exists, so its first run fails for the right reason.
 
@@ -534,8 +534,8 @@ echo "the instance matches the design"
 - [ ] **Step 2: Run it and verify it fails**
 
 ```sh
-chmod +x tools/check-instance.sh
-./tools/check-instance.sh "$PROJECT" lab-postgres
+chmod +x gcp/tools/check-instance.sh
+./gcp/tools/check-instance.sh "$PROJECT" lab-postgres
 ```
 
 Expected: FAIL, `ERROR: (gcloud.sql.instances.describe) ... was not found`. The
@@ -652,8 +652,12 @@ permissions:
   pull-requests: write
 
 jobs:
-  terraform:
-    name: Format, validate, plan and apply
+  # ONE JOB PER PROVIDER, and the directory is the boundary. A second provider
+  # is a second job over its own directory, with its own state and its own
+  # credential — an AWS key and a GCP federation have nothing to say to each
+  # other, and nothing here should imply they do.
+  gcp:
+    name: GCP — format, validate, plan and apply
     runs-on: ubuntu-latest
 
     steps:
@@ -672,27 +676,27 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Format
-        run: terraform -chdir=infra/terraform fmt -check -recursive
+        run: terraform -chdir=gcp/terraform fmt -check -recursive
 
       - name: Init
         run: |
-          terraform -chdir=infra/terraform init \
+          terraform -chdir=gcp/terraform init \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config=lab/backend.hcl
 
       - name: Validate
-        run: terraform -chdir=infra/terraform validate
+        run: terraform -chdir=gcp/terraform validate
 
       - name: Plan
         run: |
-          terraform -chdir=infra/terraform plan \
+          terraform -chdir=gcp/terraform plan \
             -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
             -var-file=lab/lab.tfvars
 
       - name: Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
-          terraform -chdir=infra/terraform apply -auto-approve \
+          terraform -chdir=gcp/terraform apply -auto-approve \
             -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
             -var-file=lab/lab.tfvars
 
@@ -701,13 +705,13 @@ jobs:
       # that was; this asks the live instance.
       - name: The instance matches the design
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: ./tools/check-instance.sh "${{ vars.GCP_PROJECT_ID }}" lab-postgres
+        run: ./gcp/tools/check-instance.sh "${{ vars.GCP_PROJECT_ID }}" lab-postgres
 ```
 
 - [ ] **Step 6: Owner sets the three repository variables**
 
 ```sh
-# Settings → Secrets and variables → Actions → Variables, in aleogr/lab-shared:
+# Settings → Secrets and variables → Actions → Variables, in aleogr/shared-infra:
 #   GCP_PROJECT_ID              the project id from Task 1
 #   TF_STATE_BUCKET             the bucket from Task 1
 #   WORKLOAD_IDENTITY_PROVIDER  printed by this:
@@ -724,10 +728,10 @@ putting a non-secret in the secret store only makes logs harder to read.
 - [ ] **Step 7: Validate, commit, open the pull request**
 
 ```sh
-terraform -chdir=infra/terraform fmt -check -recursive
-terraform -chdir=infra/terraform init -backend=false
-terraform -chdir=infra/terraform validate
-git add infra/terraform tools .github
+terraform -chdir=gcp/terraform fmt -check -recursive
+terraform -chdir=gcp/terraform init -backend=false
+terraform -chdir=gcp/terraform validate
+git add gcp/terraform tools .github
 git commit -m "The shared instance, and a check that reads the live one"
 git push
 ```
@@ -749,7 +753,7 @@ check.
 
 **Files:**
 - Modify: `infra/terraform/variables.tf`, `infra/terraform/locals.tf`, `infra/terraform/cloud_sql.tf`, `infra/terraform/lab/lab.tfvars` in `aleogr/marketplace`
-- Modify: `infra/terraform/lab/lab.tfvars` in `aleogr/lab-shared` (the `tenants` map)
+- Modify: `gcp/terraform/lab/lab.tfvars` in `aleogr/shared-infra` (the `tenants` map)
 
 **Interfaces:**
 - Consumes: `connection_name` and `instance_name` from Task 4.
@@ -757,7 +761,7 @@ check.
 
 - [ ] **Step 1: Grant this repository's deployer the right to declare a database**
 
-In `aleogr/lab-shared`, `infra/terraform/tenants.tf`:
+In `aleogr/shared-infra`, `gcp/terraform/tenants.tf`:
 
 ```hcl
 # What a tenant may do inside this instance: declare its own database and its
@@ -789,7 +793,7 @@ Commit, pull request, owner merges, CI applies.
 
 ```hcl
 variable "shared_project_id" {
-  description = "The project holding the shared lab database instance. This configuration declares its own database inside it and has no rights over the instance itself (aleogr/lab-shared)."
+  description = "The project holding the shared lab database instance. This configuration declares its own database inside it and has no rights over the instance itself (aleogr/shared-infra)."
   type        = string
 }
 
@@ -874,7 +878,7 @@ infra/terraform/outputs.tf:28
 
 ```hcl
 # The lab databases of this project and of `schooling` share one instance,
-# in a project neither of them owns (aleogr/lab-shared). This configuration
+# in a project neither of them owns (aleogr/shared-infra). This configuration
 # declares its own database inside it and cannot change the instance.
 shared_project_id = "aleogr-lab-shared-<4>"
 ```
