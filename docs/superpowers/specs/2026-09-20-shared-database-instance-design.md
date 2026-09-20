@@ -109,10 +109,37 @@ Two principles, and the rest follows:
 | shared project | `aleogr-lab-shared-<4>` | `shared` rather than `data`: it stays true as the contents grow beyond the database. |
 | instance | `lab-postgres` | environment + engine, same rule. No major version in the name — a Cloud SQL instance cannot be renamed, and a deleted name is reserved for a time, so `postgres16-lab` would make a major upgrade into a rename that is not available. |
 | databases | `marketplace`, `schooling` | the product, not the GCP project. No random suffix: a database name only has to be unique inside one instance you populated yourself, there is no collision to avoid, and the name appears in every connection string, every dump file and every error message. A second database for the same product takes a **purpose** suffix — `marketplace_analytics` — which says why it exists, where a random suffix says nothing. Underscore, not hyphen: a hyphen in a PostgreSQL identifier needs quoting forever. |
-| roles | `schooling`, `marketplace_migrator`, the service account | a role belongs to the cluster, not to a database, so on a shared instance every tenant's roles share one namespace. `migrator` names a function rather than a tenant, which is a trap for the day a third tenant arrives. It becomes `marketplace_migrator`. |
+| roles | see below | a role belongs to the cluster, not to a database, so on a shared instance every tenant's roles share one namespace. `migrator` names a function rather than a tenant, which is a trap for the day a third tenant arrives. It becomes `marketplace_migrator`. |
 
 The environment is not repeated in the database name: the instance already
 carries it, and the instance is what is per-environment.
+
+### The roles, in two steps
+
+The cluster holds different roles before and after `schooling` adopts the
+migrator/service separation (D6), and the table above would read as a single
+end state without saying so.
+
+| | at cutover | after the split |
+|---|---|---|
+| marketplace, migrations | `marketplace_migrator` | unchanged |
+| marketplace, serving | the service account, as an IAM user | unchanged |
+| schooling, migrations | `schooling` — one role does both | `schooling_migrator` |
+| schooling, serving | `schooling` — one role does both | `schooling` |
+
+So `schooling_migrator` does not exist on the day the data moves, and that is
+deliberate: the move happens with the permission model `schooling` has today,
+untouched.
+
+When the split lands it is its own change, in its own repository, and it has
+two parts beyond creating the role. The objects restored in Phase 2 are owned
+by `schooling`, so ownership moves with `REASSIGN OWNED BY schooling TO
+schooling_migrator`. And it is `schooling_migrator` that becomes the built-in
+user created by `gcloud sql users create` — the one with the privilege to
+create and drop tables — while `schooling` becomes a plain role holding
+`SELECT, INSERT, UPDATE, DELETE` and nothing more. That is the same shape this
+repository uses, and the reason is the same: a service that cannot drop a table
+is a service whose compromise has a ceiling.
 
 ## The instance
 
@@ -147,6 +174,9 @@ GRANT  CONNECT ON DATABASE schooling   TO schooling;
 ALTER DATABASE marketplace CONNECTION LIMIT 10;
 ALTER DATABASE schooling   CONNECTION LIMIT 10;
 ```
+
+When the split lands, `schooling_migrator` joins the `GRANT CONNECT` for the
+`schooling` database.
 
 The connection limits are what keep a burst from this repository's CI from
 leaving `schooling` unable to connect — the 0.6 GB of shared RAM answered by
