@@ -1138,7 +1138,7 @@ that job's log, not from a guess.
 **Files:**
 - Modify: `docs/infrastructure.md` in `aleogr/marketplace`
 
-- [ ] **Step 1: Apply the isolation grants**
+- [x] **Step 1: Apply the isolation grants**
 
 Owner-executed, through the Cloud SQL Auth Proxy, once the database exists.
 By default every role may connect to every database in the cluster, so without
@@ -1147,8 +1147,16 @@ this the `schooling` role — which arrives in Plan 2 — would reach this data.
 ```sql
 REVOKE CONNECT ON DATABASE marketplace FROM PUBLIC;
 GRANT  CONNECT ON DATABASE marketplace TO marketplace_migrator;
-ALTER DATABASE marketplace CONNECTION LIMIT 10;
+ALTER DATABASE marketplace CONNECTION LIMIT 14;
 ```
+
+**14 and not the 10 this plan first carried.** The number has to be the peak,
+and the peak is read from the code: the pool opens 4 connections per process
+(`internal/platform/db/db.go`), Cloud Run goes to 2 instances, and the
+migration job uses the same pool — 12 while a deployment migrates against the
+revision still serving. A ceiling of 10 would have had the isolation refuse the
+deployments it exists to protect. The instance allows 25, of which three are
+reserved for superusers.
 
 The service's own user is granted the same way. Cloud SQL derives that user's
 name from the service account's address with the domain removed, which for
@@ -1163,34 +1171,31 @@ GRANT CONNECT ON DATABASE marketplace
 The quotes are required: the name holds `@` and `-`, which an unquoted
 PostgreSQL identifier may not.
 
-- [ ] **Step 2: Prove the revoke bites**
+- [x] **Step 2: Prove the revoke bites**
 
 A guard nobody tried is a guard nobody has. Create a throwaway role with no
 grant and watch it be refused:
 
-```sql
-CREATE ROLE connect_probe LOGIN PASSWORD 'probe-only-and-dropped-below';
+```sh
+PROBE_PW="$(openssl rand -hex 16)"
+psql "…user=marketplace_migrator dbname=marketplace" \
+  -c "CREATE ROLE connect_probe LOGIN PASSWORD '$PROBE_PW'"
+PGPASSWORD="$PROBE_PW" psql \
+  "host=127.0.0.1 port=5433 user=connect_probe dbname=marketplace" -c 'SELECT 1'
 ```
 
-```sh
-PGPASSWORD='probe-only-and-dropped-below' psql \
-  "host=127.0.0.1 port=5432 user=connect_probe dbname=marketplace" -c 'SELECT 1'
-```
+The password is generated rather than written here. The role lives for one
+command and is dropped in the next, so a literal would have been defensible —
+but this repository is public, and a generated secret costs nothing.
 
 Expected: `FATAL:  permission denied for database "marketplace"`. If it
 connects, the `REVOKE` did not take and nothing below should proceed.
 
-Then, whatever the outcome:
+The `DROP ROLE connect_probe` runs in the same command, whatever the outcome,
+so that an unexpected result cannot leave a login role behind on an instance
+other tenants share.
 
-```sql
-DROP ROLE connect_probe;
-```
-
-The password is in this plan on purpose: it belongs to a role that exists for
-one command and is dropped in the next. Nothing it could reach is reachable
-without the `CONNECT` this step is proving is absent.
-
-- [ ] **Step 3: Stop the old instance — do not delete it**
+- [x] **Step 3: Stop the old instance — do not delete it**
 
 ```sh
 gcloud sql instances patch marketplace \
@@ -1201,7 +1206,7 @@ Expected: the instance's state becomes `STOPPED`. It keeps its data and its
 disk, costs about R$ 10 a month, and is the rollback if anything found later
 sends this back. Plan 2's cool-down deletes it.
 
-- [ ] **Step 4: Record the decisions in docs/infrastructure.md**
+- [x] **Step 4: Record the decisions in docs/infrastructure.md**
 
 The spec is the record of how the decisions were reached; `docs/infrastructure.md`
 is where the ones that survived live. Add: the shared project and what owns it,
@@ -1212,16 +1217,64 @@ Task 3 step 10**, with the reason: a federation cannot apply itself, so the
 identity that applies it has to exist first. An undocumented manual apply is
 an undocumented divergence between the state and the repository.
 
-- [ ] **Step 5: Commit, pull request, owner merges**
+- [x] **Step 5: Commit, pull request, owner merges**
 
 ---
 
-## What Plan 2 will need from this one
+## What Plan 2 needs from this one
 
-Written down at the end of Task 7, because Plan 2 is authored from it:
+Answered at the end of Task 7, because Plan 2 is authored from it.
 
-- whether the cross-project connector needed anything beyond `cloudsql.editor`
-  and `cloudsql.client`
-- the exact shape of the connection string that worked, socket and all
-- how long a stopped instance took to accept connections after `ALWAYS`
-- anything the rehearsal refused that the spec did not predict
+**The tenant needed more than `cloudsql.editor`, and a different identity than
+this plan assumed.** Two defects, each of which cost a failed apply:
+
+- `roles/cloudsql.editor` **cannot create a database user**. It holds
+  `cloudsql.users.get` and `cloudsql.users.list` and nothing that writes.
+  Nothing predefined sits between it and `roles/cloudsql.admin`, which would
+  let a tenant delete the instance, so `aleogr/shared-infra` declares a custom
+  role, `sqlTenant`. Schooling gets the same role; nothing new is needed.
+- **The identity that applies a tenant's Terraform is not the one that deploys
+  its application.** Here they are `terraform@` and `deployer@`, and the tenant
+  table named the wrong one. Read the `service_account` in the tenant's own
+  Terraform workflow before filling that table in; do not infer it from a
+  service account named `deployer` in the tenant's configuration.
+
+`cloudsql.client` was enough for the connection itself, and
+`cloudsql.instanceUser` for the identity that logs in without a password. Both
+are granted in the shared project, because both are checked against the project
+that owns the instance.
+
+**The connection string is the instance's connection name, unchanged:**
+`aleogr-lab-shared-dacd:us-central1:lab-postgres`, in `DATABASE_INSTANCE`. The
+connector resolves it and nothing in the application knows the instance moved
+projects. By hand, the proxy listens on the loopback and the client uses
+`sslmode=disable` there — the encryption is between the proxy and Cloud SQL, not
+on the local socket.
+
+**How long a stopped instance takes to accept connections after `ALWAYS` is
+still unknown.** This plan stopped one and never started it. Plan 2's sleep
+schedule depends on that number, so it has to be measured before the schedule
+is trusted — the marketplace's own stopped instance is the thing to measure it
+on, during the quarantine week, at no cost beyond the minutes it runs.
+
+**What the rehearsal refused that the spec did not predict:**
+
+- **A resource removed from the configuration is still in the state.** Deleting
+  `google_sql_database_instance.main` from the files made Terraform plan to
+  *destroy* the instance the design says to keep. Four `terraform state rm`
+  fixed it. Plan 2 needs the same step for schooling, written into the task
+  rather than discovered by reading a plan.
+- **A green plan is not a green apply.** A plan does not call the API that
+  refuses, so every permission defect above was invisible until an apply ran as
+  the real identity. Read the apply log, not the plan, before believing a
+  permission exists.
+- **IAM takes minutes to propagate.** An apply started immediately after a
+  grant can still be refused, and that refusal means nothing. Wait before
+  re-running, or a correct fix looks broken.
+- **The connection ceiling has to be computed from the pools**, not chosen.
+  Measure schooling's pool and its Cloud Run ceiling, and reconsider both
+  databases' limits against the 22 connections actually available: this plan
+  spent 14 of them.
+- **`PUBLIC` holds `CONNECT` on a new database, and the tenant's password user
+  reaches its own database through it.** Grant before revoking, or the
+  migration job loses the database it maintains.

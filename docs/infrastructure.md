@@ -421,20 +421,122 @@ resolves the marketplace from the host it receives, whatever put it there.
 
 ## The database
 
-One Cloud SQL instance, `marketplace`, PostgreSQL 16, described in
-`infra/terraform/cloud_sql.tf`. What it costs and why it is configured the way
-it is are above; what reaches it is here.
+**The instance is not this project's.** The lab's PostgreSQL lives in
+`aleogr-lab-shared-dacd`, a project whose only job is to hold one Cloud SQL
+instance for every laboratory that needs one, declared in `aleogr/shared-infra`.
+This project declares the *database* and its *users* inside that instance
+(`infra/terraform/cloud_sql.tf`) and owns nothing about the instance itself.
 
-**Two identities, and only one password.** The service authenticates with IAM:
-the connector exchanges its service account's token for the login, so a running
+| | |
+|---|---|
+| Shared project | `aleogr-lab-shared-dacd` |
+| Instance | `lab-postgres`, PostgreSQL 16, `db-f1-micro`, `us-central1` |
+| Connection name | `aleogr-lab-shared-dacd:us-central1:lab-postgres` |
+| Database | `marketplace` |
+| Users | `marketplace_migrator` (password) and `marketplace-run@aleogr-marketplace-lab-a4j5.iam` (IAM) |
+
+**Why one instance for several laboratories.** A `db-f1-micro` costs about
+US$ 10 a month whether it holds one database or three, and one instance per
+project was the largest recurring line on the bill. The rule that keeps this
+from becoming a trap is written in `aleogr/shared-infra`: **consolidate by
+environment, never across environments.** Every database in that instance holds
+a laboratory. The day one of them becomes production it leaves.
+
+**Naming.** The instance is named for what it is, `lab-postgres`, and not for
+any project that uses it: a shared resource named after its first tenant reads
+as that tenant's property. The databases are named for their projects, so a
+`\l` in `psql` says who owns what.
+
+**The boundary between the instance and the database.** The shared repository
+grants this project's Terraform identity a custom role, `sqlTenant`, that may
+create and alter its own database and users and nothing else — no
+`cloudsql.instances.delete`, no `cloudsql.instances.update`. A tenant cannot
+resize the disk, change the backup window or stop the instance it shares.
+**That role is not a wall between tenants.** Cloud SQL grants IAM per project
+and not per database, so a tenant that may delete its own users may delete
+another tenant's. What protects one laboratory's data from another's is the
+database-level grant below, not IAM.
+
+**Backups run at 12:00 UTC**, which is 09:00 in Paraná, and not in the small
+hours where a backup window normally goes. The reason is that **a stopped
+instance runs no automated backup.** The shared instance is meant to sleep
+outside working hours, and the windows these two projects used before
+consolidating — 03:00 and 04:00 local — fall inside that sleep. Left there,
+both would simply stop having daily backups, silently, with no error to notice.
+
+The same fact bounds point-in-time recovery: there is no transaction log for
+the hours an instance was stopped, so a restore has to target a moment it was
+awake. Point-in-time recovery is on, with seven days of transaction logs and
+seven retained backups.
+
+### Isolation, applied by hand once
+
+PostgreSQL grants `CONNECT` on every database to `PUBLIC` by default, so a role
+created for another tenant would reach this data simply by existing. Applied
+through the Cloud SQL Auth Proxy as `marketplace_migrator`, which is a member
+of `cloudsqlsuperuser` and therefore of the role that owns the database:
+
+```sql
+GRANT  CONNECT ON DATABASE marketplace TO marketplace_migrator;
+GRANT  CONNECT ON DATABASE marketplace TO "marketplace-run@aleogr-marketplace-lab-a4j5.iam";
+REVOKE CONNECT ON DATABASE marketplace FROM PUBLIC;
+ALTER  DATABASE marketplace CONNECTION LIMIT 14;
+```
+
+**The grants come before the revoke on purpose.** `marketplace_migrator` held
+no `CONNECT` of its own and reached the database through `PUBLIC`, so revoking
+first would have locked the migration job out of the database it maintains. The
+service's user already had an explicit grant, which Cloud SQL adds when it
+creates an IAM user; the line is kept anyway, because a privilege that holds
+only through a provider's implicit behaviour is one nobody will find when it
+stops being true. The double quotes are required: the name holds `@` and `-`,
+which an unquoted PostgreSQL identifier may not.
+
+**Why the limit is 14.** It is the peak, read from the code rather than
+estimated:
+
+| | connections |
+|---|---|
+| service, 4 per process (`internal/platform/db/db.go`) × 2 instances (`max_instance_count`) | 8 |
+| migration job, same pool | 4 |
+| **peak, while a deployment migrates against the revision still serving** | **12** |
+
+The instance allows 25 in total, of which PostgreSQL reserves three for
+superusers. A ceiling of 10 — the number this was planned with, before the
+pools were read — would have had the isolation refuse the deployments it exists
+to protect.
+
+**It is a ceiling, not a reservation.** It stops one tenant's connection leak
+from taking the instance; it does not promise the other tenant a share. When a
+second laboratory moves in, its own pool has to be measured and both ceilings
+reconsidered against the 22 that are actually available.
+
+**The revoke was proved, not assumed.** A throwaway login role with no grant,
+created and dropped in the same command, was refused:
+
+```
+psql: error: ... FATAL:  permission denied for database "marketplace"
+DETAIL:  User does not have CONNECT privilege.
+```
+
+A guard nobody tried is a guard nobody has.
+
+### The identities
+
+**Two of them, and only one password.** The service authenticates with IAM: the
+connector exchanges its service account's token for the login, so a running
 revision holds no credential at all. The migration job cannot do the same,
 because it is the thing that bootstraps the privileges — Cloud SQL creates an
 IAM database user with no rights on anything, and granting rights needs a
-connection that already has them. That first connection is a built-in
-`migrator` user whose password Terraform generates and writes to Secret
+connection that already has them. That first connection is
+`marketplace_migrator`, whose password Terraform generates and writes to Secret
 Manager, where only the job's account may read it. The value is never in this
 repository, never in a workflow's environment and never in a log. It is also in
 the Terraform state, which lives in the private, versioned bucket above.
+
+**The user is named for its tenant.** `marketplace_migrator`, not `migrator`:
+roles are cluster-wide objects, so on a shared instance a generic name is a
+collision waiting for the second tenant.
 
 **The migrations grant, and keep granting.** After applying the schema the job
 grants the service's user what the schema now holds, and sets default
@@ -448,31 +550,61 @@ connection, and the only route in is the connector. Private IP only would
 require a VPC with private services access, and Cloud SQL refuses an instance
 with neither — this design has no network of its own to maintain.
 
-**Reading the database by hand**, from Cloud Shell:
+### Reading the database by hand
+
+From Cloud Shell:
 
 ```bash
-PROJECT=aleogr-marketplace-lab-a4j5
-
-cloud-sql-proxy "$PROJECT:us-central1:marketplace" --port 5433 > /tmp/proxy.log 2>&1 &
+cloud-sql-proxy aleogr-lab-shared-dacd:us-central1:lab-postgres --port 5433 \
+  > /tmp/proxy.log 2>&1 &
 PROXY=$!
 sleep 6
 
 PGPASSWORD="$(gcloud secrets versions access latest \
-  --secret=migrator-password --project="$PROJECT")" \
-  psql -h 127.0.0.1 -p 5433 -U migrator -d marketplace \
+  --secret=migrator-password --project=aleogr-marketplace-lab-a4j5)" \
+  psql -h 127.0.0.1 -p 5433 -U marketplace_migrator -d marketplace \
        -c "SELECT version_id, tstamp FROM goose_db_version ORDER BY version_id;"
 
 kill "$PROXY"
 ```
 
-**Neither as `postgres` nor through `gcloud sql connect`**, and both for
-reasons that only show up when you try it. There is no password for `postgres`:
+**The secret is in this project and the instance is in the shared one.** That
+is the one thing in the command that catches a reader out.
+
+**Neither as `postgres` nor through `gcloud sql connect`**, and each for a
+reason that only shows up when you try it. There is no password for `postgres`:
 Terraform creates two users and neither is it — the service's, which
-authenticates with IAM and has no password at all, and `migrator`, whose
-password is in Secret Manager. And `gcloud sql connect` does not pass
-`PGPASSWORD` through to the `psql` it launches, so it prompts whatever the
-environment holds. Running the proxy and `psql` as two steps is what lets the
-password reach the program that asks for it.
+authenticates with IAM and has no password at all, and `marketplace_migrator`,
+whose password is in Secret Manager. `gcloud sql connect` does not pass
+`PGPASSWORD` through to the `psql` it launches, so it prompts with whatever the
+environment holds; running the proxy and `psql` as two steps is what lets the
+password reach the program that asks for it. And `gcloud sql connect` adds the
+caller's address to the instance's authorized networks — on a shared instance,
+one tenant changing a setting for everybody.
+
+### The instance this replaced
+
+`marketplace`, in this project, was **stopped and not deleted** on 2026-09-20,
+with `--activation-policy=NEVER`. It keeps its data and its disk for about
+R$ 10 a month and is the way back if something found later sends this decision
+back.
+
+A stopped instance runs no automated backup, so it is a short-lived rollback
+and not an archive; the backups it already had are retained for as long as it
+exists. It is deleted after a week of quarantine.
+
+### The shared project's own bootstrap
+
+`aleogr/shared-infra` has the same class of exception this document opens with —
+things that exist because somebody typed a command, because Terraform cannot
+create the ground it stands on. They are recorded in **that repository's
+README**, not copied here: the project and its state bucket, the first
+`terraform apply` run by the owner (a federation cannot apply itself, so the
+identity that applies it has to exist first), and the grants the deploy identity
+needed before it could read what it manages.
+
+A copy in two places drifts, and the copy nobody edits is the one somebody
+reads.
 
 ## Marketplaces and their hosts
 
