@@ -448,6 +448,32 @@ git push
 
 - [ ] **Step 10: Owner bootstraps the first apply**
 
+**First, the pinned Terraform.** Cloud Shell ships its own release and it is
+not this one — it was 1.15.9 against a configuration requiring `~> 1.16.0`, so
+`init` refuses. Loosening the constraint to fit the tool is not the answer: the
+marketplace is on the same floor, and the pin exists so that two configurations
+addressing one instance are not read by two different releases. Install it in
+`$HOME`, which Cloud Shell keeps, and verify what arrived — this binary is
+about to hold a credential that can create resources in the project:
+
+```sh
+V=1.16.3
+mkdir -p ~/bin && cd /tmp
+curl -fsSLO "https://releases.hashicorp.com/terraform/${V}/terraform_${V}_linux_amd64.zip"
+curl -fsSLO "https://releases.hashicorp.com/terraform/${V}/terraform_${V}_SHA256SUMS"
+sha256sum --ignore-missing -c "terraform_${V}_SHA256SUMS"
+unzip -o "terraform_${V}_linux_amd64.zip" -d ~/bin
+export PATH="$HOME/bin:$PATH"
+terraform version | head -1
+```
+
+Expected: `terraform_1.16.3_linux_amd64.zip: OK`, then `Terraform v1.16.3`.
+
+**And the clone is checked out at the commit that holds the identity alone**,
+not at the branch head — by the time this runs, the branch also declares the
+instance, and the instance is CI's to create. The manual apply is an exception
+and it stays the size of its reason.
+
 The federation cannot apply itself: the first `apply` must come from an
 identity that already exists. Hand the owner this, and wait:
 
