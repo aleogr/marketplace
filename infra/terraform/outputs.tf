@@ -25,7 +25,7 @@ output "deployer_service_account" {
 
 output "database_instance" {
   description = "Connection name of the Cloud SQL instance, as the connector and `gcloud sql connect` name it."
-  value       = google_sql_database_instance.main.connection_name
+  value       = local.database_instance
 }
 
 output "migration_job" {

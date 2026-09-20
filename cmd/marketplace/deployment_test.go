@@ -50,3 +50,31 @@ func TestBothDeploymentSurfacesGetWhatTheBinaryDemands(t *testing.T) {
 		}
 	}
 }
+
+// TestBothDeploymentSurfacesNameTheSameDatabase is the lesson of AUDIT_KEY
+// applied to the database.
+//
+// The service and the migration job run the same binary against the same data.
+// If one is pointed at the shared instance and the other at anything else, the
+// migrations land where nobody reads them and nothing fails: two files, each
+// correct on its own, and a deployment that is wrong.
+//
+// It checks that both read the same expression rather than that they hold the
+// same literal, because the literal is assembled in locals.tf and a test
+// asserting a literal would be a second copy of it.
+func TestBothDeploymentSurfacesNameTheSameDatabase(t *testing.T) {
+	const wanted = "local.database_instance"
+
+	for surface, path := range surfaces {
+		declared, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("cannot read the Terraform of %s: %v", surface, err)
+		}
+
+		if !strings.Contains(string(declared), wanted) {
+			t.Errorf("%s does not read %s for DATABASE_INSTANCE; "+
+				"a surface pointed at another instance migrates where nobody reads",
+				surface, wanted)
+		}
+	}
+}

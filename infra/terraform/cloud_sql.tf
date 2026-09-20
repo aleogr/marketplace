@@ -1,105 +1,20 @@
-# The database.
+# This tenant's slice of the shared instance.
 #
-# It is the only resource in this configuration that holds state nothing else
-# can rebuild, and the only material recurring cost of the design
-# (docs/design.md, section 3). Both facts show up below: in the deletion
-# protection, and in how small everything is.
-
-resource "google_sql_database_instance" "main" {
-  name             = "marketplace"
-  database_version = "POSTGRES_16"
-  region           = var.region
-
-  # Terraform refuses to destroy this instance. It is not the same setting as
-  # `settings.deletion_protection_enabled`, which refuses at the API; both are
-  # on, because the two failure modes are different — a mistaken `destroy` here
-  # and a mistaken deletion anywhere else — and neither is expensive to hold.
-  deletion_protection = true
-
-  settings {
-    tier = var.database_tier
-    # One zone. High availability doubles the bill to protect a lab that is
-    # rebuilt from this repository in minutes (docs/infrastructure.md).
-    availability_type = "ZONAL"
-    edition           = "ENTERPRISE"
-    user_labels       = local.labels
-
-    deletion_protection_enabled = true
-
-    disk_type = "PD_SSD"
-    disk_size = var.database_disk_size
-    # The disk grows on its own rather than filling up at three in the morning,
-    # but not without a ceiling: growth is one-way — Cloud SQL never shrinks a
-    # disk — so an unbounded limit turns one runaway migration into a permanent
-    # bill.
-    disk_autoresize       = true
-    disk_autoresize_limit = var.database_disk_limit
-
-    backup_configuration {
-      enabled    = true
-      start_time = "06:00" # UTC, roughly 03:00 in Brazil: after the day's work.
-
-      # Point-in-time recovery is what turns "we have last night's backup" into
-      # a recovery objective measured in minutes (docs/design.md, section 3).
-      point_in_time_recovery_enabled = true
-      # The window, not the feature, is what costs: write-ahead logs are
-      # archived every five minutes whether or not anything happened. The lab
-      # keeps the shortest window Cloud SQL Enterprise allows; production
-      # carries the design's targets (docs/infrastructure.md).
-      transaction_log_retention_days = var.database_log_retention_days
-
-      backup_retention_settings {
-        retained_backups = var.database_backup_count
-        retention_unit   = "COUNT"
-      }
-    }
-
-    maintenance_window {
-      day          = 7 # Sunday
-      hour         = 7 # UTC
-      update_track = "stable"
-    }
-
-    ip_configuration {
-      # The instance has a public address and **no authorized network**, which
-      # is not the contradiction it reads as: with an empty authorization list
-      # nothing on the internet can open a connection. The only way in is the
-      # Cloud SQL connector, which authenticates with IAM and encrypts with
-      # certificates the Cloud SQL API issues per connection.
-      #
-      # The alternative — private IP only — is not cheaper or simpler here: it
-      # requires `private_network`, which requires a VPC with private services
-      # access and the peering that goes with it. Cloud SQL refuses an instance
-      # with neither. This design deliberately has no network of its own to
-      # maintain (docs/design.md, section 3), so the choice is the connector.
-      ipv4_enabled = true
-      # Refuses an unencrypted connection outright, so a client that skips TLS
-      # fails at the handshake rather than succeeding quietly.
-      ssl_mode = "ENCRYPTED_ONLY"
-    }
-
-    database_flags {
-      # Lets a service account authenticate as a database user with a token
-      # instead of a password. It is what allows the running service to hold no
-      # credential at all (docs/design.md, section 3).
-      name  = "cloudsql.iam_authentication"
-      value = "on"
-    }
-
-    insights_config {
-      query_insights_enabled = true
-      # Free, and the only way to see a slow query after the fact on an
-      # instance this small.
-      query_string_length = 1024
-    }
-  }
-}
+# The instance itself is owned by aleogr/shared-infra, which is where its
+# deletion protection, its size and its backup schedule are declared. What is
+# declared here is what belongs to this tenant and not to the instance: the
+# marketplace's own database, the two users that log into it, and the secret
+# the migration job needs to become one of them (docs/design.md, section 3).
 
 resource "google_sql_database" "marketplace" {
+  project  = var.shared_project_id
   name     = "marketplace"
-  instance = google_sql_database_instance.main.name
-  # The application never creates or drops databases; migrations own what is
-  # inside this one.
+  instance = var.shared_instance
+
+  # ABANDON, NOT DELETE, and the default is DELETE. The instance's protection
+  # does not reach here: dropping a database is not deleting an instance, and
+  # a rename Terraform reads as a replacement would drop it with every row in
+  # it while the protected instance stood.
   deletion_policy = "ABANDON"
 }
 
@@ -114,10 +29,11 @@ resource "google_sql_database" "marketplace" {
 # system.
 
 resource "google_sql_user" "service" {
+  project = var.shared_project_id
   # Cloud SQL derives the database user name from the account's e-mail without
   # the domain, and refuses the full address here.
   name     = trimsuffix(google_service_account.service.email, ".gserviceaccount.com")
-  instance = google_sql_database_instance.main.name
+  instance = var.shared_instance
   type     = "CLOUD_IAM_SERVICE_ACCOUNT"
 }
 
@@ -130,8 +46,13 @@ resource "random_password" "migrator" {
 }
 
 resource "google_sql_user" "migrator" {
-  name     = "migrator"
-  instance = google_sql_database_instance.main.name
+  project = var.shared_project_id
+  # The rename from `migrator`: a role belongs to the cluster, not to a
+  # database, so on a shared instance every tenant's roles share one
+  # namespace, and a role named for its function rather than its tenant is a
+  # trap the day a third tenant arrives (docs/design.md, section 3).
+  name     = "marketplace_migrator"
+  instance = var.shared_instance
   password = random_password.migrator.result
 }
 
@@ -154,30 +75,14 @@ resource "google_secret_manager_secret_version" "migrator_password" {
   secret_data = random_password.migrator.result
 }
 
-# What each identity may do with the instance.
+# WHAT EACH IDENTITY MAY DO WITH THE INSTANCE IS NOT DECLARED HERE ANY MORE.
 #
-# `cloudsql.client` opens a connection through the connector; `instanceUser` is
-# what makes an IAM database user able to log in at all. The service holds both
-# and no password. The migration job holds only `client`, because it logs in as
-# the built-in user, and the one grant that lets it read that user's password.
-
-resource "google_project_iam_member" "service_sql_client" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.service.email}"
-}
-
-resource "google_project_iam_member" "service_sql_login" {
-  project = var.project_id
-  role    = "roles/cloudsql.instanceUser"
-  member  = "serviceAccount:${google_service_account.service.email}"
-}
-
-resource "google_project_iam_member" "migrator_sql_client" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.migrator.email}"
-}
+# `cloudsql.client` and `cloudsql.instanceUser` are checked against the project
+# that OWNS the instance, and that is no longer this one. Granting them here
+# would be granting access to an instance this project does not have. They are
+# declared by aleogr/shared-infra, which is the only configuration that can:
+# the alternative is this project holding `projectIamAdmin` there, which is a
+# larger right than the one being asked for.
 
 # On the secret itself, not on the project: the job may read this password and
 # no other secret this project ever holds.
