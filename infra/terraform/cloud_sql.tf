@@ -75,30 +75,14 @@ resource "google_secret_manager_secret_version" "migrator_password" {
   secret_data = random_password.migrator.result
 }
 
-# What each identity may do with the instance.
+# WHAT EACH IDENTITY MAY DO WITH THE INSTANCE IS NOT DECLARED HERE ANY MORE.
 #
-# `cloudsql.client` opens a connection through the connector; `instanceUser` is
-# what makes an IAM database user able to log in at all. The service holds both
-# and no password. The migration job holds only `client`, because it logs in as
-# the built-in user, and the one grant that lets it read that user's password.
-
-resource "google_project_iam_member" "service_sql_client" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.service.email}"
-}
-
-resource "google_project_iam_member" "service_sql_login" {
-  project = var.project_id
-  role    = "roles/cloudsql.instanceUser"
-  member  = "serviceAccount:${google_service_account.service.email}"
-}
-
-resource "google_project_iam_member" "migrator_sql_client" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.migrator.email}"
-}
+# `cloudsql.client` and `cloudsql.instanceUser` are checked against the project
+# that OWNS the instance, and that is no longer this one. Granting them here
+# would be granting access to an instance this project does not have. They are
+# declared by aleogr/shared-infra, which is the only configuration that can:
+# the alternative is this project holding `projectIamAdmin` there, which is a
+# larger right than the one being asked for.
 
 # On the secret itself, not on the project: the job may read this password and
 # no other secret this project ever holds.

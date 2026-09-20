@@ -23,13 +23,6 @@ providers_mode = "real"
 # Production gets its own sending domain, which is this line and nothing else.
 mail_from = "marketplace@lab.aleogr.dev"
 
-# The cheapest instance Cloud SQL offers, and the shortest recovery window it
-# allows. Both are deliberate and both are recorded, with the risk each carries,
-# in docs/infrastructure.md.
-database_tier               = "db-f1-micro"
-database_backup_count       = 7
-database_log_retention_days = 1
-
 # The lab databases of this project and of `schooling` share one instance,
 # in a project neither of them owns (aleogr/shared-infra). This configuration
 # declares its own database inside it and cannot change the instance.

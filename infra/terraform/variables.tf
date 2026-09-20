@@ -57,45 +57,6 @@ variable "initial_image" {
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
 
-variable "database_tier" {
-  description = "Cloud SQL machine type. The only material recurring cost of the design, which is why it is per-environment rather than a default here (docs/infrastructure.md). Changing it restarts the instance and does not touch the data."
-  type        = string
-}
-
-variable "database_disk_size" {
-  description = "Size in GB of the database disk, which is also its floor: Cloud SQL grows a disk and never shrinks one."
-  type        = number
-  default     = 10
-
-  validation {
-    condition     = var.database_disk_size >= 10
-    error_message = "Cloud SQL's minimum disk is 10 GB."
-  }
-}
-
-variable "database_disk_limit" {
-  description = "Ceiling for automatic disk growth. Growth is one-way, so an unbounded limit turns one runaway write into a permanent bill."
-  type        = number
-  default     = 50
-}
-
-variable "database_backup_count" {
-  description = "How many automated backups are kept. The design's target of 30 days is production's; an environment that is rebuilt from this repository keeps fewer (docs/infrastructure.md)."
-  type        = number
-  default     = 7
-}
-
-variable "database_log_retention_days" {
-  description = "Days of write-ahead log kept for point-in-time recovery, 1 to 7 on Cloud SQL Enterprise. This is the window that costs, because logs are archived every five minutes whether or not anything happened."
-  type        = number
-  default     = 7
-
-  validation {
-    condition     = var.database_log_retention_days >= 1 && var.database_log_retention_days <= 7
-    error_message = "Cloud SQL Enterprise keeps between 1 and 7 days of transaction logs."
-  }
-}
-
 variable "marketplaces" {
   description = "The marketplaces this environment serves. Declared once and used twice: Cloud Run needs a domain mapping per host, and the migration job seeds the same list into the database. Hosts live here rather than in a migration because they belong to the environment — a host written into a versioned migration would be created in every environment that runs it (internal/tenancy/seed.go)."
 
