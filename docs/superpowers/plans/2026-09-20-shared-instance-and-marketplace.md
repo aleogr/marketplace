@@ -510,6 +510,8 @@ check settings.backupConfiguration.enabled 'true'
 check settings.backupConfiguration.startTime '"12:00"'
 check settings.backupConfiguration.pointInTimeRecoveryEnabled 'true'
 check settings.backupConfiguration.transactionLogRetentionDays '7'
+check settings.backupConfiguration.backupRetentionSettings.retainedBackups '7'
+check settings.ipConfiguration.ipv4Enabled 'true'
 check settings.ipConfiguration.sslMode '"ENCRYPTED_ONLY"'
 
 # The flag is a list, not a field, so it is read on its own.
@@ -807,6 +809,11 @@ locals {
   # ONE PLACE, because three files read it and a fourth will. A connection name
   # is `<project>:<region>:<instance>` and it is assembled rather than typed,
   # so a change to any of the three reaches every reader at once.
+  #
+  # IT IS ASSEMBLED AND NOT READ FROM THE SHARED STATE, which would make every
+  # plan here need that state. The price is that `var.region` here has to agree
+  # with `var.region` there: if they ever diverge this names an instance that
+  # does not exist, and the migration job says so at the next deployment.
   database_instance = "${var.shared_project_id}:${var.region}:${var.shared_instance}"
 }
 ```
@@ -940,21 +947,27 @@ func TestBothDeploymentSurfacesNameTheSameDatabase(t *testing.T) {
 
 - [ ] **Step 2: Run it and verify it fails**
 
-Stash Task 5's Terraform changes first, so the test fails against the old
-files rather than passing by accident:
+Task 5 is already committed, so the test would pass on the first run and
+prove nothing. Put one surface back the way it was, watch the test name it,
+then restore it. `git stash` does not work here — the tree is clean, so it
+stashes nothing and the test passes anyway.
 
 ```sh
-git stash push infra/terraform
+BASE=$(git rev-parse HEAD~1)   # the commit before Task 5
+git checkout "$BASE" -- infra/terraform/cloud_run.tf
 go test ./cmd/marketplace/ -run TestBothDeploymentSurfacesNameTheSameDatabase -v
 ```
 
-Expected: FAIL, twice —
+Expected: FAIL, once —
 `the service does not read local.database_instance for DATABASE_INSTANCE`.
+Once, not twice: only one surface was put back, which also proves the test
+names *which* surface is wrong rather than merely that something is.
 
-- [ ] **Step 3: Restore Task 5's changes**
+- [ ] **Step 3: Restore it**
 
 ```sh
-git stash pop
+git checkout HEAD -- infra/terraform/cloud_run.tf
+git diff --stat            # expected: no output
 ```
 
 - [ ] **Step 4: Run it and verify it passes**
@@ -1076,7 +1089,11 @@ sends this back. Plan 2's cool-down deletes it.
 The spec is the record of how the decisions were reached; `docs/infrastructure.md`
 is where the ones that survived live. Add: the shared project and what owns it,
 the boundary between instance and database, the naming rule, the noon backup
-window and why, and the state bucket created by hand in Task 1.
+window and why, the state bucket created by hand in Task 1, and — beside it,
+as the same class of exception — **the one `terraform apply` run by hand in
+Task 3 step 10**, with the reason: a federation cannot apply itself, so the
+identity that applies it has to exist first. An undocumented manual apply is
+an undocumented divergence between the state and the repository.
 
 - [ ] **Step 5: Commit, pull request, owner merges**
 
