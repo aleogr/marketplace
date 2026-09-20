@@ -53,6 +53,7 @@ plan. Deleting it belongs to Plan 2's cool-down.
 | `.github/workflows/ci.yml` | plan on a pull request, apply on `main` |
 | `README.md` | what this repository is and what it is not |
 | `CLAUDE.md` | the working agreements, pointing at this repository's own rules |
+| `.gitignore` | every provider's Terraform working directory and plan output; the lock file is versioned on purpose |
 
 **This repository (`aleogr/marketplace`):**
 
@@ -139,7 +140,7 @@ into the plan's own notes when reporting back.
 ### Task 2: The repository exists and this session can write to it
 
 **Files:**
-- Create: `README.md`, `CLAUDE.md` in `aleogr/shared-infra`
+- Create: `README.md`, `CLAUDE.md`, `.gitignore` in `aleogr/shared-infra`
 
 **Interfaces:**
 - Consumes: the project id from Task 1.
