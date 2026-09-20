@@ -526,6 +526,7 @@ check settings.backupConfiguration.startTime '"12:00"'
 check settings.backupConfiguration.pointInTimeRecoveryEnabled 'true'
 check settings.backupConfiguration.transactionLogRetentionDays '7'
 check settings.backupConfiguration.backupRetentionSettings.retainedBackups '7'
+check settings.backupConfiguration.backupRetentionSettings.retentionUnit '"COUNT"'
 check settings.ipConfiguration.ipv4Enabled 'true'
 check settings.ipConfiguration.sslMode '"ENCRYPTED_ONLY"'
 
@@ -680,10 +681,12 @@ on:
   push:
     branches: [main]
 
+# Only what the workflow uses. `pull-requests: write` would be a grant with
+# no reader — nothing here comments on a pull request — in the one repository
+# whose compromise can change a GCP project.
 permissions:
   contents: read
   id-token: write
-  pull-requests: write
 
 jobs:
   # ONE JOB PER PROVIDER, and the directory is the boundary. A second provider
