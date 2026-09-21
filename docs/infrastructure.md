@@ -924,7 +924,9 @@ Proved against the deployed service, in this order:
 - the event reaches the outbox, the scheduled dispatcher hands it over within a
   minute during the hours it runs — every minute from 08:00 to 21:59 local
   (`infra/terraform/tasks.tf`; it does not run at night, when the shared
-  instance it reads is deliberately asleep) — and the consumer runs;
+  instance it reads is designed to be asleep — `aleogr/lab`, `docs/lab.md` is
+  the authority for whether that is already in effect) — and the consumer
+  runs;
 - **the re-read decides**: an event the provider does not report is answered
   "not confirmed", ignored, and suppresses nobody — which is the whole reason
   it exists, since this provider does not sign what it posts

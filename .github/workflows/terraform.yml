@@ -220,13 +220,32 @@ jobs:
           # command in the pipe. `-e` alone does not catch that; pipefail does.
           set -o pipefail
 
-          shared=$(grep -E '^\s*shared_project_id\s*=' lab/lab.tfvars \
-            | sed -E 's/.*"([^"]+)".*/\1/')
-          if [ -z "$shared" ]; then
+          # THE HONEST MESSAGE BELOW WAS DEAD CODE, found in re-review and
+          # fixed here. `shared=$(cmd | cmd)` is a plain assignment; under
+          # `-e` plus `pipefail`, a pipeline that fails inside it stops the
+          # script AT THE ASSIGNMENT, before any line after it runs — so the
+          # `if [ -z "$shared" ]` this used to be, and its message, never
+          # executed. An unmatched `lab.tfvars` exited 1 with no output at
+          # all, verified. `if ! shared=$(...); then` tests the assignment's
+          # own exit status without tripping `-e`, so the message it guards
+          # can actually print.
+          if ! shared=$(grep -E '^\s*shared_project_id\s*=' lab/lab.tfvars \
+            | sed -E 's/.*"([^"]+)".*/\1/'); then
             echo "::error::Could not read shared_project_id from" \
               "lab/lab.tfvars — the grep/sed above matched nothing. This" \
               "step cannot tell which project holds the shared instance, so" \
               "it refuses rather than guessing."
+            exit 1
+          fi
+
+          # A SEPARATE CASE FROM THE ONE ABOVE: the pipeline can succeed
+          # (`grep` matched a line) and still hand back an empty string, if
+          # the matched line's quotes were empty. That is not a pipeline
+          # failure, so the `if !` above does not catch it; this does.
+          if [ -z "$shared" ]; then
+            echo "::error::lab/lab.tfvars matched shared_project_id but the" \
+              "captured value is empty. This step cannot tell which project" \
+              "holds the shared instance, so it refuses rather than guessing."
             exit 1
           fi
 
