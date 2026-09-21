@@ -24,7 +24,7 @@ providers_mode = "real"
 mail_from = "marketplace@lab.aleogr.dev"
 
 # The lab databases of this project and of `schooling` share one instance,
-# in a project neither of them owns (aleogr/shared-infra). This configuration
+# in a project neither of them owns (aleogr/lab). This configuration
 # declares its own database inside it and cannot change the instance.
 shared_project_id = "aleogr-lab-shared-dacd"
 

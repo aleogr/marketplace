@@ -423,7 +423,7 @@ resolves the marketplace from the host it receives, whatever put it there.
 
 **The instance is not this project's.** The lab's PostgreSQL lives in
 `aleogr-lab-shared-dacd`, a project whose only job is to hold one Cloud SQL
-instance for every laboratory that needs one, declared in `aleogr/shared-infra`.
+instance for every laboratory that needs one, declared in `aleogr/lab`.
 This project declares the *database* and its *users* inside that instance
 (`infra/terraform/cloud_sql.tf`) and owns nothing about the instance itself.
 
@@ -438,7 +438,7 @@ This project declares the *database* and its *users* inside that instance
 **Why one instance for several laboratories.** A `db-f1-micro` costs about
 US$ 10 a month whether it holds one database or three, and one instance per
 project was the largest recurring line on the bill. The rule that keeps this
-from becoming a trap is written in `aleogr/shared-infra`: **consolidate by
+from becoming a trap is written in `aleogr/lab`: **consolidate by
 environment, never across environments.** Every database in that instance holds
 a laboratory. The day one of them becomes production it leaves.
 
@@ -595,7 +595,7 @@ exists. It is deleted after a week of quarantine.
 
 ### The shared project's own bootstrap
 
-`aleogr/shared-infra` has the same class of exception this document opens with —
+`aleogr/lab` has the same class of exception this document opens with —
 things that exist because somebody typed a command, because Terraform cannot
 create the ground it stands on. They are recorded in **that repository's
 README**, not copied here: the project and its state bucket, the first
