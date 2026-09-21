@@ -749,9 +749,12 @@ gcloud logging read \
   --format='value(timestamp, jsonPayload.job, jsonPayload.took)'
 ```
 
-The dispatcher runs every minute, so an empty answer means the schedule is not
-firing or the callbacks are being refused — and a refusal says so in the log of
-the service, with the reason.
+The dispatcher runs every minute from 08:00 to 21:59 local
+(`America/Sao_Paulo`, `infra/terraform/tasks.tf`). Inside those hours, an
+empty answer means the schedule is not firing or the callbacks are being
+refused — and a refusal says so in the log of the service, with the reason.
+Outside them an empty answer is what to expect: the job is not scheduled
+then, and there is nothing to diagnose.
 
 **Read on 19 September 2026**, minutes after the first deployment that let the
 callbacks through:
