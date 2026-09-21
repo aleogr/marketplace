@@ -459,10 +459,11 @@ database-level grant below, not IAM.
 
 **Backups run at 12:00 UTC**, which is 09:00 in Paraná, and not in the small
 hours where a backup window normally goes. The reason is that **a stopped
-instance runs no automated backup.** The shared instance is meant to sleep
-outside working hours, and the windows these two projects used before
-consolidating — 03:00 and 04:00 local — fall inside that sleep. Left there,
-both would simply stop having daily backups, silently, with no error to notice.
+instance runs no automated backup.** The shared instance is to sleep on four
+weeknights — Monday through Thursday, 22:00 to 07:45 local, which is Plan 2 and
+not in effect yet — and the windows these two projects used before
+consolidating, 03:00 and 04:00 local, fall inside that sleep. Left there, both
+would simply stop having daily backups, silently, with no error to notice.
 
 The same fact bounds point-in-time recovery: there is no transaction log for
 the hours an instance was stopped, so a restore has to target a moment it was
