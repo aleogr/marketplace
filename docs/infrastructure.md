@@ -470,6 +470,20 @@ the hours an instance was stopped, so a restore has to target a moment it was
 awake. Point-in-time recovery is on, with seven days of transaction logs and
 seven retained backups.
 
+**This project arranges its own scheduled work around the same window.** The
+laboratory publishes when the instance sleeps; it does not reach into a
+tenant's Cloud Scheduler to move a tenant's jobs, so a tenant that touches the
+database at night has to move them itself. Two of this project's jobs read
+the database and used to run inside the window: `verify-audit-chain`
+(`infra/terraform/audit.tf`) walked the hash chain at 04:17 UTC, 01:17 local,
+and now runs at 12:17 UTC, 09:17 local, inside the working day.
+`dispatch-outbox` (`infra/terraform/tasks.tf`) ran every minute of every day
+and now runs every minute from 08:00 to 21:59 local, `America/Sao_Paulo`,
+which is inside the awake period on every day of the week. `docs/lab.md` in
+`aleogr/lab` is the authority for the window itself; these two cron
+expressions are derived from it, so a change to the window there is a change
+here too.
+
 ### Isolation, applied by hand once
 
 PostgreSQL grants `CONNECT` on every database to `PUBLIC` by default, so a role

@@ -107,11 +107,23 @@ resource "google_service_account_iam_member" "service_acts_as_invoker" {
 # The outbox is emptied on a schedule rather than on the way out of a request:
 # a visitor whose request also dispatched everybody's events would pay for
 # everybody's work (cmd/marketplace, DispatchJob).
+#
+# IT DOES NOT RUN AT NIGHT, because the database it reads is deliberately
+# off: the shared instance sleeps four weeknights (aleogr/lab, docs/lab.md).
+# Every minute from 08:00 to 21:59 local is inside the awake period on every
+# day of the week, which is one expression that is always safe rather than
+# four that are exactly right. The cost is that an event written at 23:00
+# waits until 08:00, including on the nights the instance is in fact awake.
+#
+# The alternatives were worse. Letting it fail every minute turns a job
+# dashboard into something nobody reads, and then a real failure hides among
+# the expected ones. Making the handler return success when the database is
+# unreachable hides a genuine outage exactly as well as a planned one.
 resource "google_cloud_scheduler_job" "dispatch_outbox" {
   name             = "dispatch-outbox"
   description      = "Hands the events waiting in the outbox to their queues."
-  schedule         = "* * * * *"
-  time_zone        = "Etc/UTC"
+  schedule         = "* 8-21 * * *"
+  time_zone        = "America/Sao_Paulo"
   region           = var.region
   attempt_deadline = "60s"
 
