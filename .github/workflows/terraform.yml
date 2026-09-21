@@ -192,6 +192,37 @@ jobs:
             -backend-config=lab/backend.hcl \
             -backend-config="bucket=${TF_STATE_BUCKET}"
 
+      # THE INSTANCE SLEEPS FOUR WEEKNIGHTS (aleogr/lab, docs/lab.md), and
+      # every resource this applies against it — the database, the users —
+      # fails when it is stopped. Without this step that arrives as a 400 from
+      # the Cloud SQL API in the middle of an apply; with it, it arrives as a
+      # sentence. This check is here and not in deploy.yml because deploy.yml
+      # never runs against a Terraform failure: it triggers on `workflow_run`
+      # from this workflow and only `if: ... == 'success'`, so stopping the
+      # apply also stops the deployment that would otherwise follow it. One
+      # check does both jobs' refusing.
+      #
+      # `cloudsql.instances.get` is part of the sqlTenant role this job already
+      # holds. Starting the instance is NOT: that is cloudsql.instances.update,
+      # which the role withholds on purpose, and which is the same permission
+      # that would let this repository stop the instance other projects share.
+      # So this step reads and refuses; it does not wake anything, and it does
+      # not ask to.
+      - name: Refuse to apply against a sleeping instance
+        run: |
+          shared=$(grep -E '^\s*shared_project_id\s*=' lab/lab.tfvars \
+            | sed -E 's/.*"([^"]+)".*/\1/')
+          state=$(gcloud sql instances describe lab-postgres \
+            --project="$shared" --format='value(settings.activationPolicy)')
+          echo "activationPolicy=$state"
+          if [ "$state" != "ALWAYS" ]; then
+            echo "::error::The shared instance lab-postgres is stopped." \
+              "It sleeps Monday to Thursday, 22:00 to 07:30 local" \
+              "(aleogr/lab, docs/lab.md). Nothing is wrong with this commit;" \
+              "re-run this workflow after the instance starts."
+            exit 1
+          fi
+
       - name: Apply
         run: |
           terraform apply -input=false -lock-timeout=5m -no-color \
