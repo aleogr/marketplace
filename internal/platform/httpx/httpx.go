@@ -23,6 +23,15 @@ import (
 // that an idle connection cannot hold a handler slot open indefinitely.
 const readHeaderTimeout = 10 * time.Second
 
+// LabOrigin is where the laboratory's index is served from, and the one origin
+// allowed to read HealthPath from a reader's browser (aleogr/lab). Without the
+// answer naming it, the same-origin policy refuses that read.
+//
+// A production deployment answers with it too, and that is harmless: the header
+// grants the right to read a status, a version and whether the database
+// replies, to one page, and grants nothing else to anyone.
+const LabOrigin = "https://lab.aleogr.dev"
+
 // HealthPath is where the process answers a health check.
 //
 // It is `/health` and must not become `/healthz`, which is the conventional
@@ -149,6 +158,7 @@ func health(database Database) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Access-Control-Allow-Origin", LabOrigin)
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(body)
 	}
