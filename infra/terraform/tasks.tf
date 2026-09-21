@@ -108,17 +108,24 @@ resource "google_service_account_iam_member" "service_acts_as_invoker" {
 # a visitor whose request also dispatched everybody's events would pay for
 # everybody's work (cmd/marketplace, DispatchJob).
 #
-# IT DOES NOT RUN AT NIGHT, because the database it reads is deliberately
-# off: the shared instance sleeps four weeknights (aleogr/lab, docs/lab.md).
-# Every minute from 08:00 to 21:59 local is inside the awake period on every
-# day of the week, which is one expression that is always safe rather than
-# four that are exactly right. The cost is that an event written at 23:00
-# waits until 08:00, including on the nights the instance is in fact awake.
+# IT DOES NOT RUN AT NIGHT, because the database it reads is designed to be
+# off: the shared instance is to sleep four weeknights (aleogr/lab,
+# docs/lab.md is the authority for whether that is already in effect). Every
+# minute from 08:00 to 21:59 local is inside the awake period on every day of
+# the week, which is one expression that is always safe rather than four that
+# are exactly right. The cost is that an event written at 23:00 waits until
+# 08:00, including on the nights the instance is in fact awake.
 #
 # The alternatives were worse. Letting it fail every minute turns a job
 # dashboard into something nobody reads, and then a real failure hides among
 # the expected ones. Making the handler return success when the database is
 # unreachable hides a genuine outage exactly as well as a planned one.
+#
+# THE LAST RUN, 21:59, CAN OVERLAP THE 22:00 STOP: `attempt_deadline = "60s"`
+# leaves it possibly still running when the instance stops (measured: the
+# stop itself takes 55 seconds), so at most one run a night, four nights a
+# week, fails — self-healing, since the 08:00 run picks up whatever it left
+# behind.
 resource "google_cloud_scheduler_job" "dispatch_outbox" {
   name             = "dispatch-outbox"
   description      = "Hands the events waiting in the outbox to their queues."

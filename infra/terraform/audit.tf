@@ -54,9 +54,11 @@ resource "google_kms_crypto_key_iam_member" "service" {
 #
 # The hour is not free to move within the night: 04:17 UTC is 01:17 local,
 # which sits inside the laboratory's window for the shared instance this reads
-# — `lab-postgres` sleeps four weeknights, and `aleogr/lab` publishes exactly
-# when in `docs/lab.md`. This job runs at 12:17 UTC instead, well inside the
-# working day, comfortably clear of the window on either side.
+# — `lab-postgres` is designed to sleep four weeknights, and `aleogr/lab`
+# publishes exactly when in `docs/lab.md`, which is the authority for whether
+# that schedule is actually in effect yet. This job runs at 12:17 UTC instead,
+# well inside the working day, comfortably clear of the window on either side
+# whether or not the instance is asleep.
 resource "google_cloud_scheduler_job" "verify_audit_chain" {
   name             = "verify-audit-chain"
   description      = "Recomputes every audit chain and fails if a record does not verify."

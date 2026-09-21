@@ -922,7 +922,9 @@ Proved against the deployed service, in this order:
 - a call that succeeds says so in the log, with the provider and how many
   events it carried, including none;
 - the event reaches the outbox, the scheduled dispatcher hands it over within a
-  minute, and the consumer runs;
+  minute during the hours it runs — every minute from 08:00 to 21:59 local
+  (`infra/terraform/tasks.tf`; it does not run at night, when the shared
+  instance it reads is deliberately asleep) — and the consumer runs;
 - **the re-read decides**: an event the provider does not report is answered
   "not confirmed", ignored, and suppresses nobody — which is the whole reason
   it exists, since this provider does not sign what it posts
