@@ -51,10 +51,18 @@ resource "google_kms_crypto_key_iam_member" "service" {
 # (docs/requirements.md, section 21). Daily rather than by the minute because a
 # chain that broke is a thing to investigate, not a thing to catch in the act —
 # and walking every record costs a read of the whole log.
+#
+# The hour is not free to move within the night: 04:17 UTC is 01:17 local,
+# which sits inside the laboratory's window for the shared instance this reads
+# — `lab-postgres` is designed to sleep four weeknights, and `aleogr/lab`
+# publishes exactly when in `docs/lab.md`, which is the authority for whether
+# that schedule is actually in effect yet. This job runs at 12:17 UTC instead,
+# well inside the working day, comfortably clear of the window on either side
+# whether or not the instance is asleep.
 resource "google_cloud_scheduler_job" "verify_audit_chain" {
   name             = "verify-audit-chain"
   description      = "Recomputes every audit chain and fails if a record does not verify."
-  schedule         = "17 4 * * *"
+  schedule         = "17 12 * * *"
   time_zone        = "Etc/UTC"
   region           = var.region
   attempt_deadline = "600s"
