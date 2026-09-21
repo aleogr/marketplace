@@ -8,7 +8,7 @@
 
 **Tech Stack:** Terraform (version pinned in `infra/terraform/.terraform-version`), Google Cloud provider, GitHub Actions with Workload Identity Federation, Go 1.27 for this repository's tests.
 
-**Spec:** `docs/superpowers/specs/2026-09-20-shared-database-instance-design.md`
+**Spec:** `docs/superpowers/specs/2026-09-20-shared-database-instance-design.md` in `aleogr/lab`
 
 ## Global Constraints
 
