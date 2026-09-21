@@ -187,6 +187,30 @@ func TestServeReportsAListenerItCannotUse(t *testing.T) {
 	}
 }
 
+// The laboratory's index reads this endpoint from a reader's browser, which the
+// same-origin policy refuses without this header. It is on /health and on
+// nothing else: the endpoint is already public and answers with a status, a
+// version and whether the database replies, none of which is a secret.
+func TestHealthLetsTheLabIndexReadIt(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	routes(t, nil).ServeHTTP(recorder, httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/health", nil))
+
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "https://lab.aleogr.dev" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, "https://lab.aleogr.dev")
+	}
+}
+
+func TestOnlyHealthLetsTheLabIndexReadIt(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	routes(t, nil).ServeHTTP(recorder, httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/no-such-page", nil))
+
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("Access-Control-Allow-Origin = %q on a path that is not the health check", got)
+	}
+}
+
 // database answers a health check the way a pool would.
 type database struct{ err error }
 
