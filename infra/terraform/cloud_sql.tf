@@ -1,6 +1,6 @@
 # This tenant's slice of the shared instance.
 #
-# The instance itself is owned by aleogr/shared-infra, which is where its
+# The instance itself is owned by aleogr/lab, which is where its
 # deletion protection, its size and its backup schedule are declared. What is
 # declared here is what belongs to this tenant and not to the instance: the
 # marketplace's own database, the two users that log into it, and the secret
@@ -80,7 +80,7 @@ resource "google_secret_manager_secret_version" "migrator_password" {
 # `cloudsql.client` and `cloudsql.instanceUser` are checked against the project
 # that OWNS the instance, and that is no longer this one. Granting them here
 # would be granting access to an instance this project does not have. They are
-# declared by aleogr/shared-infra, which is the only configuration that can:
+# declared by aleogr/lab, which is the only configuration that can:
 # the alternative is this project holding `projectIamAdmin` there, which is a
 # larger right than the one being asked for.
 

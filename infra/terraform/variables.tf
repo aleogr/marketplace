@@ -108,7 +108,7 @@ variable "mail_from" {
 }
 
 variable "shared_project_id" {
-  description = "The project holding the shared lab database instance. This configuration declares its own database inside it and has no rights over the instance itself (aleogr/shared-infra)."
+  description = "The project holding the shared lab database instance. This configuration declares its own database inside it and has no rights over the instance itself (aleogr/lab)."
   type        = string
 }
 
