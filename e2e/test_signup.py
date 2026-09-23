@@ -2,30 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import time
-
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
-PASSWORD = "correct horse battery staple"
-
-# The page's own submit button. The header carries the language switch, whose
-# buttons are submit buttons too and come first in the document.
-SUBMIT = "main form button[type=submit]"
-
-
-def wait_for_mail(mailbox, template, to, timeout=10.0):
-    """The first message of template sent to an address. The mailbox writes
-    addresses lower-cased, the form in which they are compared."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        for path in sorted(mailbox.glob("*.json")):
-            message = json.loads(path.read_text())
-            if message["template"] == template and message["to"] == to.lower():
-                return message
-        time.sleep(0.2)
-    raise AssertionError(f"no {template} mail to {to} in {mailbox}")
+from accounts import PASSWORD, SUBMIT, wait_for_mail
 
 
 @pytest.mark.local_process
