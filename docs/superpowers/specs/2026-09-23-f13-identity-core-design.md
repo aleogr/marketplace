@@ -40,14 +40,24 @@ signed out every day loses the cart and the order tracking. Sensitive actions wi
 factor in F14. Staff sessions will be shorter, decided in F15. Both durations are constants in this
 delivery and become parameters in F17.
 
-**D4. Passwords follow NIST SP 800-63B, and a breached password is refused.** Eight to 128
-characters, no composition rules, long passphrases welcome. A password that appears in the
-Pwned Passwords corpus is refused at sign-up and at a change; the owner chose this on 2026-09-23
-over a bundled list of common passwords and over no check. Only the first five hexadecimal
-characters of the password's SHA-1 leave the server (the range API's k-anonymity), with the
-`Add-Padding` header so the response size does not narrow it further. The check sits behind a new
-port, `breached`, with a fake adapter for tests (§25). **When the service cannot be reached, the
-password is accepted and the event is logged**: sign-up does not depend on a third party being up.
+**D4. Passwords have a length floor and no composition rules, and a breached password is
+refused.** Twelve to 128 characters; spaces and any Unicode character allowed, so a long
+passphrase is welcome. No rule demands a digit, a capital or a symbol: NIST SP 800-63B says a
+verifier shall not impose them and OWASP ASVS agrees, because such rules produce predictable
+passwords (`Senha@123`) that guessing tools try first. The owner chose the minimum of 12 on
+2026-09-23: above the 8 that ASVS accepts, below the 15 that NIST's revision 4 requires for a
+password used as the only factor, which is the case of a buyer without a second factor. The
+minimum becomes a parameter in F17 and can be raised to 15 there; a raise applies to passwords set
+from then on and signs nobody out. Composition rules are not a parameter, because the only setting
+they offer makes passwords weaker.
+
+A password that appears in the Pwned Passwords corpus is refused at sign-up and at a change; the
+owner chose this on 2026-09-23 over a bundled list of common passwords and over no check. Only the
+first five hexadecimal characters of the password's SHA-1 leave the server (the range API's
+k-anonymity), with the `Add-Padding` header so the response size does not narrow it further. The
+check sits behind a new port, `breached`, with a fake adapter for tests (§25). **When the service
+cannot be reached, the password is accepted and the event is logged**: sign-up does not depend on
+a third party being up.
 
 **D5. Passwords are hashed with argon2id, and the parameters travel with the hash.** The stored
 value is the PHC string (`$argon2id$v=19$m=…,t=…,p=…$salt$hash`), so a change of parameters does
