@@ -64,6 +64,7 @@ The whole plan was transcribed this way into a copy of `main`, and `make check`,
 | 10 | The session middleware, sign-in and sign-out pages | 3 |
 | 11 | End-to-end — sign-in, sign-out, refusals and the limit | 3 |
 | 12 | The argon2id benchmark command | 3 |
+| 12b | Sessions that can never be used again are removed | 3 |
 | 13 | Change the password and end the other sessions | 4 |
 | 14 | The final argon2id parameters, from the owner's run | 4 |
 | 15 | The two-browser end-to-end test, the screenshots, and closing F13 | 4 |
@@ -98,6 +99,7 @@ The whole plan was transcribed this way into a copy of `main`, and `make check`,
 | `internal/platform/httpx/session.go`, `session_test.go` (create) | the session middleware and cookie | 3 |
 | `internal/platform/httpx/csrf.go` (modify) | `RenewCSRF`, sharing the secret's cookie code | 3 |
 | `migrations/00011_sessions.sql` (create) | `session` under RLS | 3 |
+| `migrations/00012_session_sweep_index.sql` (create) | index the sweep's `DELETE` needs on `session.marketplace_id` | 3 |
 | `web/page.go` (modify) | `Form`; `Account` | 2, 3 |
 | `web/identity.templ` (create) | the pages | 2, 3, 4 |
 | `web/layout.templ` (modify) | the account navigation in the header | 3, 4 |
@@ -4558,6 +4560,28 @@ git add -A cmd docs
 git commit -m "Add the argon2id benchmark, to run on the service's own CPU"
 git push -u origin claude/funny-wright-379asb-f13sessions
 ```
+
+## Task 12b: Sessions that can never be used again are removed
+
+Added to the plan on 2026-09-23 by the owner's decision, in PR 3: `session` keeps `ip` and
+`user_agent` in clear, so a row that can no longer authenticate is a needless copy of that data
+(LGPD's necessity principle, docs/requirements.md §18.3). The audit log already keeps the sealed
+`identity.signin`/`identity.signout` records, which are the access record; the session row is only
+needed while it can still be used. A row is deleted once it was created more than `SessionLifetime`
+ago, last seen more than `SessionIdle` ago, or revoked more than `RevokedKept` (a new constant, 7
+days — long enough for a sessions screen or a support question about a sign-out that just happened).
+`SignIn` triggers the sweep after the new session is written, at most once an hour per process (an
+in-memory timestamp on `Service`, guarded for concurrent sign-ins), in its own transaction as the
+application role for the signing-in marketplace, so a sweep failure never rolls the sign-in back and
+row-level security scopes it to that marketplace. `migrations/00012_session_sweep_index.sql` adds an
+index on `session.marketplace_id`, which the table had none of: without it the sweep's `DELETE`
+would scan every marketplace's rows, not just the signing-in one's.
+
+**Files:**
+- Create: `migrations/00012_session_sweep_index.sql`
+- Modify: `internal/identity/store.go` (`sweepSessions`), `internal/identity/identity.go`
+  (`RevokedKept`, the once-an-hour trigger in `SignIn`)
+- Test: `internal/identity/session_integration_test.go`
 
 ---
 

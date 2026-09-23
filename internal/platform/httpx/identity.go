@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/aleogr/marketplace/internal/identity"
 	"github.com/aleogr/marketplace/internal/platform/i18n"
@@ -94,7 +95,7 @@ func marketplaceOf(r *http.Request) string {
 
 // visit is the request, as the identity flows need it.
 func visit(r *http.Request) identity.Visit {
-	v := identity.Visit{Language: i18n.FromContext(r.Context()), UserAgent: r.UserAgent(), BaseURL: linkBase(r)}
+	v := identity.Visit{Language: i18n.FromContext(r.Context()), UserAgent: userAgent(r), BaseURL: linkBase(r)}
 	if o, ok := OriginFrom(r.Context()); ok {
 		v.IP = o.IP
 	}
@@ -102,6 +103,27 @@ func visit(r *http.Request) identity.Visit {
 		v.Marketplace, v.MarketplaceName = resolution.Marketplace.ID, resolution.Marketplace.Name
 	}
 	return v
+}
+
+// maxUserAgent bounds the User-Agent kept with a session or an audit entry.
+// Real ones are a few hundred bytes; the header itself may be as large as the
+// server accepts, and anybody who knows an address can make a refused sign-in
+// store one.
+const maxUserAgent = 512
+
+// userAgent is the request's User-Agent as it is stored: valid UTF-8, which is
+// all a text column accepts, and at most maxUserAgent bytes, cut between
+// characters.
+func userAgent(r *http.Request) string {
+	agent := strings.ToValidUTF8(r.UserAgent(), "\uFFFD")
+	if len(agent) <= maxUserAgent {
+		return agent
+	}
+	cut := maxUserAgent
+	for cut > 0 && !utf8.RuneStart(agent[cut]) {
+		cut--
+	}
+	return agent[:cut]
 }
 
 // linkBase is the address a mailed link points at: the scheme, the host the
@@ -219,7 +241,8 @@ func (s Site) signInForm(w http.ResponseWriter, r *http.Request) {
 
 // signIn answers an unknown address and a wrong password with one sentence
 // (D7), and tells the owner of an unconfirmed account to confirm it. A
-// session opened here also renews the CSRF secret.
+// session opened here revokes the one the browser held and renews the CSRF
+// secret.
 func (s Site) signIn(w http.ResponseWriter, r *http.Request) {
 	form := newForm()
 	form.Email = r.PostFormValue("email")
@@ -234,6 +257,14 @@ func (s Site) signIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	default:
+		// The cookie is about to be replaced, so the session it held, even
+		// another account's, is ended on the server rather than left valid
+		// with nobody holding it.
+		if held, err := r.Cookie(sessionCookieName(r)); err == nil && held.Value != "" {
+			if err := s.identity.Service.Supersede(r.Context(), visit(r), held.Value); err != nil {
+				s.identity.Log.ErrorContext(r.Context(), "a replaced session could not be revoked", "error", err)
+			}
+		}
 		setSession(w, r, token)
 		RenewCSRF(w, r)
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/", http.StatusSeeOther)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -210,8 +211,14 @@ func TestSignInReadTheSessionAndSignOut(t *testing.T) {
 		request.AddCookie(&http.Cookie{Name: "session", Value: session.Value})
 		return serve(request)
 	}
-	if body := home().Body.String(); !strings.Contains(body, "Conectado como Leitora") {
+	signedInHome := home()
+	if body := signedInHome.Body.String(); !strings.Contains(body, "Conectado como Leitora") {
 		t.Fatalf("the next page does not know who is signed in: %s", body)
+	}
+	// A signed-in page names the account, so no cache may keep it: not a
+	// proxy, and not the browser's back button after sign-out.
+	if got := signedInHome.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("a signed-in page's Cache-Control = %q, want no-store", got)
 	}
 
 	out := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/signout", nil)
@@ -231,5 +238,66 @@ func TestSignInReadTheSessionAndSignOut(t *testing.T) {
 	}
 	if cleared := cookie(after, "session"); cleared == nil || cleared.MaxAge >= 0 {
 		t.Errorf("the revoked session's cookie was not cleared: %+v", cleared)
+	}
+}
+
+// confirmedAccount signs an account up through the service and confirms it.
+// The confirmation itself is internal/identity's to test.
+func confirmedAccount(t *testing.T, pool *db.Pool, service *identity.Service, marketplace *tenancy.Marketplace,
+	name, email, password string) {
+	t.Helper()
+	visit := identity.Visit{Marketplace: marketplace.ID, MarketplaceName: marketplace.Name, Language: "pt-BR",
+		BaseURL: "http://loja.test"}
+	if err := service.SignUp(t.Context(), visit, name, email, password); err != nil {
+		t.Fatal(err)
+	}
+	normalised, err := identity.NormaliseEmail(email)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(),
+		"UPDATE account SET verified_at = now() WHERE marketplace_id = $1 AND email_normalised = $2",
+		marketplace.ID, normalised); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Signing in again in a browser that holds a session, even as another
+// account, replaces the cookie; the session it held is revoked on the server,
+// not left valid for thirty idle days with nobody holding its cookie.
+func TestSigningInAgainRevokesTheSessionItReplaces(t *testing.T) {
+	pool, marketplace := migrated(t)
+	service := identity.NewService(serving{t, pool}, identity.NewHasher(cheap, 2), breached.Fake{}, unaudited{}, silent())
+	never := ratelimit.Never{}
+	handler := httpx.Sessions(service, silent())(identityHandler(t, service, httpx.IdentityLimits{
+		SignUp: never, Resend: never, ResendAddress: never, SignIn: never, SignInAddress: never, Password: never,
+	}))
+	const password = "correct horse battery staple"
+	confirmedAccount(t, pool, service, marketplace, "Primeira", "primeira@example.test", password)
+	confirmedAccount(t, pool, service, marketplace, "Segunda", "segunda@example.test", password)
+
+	signIn := func(email string, held *http.Cookie) string {
+		t.Helper()
+		request := formRequest(t, "/signin", url.Values{"email": {email}, "password": {password}})
+		if held != nil {
+			request.AddCookie(held)
+		}
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, in(request, marketplace, "203.0.113.8"))
+		got := cookie(recorder, "session")
+		if recorder.Code != http.StatusSeeOther || got == nil {
+			t.Fatalf("sign-in as %s: status %d, cookie %+v", email, recorder.Code, got)
+		}
+		return got.Value
+	}
+
+	first := signIn("primeira@example.test", nil)
+	second := signIn("segunda@example.test", &http.Cookie{Name: "session", Value: first})
+
+	if _, err := service.Authenticate(t.Context(), marketplace.ID, first); !errors.Is(err, identity.ErrSessionInvalid) {
+		t.Errorf("the replaced session still authenticates: %v", err)
+	}
+	if _, err := service.Authenticate(t.Context(), marketplace.ID, second); err != nil {
+		t.Errorf("the new session does not authenticate: %v", err)
 	}
 }

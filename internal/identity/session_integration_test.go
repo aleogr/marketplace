@@ -3,10 +3,15 @@
 package identity
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -272,5 +277,302 @@ func TestPasswordStillNoticesAChange(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A session's clock is the service's, like every check made against it: a
+// database clock that drifts from the process's would make a session idle or
+// expired early or late.
+func TestASessionStartsAtTheServicesClock(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	confirmed(t, s, db, one, "r@example.test")
+	at := time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Microsecond)
+	s.now = func() time.Time { return at }
+	token := signIn(t, s, one, "r@example.test", "correct horse battery staple")
+
+	var created, seen time.Time
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT created_at, last_seen_at FROM session WHERE token_hash = $1`,
+			HashToken(token)).Scan(&created, &seen)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !created.Equal(at) || !seen.Equal(at) {
+		t.Errorf("created_at %v, last_seen_at %v; want both %v", created, seen, at)
+	}
+}
+
+// racing is a Transactor that changes the account's password just before the
+// second transaction opens: what another sign-in's rehash, or a password
+// change, does when it lands between a sign-in's read and its write.
+type racing struct {
+	serving
+	marketplace string
+	calls       int
+}
+
+func (r *racing) InTxFor(ctx context.Context, marketplaceID string, fn func(pgx.Tx) error) error {
+	r.calls++
+	if r.calls == 2 {
+		if err := r.serving.InTxFor(ctx, r.marketplace, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE credential SET secret = '$argon2id$another'`)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	return r.serving.InTxFor(ctx, marketplaceID, fn)
+}
+
+// A correct password whose hash changed while it was being verified is
+// refused, and the refusal leaves a line in the log, without the address.
+func TestAPasswordChangedMidSignInIsRefusedAndLogged(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	confirmed(t, s, db, one, "r@example.test")
+
+	var logged bytes.Buffer
+	raced := NewService(&racing{serving: db, marketplace: one}, NewHasher(cheap, 1), breachedNone, &recording{},
+		slog.New(slog.NewTextHandler(&logged, nil)))
+	_, err := raced.SignIn(t.Context(), visit(one), "r@example.test", "correct horse battery staple")
+	if !errors.Is(err, ErrCredentials) {
+		t.Fatalf("SignIn = %v, want ErrCredentials", err)
+	}
+	if !strings.Contains(logged.String(), "the password changed while it was being verified") {
+		t.Errorf("the refusal left no trace in the log: %q", logged.String())
+	}
+	if strings.Contains(logged.String(), "r@example.test") || strings.Contains(logged.String(), "correct horse") {
+		t.Errorf("the log carries the address or the password: %q", logged.String())
+	}
+}
+
+// A session replaced by a new sign-in in the same browser is revoked with
+// its own reason, and recorded.
+func TestSupersedeRevokesTheSession(t *testing.T) {
+	s, db, one, _, trail := service(t)
+	confirmed(t, s, db, one, "r@example.test")
+	token := signIn(t, s, one, "r@example.test", "correct horse battery staple")
+
+	if err := s.Supersede(t.Context(), visit(one), token); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Authenticate(t.Context(), one, token); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("a superseded session still authenticates: %v", err)
+	}
+	var reason string
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT revoked_reason FROM session WHERE token_hash = $1`,
+			HashToken(token)).Scan(&reason)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "replaced" {
+		t.Errorf("revoked_reason = %q, want replaced", reason)
+	}
+	if !slices.Contains(trail.actions(), "identity.session_replaced") {
+		t.Errorf("the replacement was not audited: %v", trail.actions())
+	}
+	// A token that opens nothing is not an error.
+	if err := s.Supersede(t.Context(), visit(one), token); err != nil {
+		t.Errorf("superseding a revoked session = %v, want nil", err)
+	}
+}
+
+// hashExists reports whether a session row with this token hash still
+// exists, revoked or not.
+func hashExists(t *testing.T, db serving, marketplace string, hash []byte) bool {
+	t.Helper()
+	var exists bool
+	if err := db.InTxFor(t.Context(), marketplace, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT EXISTS(SELECT 1 FROM session WHERE token_hash = $1)`,
+			hash).Scan(&exists)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return exists
+}
+
+// seedSession inserts a session row with created_at, last_seen_at and
+// revoked_at set directly, so a test can put a row on either side of the
+// sweep's three conditions without waiting real time out.
+func seedSession(t *testing.T, db serving, marketplace, account string, hash []byte, created, seen time.Time, revoked *time.Time) {
+	t.Helper()
+	if err := db.InTxFor(t.Context(), marketplace, func(tx pgx.Tx) error {
+		if err := insertSession(t.Context(), tx, marketplace, account, hash, "203.0.113.7", "test", created); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(t.Context(),
+			`UPDATE session SET last_seen_at = $2 WHERE token_hash = $1`, hash, seen); err != nil {
+			return err
+		}
+		if revoked == nil {
+			return nil
+		}
+		_, err := tx.Exec(t.Context(),
+			`UPDATE session SET revoked_at = $2, revoked_reason = 'signout' WHERE token_hash = $1`, hash, *revoked)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Task 12b: sessions that can never authenticate again are removed. Each of
+// the three conditions on its own is enough, and a live session and one
+// revoked less than RevokedKept ago both survive.
+func TestSweepRemovesSessionsPastEachCondition(t *testing.T) {
+	db, one, _ := twoMarketplaces(t)
+	var account string
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		var err error
+		account, err = insertAccount(t.Context(), tx, one, "r@example.test", "r@example.test", "Reader")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	live := []byte("live-session")
+	tooOld := []byte("too-old-session")
+	tooIdle := []byte("too-idle-session")
+	longRevoked := []byte("long-revoked-session")
+	recentRevoked := []byte("recent-revoked-session")
+
+	seedSession(t, db, one, account, live, now.Add(-time.Hour), now.Add(-time.Hour), nil)
+	seedSession(t, db, one, account, tooOld, now.Add(-SessionLifetime-time.Hour), now.Add(-time.Hour), nil)
+	seedSession(t, db, one, account, tooIdle, now.Add(-40*24*time.Hour), now.Add(-SessionIdle-time.Hour), nil)
+	revokedLong := now.Add(-RevokedKept - time.Hour)
+	seedSession(t, db, one, account, longRevoked, now.Add(-time.Hour), now.Add(-time.Hour), &revokedLong)
+	revokedRecent := now.Add(-2 * 24 * time.Hour)
+	seedSession(t, db, one, account, recentRevoked, now.Add(-time.Hour), now.Add(-time.Hour), &revokedRecent)
+
+	var removed int64
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		var err error
+		removed, err = sweepSessions(t.Context(), tx, now)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if removed != 3 {
+		t.Errorf("sweepSessions removed %d rows, want 3", removed)
+	}
+
+	want := map[string]bool{"live": true, "tooOld": false, "tooIdle": false, "longRevoked": false, "recentRevoked": true}
+	got := map[string]bool{
+		"live":          hashExists(t, db, one, live),
+		"tooOld":        hashExists(t, db, one, tooOld),
+		"tooIdle":       hashExists(t, db, one, tooIdle),
+		"longRevoked":   hashExists(t, db, one, longRevoked),
+		"recentRevoked": hashExists(t, db, one, recentRevoked),
+	}
+	if !maps.Equal(got, want) {
+		t.Fatalf("after the sweep, existence = %+v, want %+v", got, want)
+	}
+}
+
+// The sweep of one marketplace never touches another's rows: row-level
+// security is what scopes the DELETE, like every other query in this
+// package.
+func TestSweepNeverTouchesAnotherMarketplace(t *testing.T) {
+	db, one, two := twoMarketplaces(t)
+	var acctTwo string
+	if err := db.InTxFor(t.Context(), two, func(tx pgx.Tx) error {
+		var err error
+		acctTwo, err = insertAccount(t.Context(), tx, two, "r@example.test", "r@example.test", "Reader")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	eligibleInTwo := []byte("eligible-in-two")
+	seedSession(t, db, two, acctTwo, eligibleInTwo, now.Add(-SessionLifetime-time.Hour), now.Add(-time.Hour), nil)
+
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		_, err := sweepSessions(t.Context(), tx, now)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !hashExists(t, db, two, eligibleInTwo) {
+		t.Error("sweeping marketplace one removed a row that belongs to marketplace two")
+	}
+}
+
+// The sweep SignIn triggers runs at most once an hour per process: a second
+// sign-in within the hour does not remove a row that became eligible in
+// between, and one after the hour does.
+func TestSweepRunsAtMostOnceAnHour(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	confirmed(t, s, db, one, "r@example.test")
+
+	clock := time.Now().UTC()
+	s.now = func() time.Time { return clock }
+
+	// The process has swept nothing yet, so this sign-in is due; there is
+	// nothing to remove, and it only records s.lastSweep.
+	signIn(t, s, one, "r@example.test", "correct horse battery staple")
+
+	// A session that becomes eligible for the sweep between two sign-ins.
+	stale := signIn(t, s, one, "r@example.test", "correct horse battery staple")
+	revokedAt := clock.Add(-RevokedKept - time.Hour)
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		_, err := tx.Exec(t.Context(),
+			`UPDATE session SET revoked_at = $2, revoked_reason = 'signout' WHERE token_hash = $1`,
+			HashToken(stale), revokedAt)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Within the hour: the sweep does not run again, so the row survives.
+	clock = clock.Add(10 * time.Minute)
+	signIn(t, s, one, "r@example.test", "correct horse battery staple")
+	if !hashExists(t, db, one, HashToken(stale)) {
+		t.Fatal("a sign-in within the hour swept a session that became eligible in between")
+	}
+
+	// An hour after the first sweep: it runs again and removes the row.
+	clock = clock.Add(55 * time.Minute)
+	signIn(t, s, one, "r@example.test", "correct horse battery staple")
+	if hashExists(t, db, one, HashToken(stale)) {
+		t.Error("the sweep did not run again after an hour")
+	}
+}
+
+// failingSweep is a Transactor whose third call — the sweep's own
+// transaction, after a fresh Service's credentials read and session write —
+// fails, while every other call runs on the real database.
+type failingSweep struct {
+	serving
+	calls int
+}
+
+func (f *failingSweep) InTxFor(ctx context.Context, marketplaceID string, fn func(pgx.Tx) error) error {
+	f.calls++
+	if f.calls == 3 {
+		return errors.New("sweep transaction failed")
+	}
+	return f.serving.InTxFor(ctx, marketplaceID, fn)
+}
+
+// A sweep failure is logged and never fails the sign-in: the person already
+// has their session.
+func TestASweepFailureDoesNotFailSignIn(t *testing.T) {
+	db, one, _ := twoMarketplaces(t)
+	setup := NewService(db, NewHasher(cheap, 1), breachedNone, &recording{}, quiet)
+	confirmed(t, setup, db, one, "r@example.test")
+
+	var logged bytes.Buffer
+	s := NewService(&failingSweep{serving: db}, NewHasher(cheap, 1), breachedNone, &recording{},
+		slog.New(slog.NewTextHandler(&logged, nil)))
+	token, err := s.SignIn(t.Context(), visit(one), "r@example.test", "correct horse battery staple")
+	if err != nil {
+		t.Fatalf("SignIn = %v, want nil even though the sweep failed", err)
+	}
+	if _, err := s.Authenticate(t.Context(), one, token); err != nil {
+		t.Fatalf("the session from a sign-in whose sweep failed does not authenticate: %v", err)
+	}
+	if !strings.Contains(logged.String(), "session sweep failed") {
+		t.Errorf("the sweep failure left no trace in the log: %q", logged.String())
 	}
 }

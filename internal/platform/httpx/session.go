@@ -51,6 +51,11 @@ func Sessions(service *identity.Service, log *slog.Logger) func(http.Handler) ht
 			case err != nil:
 				log.ErrorContext(r.Context(), "a session could not be checked", "error", err)
 			default:
+				// What is served now may name the account, so no cache
+				// keeps it: not a proxy, and not the browser's back button
+				// after sign-out. A handler that sets its own header, for a
+				// response that names nobody, still overrides this.
+				w.Header().Set("Cache-Control", "no-store")
 				r = r.WithContext(context.WithValue(r.Context(), sessionKey{}, session))
 			}
 			next.ServeHTTP(w, r)

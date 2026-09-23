@@ -70,7 +70,7 @@ templ Layout(page Page, title string) {
 			<header>
 				<strong>{ page.Title() }</strong>
 				@LanguageSwitch(page)
-				if page.Marketplace != "" {
+				if page.Accounts {
 					@AccountNav(page)
 				}
 			</header>
@@ -109,9 +109,10 @@ templ LanguageSwitch(page Page) {
 	</nav>
 }
 
-// AccountNav is who is signed in, on a marketplace's pages: the name and the
-// way out, or the two ways in. The platform's own pages belong to no
-// marketplace and have no accounts, so they carry none.
+// AccountNav is who is signed in, where there are accounts: the name and the
+// way out, or the two ways in. The platform's own pages, a marketplace still
+// in preparation and a process with no identity routes have none, and carry
+// none (Page.Accounts).
 templ AccountNav(page Page) {
 	<nav class="account" aria-label={ page.T("identity.header.account") }>
 		if page.Account != "" {

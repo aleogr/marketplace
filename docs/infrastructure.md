@@ -969,8 +969,18 @@ benchmark's own choice replaces it with (Task 14, PR 4). The measurement has
 to run on the CPU the service actually hashes on — a laptop or a Claude Code
 session's container answers a different question — and the only thing in this
 deployment that runs on that CPU besides the service itself is the migration
-job: 1 vCPU, 512 MiB, the same shape as the service
-(`infra/terraform/migrate_job.tf`).
+job: 1 vCPU, 512 MiB, the same CPU and memory limits as the service
+(`infra/terraform/migrate_job.tf`, `infra/terraform/cloud_run.tf`).
+
+The shape is not identical, though. Cloud Run jobs always run on the second
+generation execution environment, while the service does not pin
+`execution_environment` and so runs on whichever one Cloud Run picks for it;
+the two can differ in how the vCPU is scheduled, which is exactly what
+argon2id measures. The job's figure is therefore the starting point, not the
+last word: when PR 4 sets `identity.Current` from it, the value is
+cross-checked against the latency of a real sign-in on the service (the
+request's latency in the service's request log, with the chosen parameters
+deployed), and revisited if the two disagree.
 
 The benchmark is therefore that job, executed once with `bench-password`
 instead of `migrate` — the same pattern as the delivery probe above: the
