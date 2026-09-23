@@ -95,7 +95,7 @@ The whole plan was transcribed this way into a copy of `main`, and `make check`,
 | `internal/platform/httpx/identity_test.go`, `identity_integration_test.go` (create) | handler tests; the credential-stuffing limit against the database | 2, 3 |
 | `internal/platform/httpx/session.go`, `session_test.go` (create) | the session middleware and cookie | 3 |
 | `internal/platform/httpx/csrf.go` (modify) | `RenewCSRF`, sharing the secret's cookie code | 3 |
-| `migrations/00010_sessions.sql` (create) | `session` under RLS | 3 |
+| `migrations/00011_sessions.sql` (create) | `session` under RLS | 3 |
 | `web/page.go` (modify) | `Form`; `Account` | 2, 3 |
 | `web/identity.templ` (create) | the pages | 2, 3, 4 |
 | `web/layout.templ` (modify) | the account navigation in the header | 3, 4 |
@@ -3227,7 +3227,7 @@ git push -u origin claude/funny-wright-379asb-f13accounts
 ## Task 9: The session schema and the session flows
 
 **Files:**
-- Create: `migrations/00010_sessions.sql`
+- Create: `migrations/00011_sessions.sql`
 - Modify: `internal/identity/store.go`, `internal/identity/identity.go`
 - Test: `internal/identity/session_integration_test.go`
 
@@ -3247,7 +3247,7 @@ SignIn runs in three steps, and argon2 runs in no transaction: the account and i
 
 - [ ] **Step 1: The migration**
 
-Create `migrations/00010_sessions.sql`:
+Create `migrations/00011_sessions.sql`:
 
 ```sql
 -- Sessions stored server-side and revocable from the first release
@@ -3698,7 +3698,7 @@ func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (
 
 - [ ] **Step 5: Run to see them pass** — `go test -tags=integration -count=1 ./internal/identity/ -race -v && make check` → PASS; `0 issues`.
 
-- [ ] **Step 6: Commit** — `git add internal/identity migrations/00010_sessions.sql && git commit -m "Open, check and revoke sessions stored on the server"`
+- [ ] **Step 6: Commit** — `git add internal/identity migrations/00011_sessions.sql && git commit -m "Open, check and revoke sessions stored on the server"`
 
 ## Task 10: The session middleware, sign-in and sign-out pages
 
