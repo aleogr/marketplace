@@ -8,7 +8,10 @@
 # holds the pin, because CI downloads its own browser and therefore can neither
 # fail on the mismatch nor protect against it.
 #
-# Everything else the suite needs comes from the standard library, so there is
-# no third-party HTTP client to keep up to date for four requests.
+# psycopg is how the suite creates, seeds and tidies its own PostgreSQL
+# database (e2e/database.py). Everything else it needs comes from the standard
+# library, so there is no third-party HTTP client to keep up to date for a few
+# requests.
 playwright==1.56.0
+psycopg[binary]==3.2.10
 pytest==9.1.1

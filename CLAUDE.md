@@ -66,7 +66,9 @@ scans the container image with Trivy.
 `make integration` starts a PostgreSQL 16 cluster of its own when
 `TEST_DATABASE_URL` is not set; CI sets it to a service container. The Docker
 daemon does not run in a session, so testcontainers are not an option
-(`docs/roadmap.md`, appendix).
+(`docs/roadmap.md`, appendix). `make e2e` starts one the same way, for the
+same reason, when `TEST_DATABASE_URL` is unset (`e2e/database.py`); CI sets it
+there too.
 
 `terraform` is not a Go tool. The environment setup script installs the release
 named in `infra/terraform/.terraform-version`; `make terraform-deps` installs it

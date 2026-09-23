@@ -12,8 +12,10 @@ only that what was built answers locally (docs/roadmap.md, F3).
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+import secrets
 import socket
 import subprocess
 import time
@@ -188,3 +190,90 @@ def screenshots() -> Path:
     directory = REPO_ROOT / "e2e" / "screenshots"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+
+# The marketplaces every test that needs a database runs against. The hosts
+# are *.localhost, which Chromium resolves to the loopback address with no
+# configuration (docs/superpowers/specs/2026-09-23-f13-identity-core-design.md).
+SEED = json.dumps([
+    {"slug": "m1", "name": "Loja Um", "market": "BR", "revenue_model": "commission",
+     "state": "active", "default_language": "pt-BR", "languages": ["pt-BR", "en-US"],
+     "hosts": ["m1.localhost"]},
+    {"slug": "m2", "name": "Loja Dois", "market": "BR", "revenue_model": "commission",
+     "state": "active", "default_language": "pt-BR", "languages": ["pt-BR", "en-US"],
+     "hosts": ["m2.localhost"]},
+])
+
+
+# The key that wraps the audit log's per-person keys, for every process of this
+# run. Without one, each process wraps with a key of its own that dies with it
+# (cmd/marketplace, `protection`), and a process could not open a key the
+# `migrate` before it, or another test's process, had created. Made fresh for
+# each run and never written down.
+AUDIT_LOCAL_KEY = base64.b64encode(secrets.token_bytes(32)).decode()
+
+
+@pytest.fixture(scope="session")
+def database(binary: Path):
+    """A PostgreSQL, migrated and seeded once for the whole session.
+
+    The module is imported here, not at the top, so that a run against a
+    deployment never needs a PostgreSQL driver it would not use. pytest puts
+    this directory on the import path, as it does for every conftest.
+    """
+    from database import provision
+
+    db, remove = provision()
+    try:
+        migrate = subprocess.run(
+            [str(binary), "migrate"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
+            env={"PATH": os.environ.get("PATH", ""), "PROVIDERS_MODE": "fake",
+                 "DATABASE_URL": db.owner_url, "DATABASE_NAME": db.name,
+                 "DATABASE_APP_USER": db.role, "SEED_MARKETPLACES": SEED,
+                 "AUDIT_LOCAL_KEY": AUDIT_LOCAL_KEY},
+        )
+        assert migrate.returncode == 0, migrate.stdout + migrate.stderr
+        yield db
+    finally:
+        # A migration that failed still leaves the database provision()
+        # created (and, without TEST_DATABASE_URL, the cluster it started);
+        # nothing else runs remove() for it.
+        remove()
+
+
+@dataclass
+class Marketplace(Server):
+    """A local process serving the seeded marketplaces."""
+
+    port: int = 0
+    mailbox: Path = Path()
+
+    def url(self, host: str, path: str) -> str:
+        return f"http://{host}:{self.port}{path}"
+
+
+@pytest.fixture
+def run_marketplace(run_server, database, tmp_path):
+    """Start the binary against the suite's database, as the application role.
+
+    The rate-limit counters are cleared first, and so is any mail still
+    waiting to go out. Every test reaches the process from the same loopback
+    address and the database lives for the whole session, so without this the
+    suite's own sign-ups — and the mail they queued — would add up against the
+    next test: a per-address limit tripped by the tests before it, or a
+    message in the mailbox that is the previous test's, not this one's.
+    """
+    import psycopg
+
+    def factory(**env: str) -> Marketplace:
+        with psycopg.connect(database.owner_url, autocommit=True) as conn:
+            conn.execute("DELETE FROM rate_limit")
+            conn.execute("DELETE FROM outbox_event WHERE state = 'pending'")
+        mailbox = tmp_path / "mailbox"
+        server = run_server(DATABASE_URL=database.app_url, MAIL_DIRECTORY=str(mailbox),
+                            AUDIT_LOCAL_KEY=AUDIT_LOCAL_KEY, **env)
+        port = int(server.base_url.rsplit(":", 1)[1])
+        return Marketplace(base_url=server.base_url, process=server.process,
+                           log_lines=server.log_lines, port=port, mailbox=mailbox)
+
+    return factory

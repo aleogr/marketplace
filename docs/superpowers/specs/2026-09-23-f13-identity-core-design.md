@@ -65,11 +65,15 @@ not invalidate existing hashes: a hash whose parameters differ from the current 
 at the next successful sign-in. The provisional parameters are OWASP's floor (19 MiB, two passes,
 one lane). The final ones come from a benchmark run on the Cloud Run CPU the service uses (one
 vCPU, 512 MiB), recorded next to the code with the measurement. A semaphore bounds how many hashes
-run at once, because 80 concurrent requests on 512 MiB cannot each hold tens of megabytes.
+run at once, because 80 concurrent requests on 512 MiB cannot each hold tens of megabytes. No hash
+or verification runs inside a database transaction: a flow reads, hashes with no transaction open,
+and then writes, so a hash never holds one of the pool's four connections.
 
 **D6. Every token is random, sent once, and stored only as a hash.** Session tokens and e-mail
 verification tokens are 32 random bytes; the database stores their SHA-256. A stolen database
-dump holds nothing that signs anyone in. Comparisons are constant-time.
+dump holds nothing that signs anyone in. Comparisons are constant-time. A token is found by its
+SHA-256, so the database never compares the secret itself, and a password's derived key is compared
+with `crypto/subtle.ConstantTimeCompare`.
 
 **D7. Nothing tells a stranger whether an address has an account.** Sign-up always answers "we
 sent you an e-mail"; an address that already has an account receives "you already have an
@@ -87,7 +91,7 @@ own migration:
 
 | table | columns that matter |
 |---|---|
-| `account` | `id` uuid, `marketplace_id` (null for staff), `kind`, `email` (as entered), `email_normalized`, `name`, `verified_at`, `created_at`; unique `(marketplace_id, email_normalized)` `NULLS NOT DISTINCT`, so two staff accounts cannot share an address either |
+| `account` | `id` uuid, `marketplace_id` (null for staff), `kind`, `email` (as entered), `email_normalised`, `name`, `verified_at`, `created_at`; unique `(marketplace_id, email_normalised)` `NULLS NOT DISTINCT`, so two staff accounts cannot share an address either |
 | `credential` | `account_id`, `kind` (`password`), `secret` (PHC string), `updated_at` |
 | `email_verification` | `account_id`, `token_hash`, `expires_at` (24 hours), `used_at` |
 | `session` | `id`, `account_id`, `token_hash`, `created_at`, `last_seen_at`, `ip`, `user_agent`, `revoked_at`, `revoked_reason` |
@@ -115,8 +119,9 @@ credential-stuffing run. On success: a new session (never a reused one), a new C
 closes session fixation and sign-in CSRF, and the cookie `__Host-session` (HttpOnly, Secure,
 SameSite=Lax, path `/`), which is bound to that marketplace's host by the prefix. The hash is
 recomputed if its parameters are outdated (D5). Audited as `identity.signin`; a failure against an
-existing account is audited as `identity.signin_failed`, and one against an unknown address only
-logged.
+existing account is audited as `identity.signin_failed`, with the platform as the actor, so the
+address the attempt came from is not sealed under the account owner's key; one against an unknown
+address is only logged.
 
 **The session middleware** runs after marketplace and language resolution. It reads the cookie,
 looks up the hash in a transaction for that marketplace, and refuses a session that is revoked, has
@@ -143,11 +148,14 @@ delivers mail locally:
   `TEST_DATABASE_URL` is unset, runs `migrate` with test marketplaces on `m1.localhost` and
   `m2.localhost` (which Chromium resolves to the loopback address without configuration), and
   starts the binary against it.
-- With `PROVIDERS_MODE=fake`, and only then, the outbox dispatcher runs inside the process every
-  second, so the verification e-mail reaches the fake mailbox the way a real one reaches Brevo.
+- With `PROVIDERS_MODE=fake` and no Cloud Tasks queue configured, and only then, the outbox
+  dispatcher runs inside the process every second, so the verification e-mail reaches the fake
+  mailbox the way a real one reaches Brevo.
 
-**Unit:** the argon2id parameters and PHC round trip; constant-time token comparison; the password
-rules; e-mail normalisation; the `breached` fake and the range-response parser.
+**Unit:** the argon2id parameters and PHC round trip; the token hash round trip (a token is stored
+and found only as its SHA-256) and password verification, which compares with
+`crypto/subtle.ConstantTimeCompare`; the password rules; e-mail normalisation; the `breached` fake
+and the range-response parser.
 
 **Integration** (real PostgreSQL, as the application role under RLS): a revoked session is refused
 on the next request; a password change ends the other sessions and keeps the current one; an
@@ -167,15 +175,19 @@ Each is green and useful on its own.
    re-examined under the sleep schedule on 2026-09-23 and kept.
 2. **Accounts.** The `account`, `credential` and `email_verification` tables; sign-up, verification
    and resend; the `breached` port with the Pwned Passwords adapter and its fake; argon2id with the
-   provisional parameters; `docs/design.md` §2.2 names the new port.
+   provisional parameters; named database rate limiters, each forgetting only its own windows, so
+   an hourly limit is not reset by a ten-minute one; `docs/design.md` §2.2 names the new port.
 3. **Sessions.** The `session` table, the middleware, sign-in and sign-out, the rate limits and the
-   audit records.
+   audit records, and the `bench-password` command, so that it is deployed when this pull request
+   merges.
 4. **Password change.** Revocation of the other sessions, the notification mail, the two-browser
-   end-to-end test, and the final argon2id parameters from the benchmark.
+   end-to-end test, and the final argon2id parameters from the owner's benchmark run.
 
-**One step for the owner, in the fourth:** running the argon2id benchmark once on the lab's Cloud
-Run CPU, by executing the existing migration job with a different argument. The command is given
-when it is needed.
+**One step for the owner, between the third's merge and the fourth:** running the argon2id
+benchmark once on the lab's Cloud Run CPU, by executing the existing migration job with the argument
+`bench-password`. Only `main` deploys, so the command reaches the lab when the third pull request
+merges; the fourth sets the parameters from the run's result. The command is given when it is
+needed.
 
 ## Out of this delivery
 

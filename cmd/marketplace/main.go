@@ -121,6 +121,11 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		}
 		defer pool.Close()
 
+		// Re-examined on 2026-09-23, when the shared lab instance began to
+		// sleep four nights a week: a process started while it sleeps exits
+		// here and Cloud Run answers 503 until it wakes. That is kept on
+		// purpose — refusing to start is what keeps a revision with a broken
+		// database setting from ever taking traffic (docs/infrastructure.md).
 		if err := pool.Ping(ctx); err != nil {
 			return fmt.Errorf("the database was declared but does not answer: %w", err)
 		}
@@ -343,6 +348,13 @@ func work(ctx context.Context, cfg config.Config, database *db.Pool, mailer *mai
 	}
 
 	dispatcher := outbox.NewDispatcher(database, queuer, log)
+
+	// No scheduler runs locally, so a process with fake providers dispatches
+	// its own outbox (cmd/marketplace/dispatch.go).
+	if cfg.ProvidersMode == config.ProvidersFake && !cfg.Tasks.Configured() {
+		go dispatchLocally(ctx, dispatcher.Dispatch, localDispatchEvery, log)
+		log.InfoContext(ctx, "the outbox is dispatched in this process", "every", localDispatchEvery.String())
+	}
 
 	// The dispatcher is itself a job, and Cloud Scheduler is what runs it.
 	// There is no always-on process to loop in, and a request that dispatched

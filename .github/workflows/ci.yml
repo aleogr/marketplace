@@ -73,6 +73,23 @@ jobs:
   e2e:
     name: End-to-end tests
     runs-on: ubuntu-latest
+
+    # The identity flows write, so the suite needs the same PostgreSQL the
+    # integration tests get (e2e/database.py).
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: marketplace
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v7
 
@@ -94,6 +111,10 @@ jobs:
 
       - name: Run the suite
         run: make e2e
+        env:
+          # Given an address, the suite creates its database there instead of
+          # starting a cluster of its own (e2e/database.py).
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/marketplace?sslmode=disable
 
       - name: Keep the screenshots as evidence
         if: always()
