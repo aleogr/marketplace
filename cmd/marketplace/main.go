@@ -101,6 +101,8 @@ func run(ctx context.Context, args []string, lookup config.Lookup, stdout io.Wri
 		return migrate(ctx, cfg, log)
 	case "send-probe":
 		return sendProbe(ctx, cfg, log, args[1:])
+	case "bench-password":
+		return benchPassword(ctx, log)
 	default:
 		return fmt.Errorf(
 			"unknown command %q: the binary serves when given no arguments, and applies migrations with `migrate`",

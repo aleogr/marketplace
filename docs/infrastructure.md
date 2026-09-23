@@ -962,6 +962,43 @@ address stop receiving" months later.
 The probe itself was the last thing this test corrected: it announced "the
 delivery probe was accepted" for the message it had deliberately not sent.
 
+## Measure argon2id on the service's CPU
+
+`identity.Current` is the OWASP floor until this runs; it is what the
+benchmark's own choice replaces it with (Task 14, PR 4). The measurement has
+to run on the CPU the service actually hashes on — a laptop or a Claude Code
+session's container answers a different question — and the only thing in this
+deployment that runs on that CPU besides the service itself is the migration
+job: 1 vCPU, 512 MiB, the same shape as the service
+(`infra/terraform/migrate_job.tf`).
+
+The benchmark is therefore that job, executed once with `bench-password`
+instead of `migrate` — the same pattern as the delivery probe above: the
+arguments are overridden only for that one execution, and the job's Terraform
+definition is untouched. It needs no database and no secret, so the execution
+costs nothing to run more than once if it is ever repeated.
+
+```
+gcloud run jobs execute marketplace-migrate \
+  --project="$PROJECT" --region="$REGION" \
+  --args=bench-password --wait
+```
+
+Then read back the six lines it wrote: one per candidate, and the choice.
+
+```
+gcloud logging read \
+  'resource.type=cloud_run_job AND resource.labels.job_name=marketplace-migrate AND jsonPayload.message=~"^argon2id"' \
+  --project="$PROJECT" --limit=10 \
+  --format='value(timestamp, jsonPayload.message, jsonPayload.memory_kib, jsonPayload.time, jsonPayload.median_ms, jsonPayload.budget_ms)'
+```
+
+The `"argon2id chosen"` line names the parameters, `memory_kib` and `time`;
+the `"argon2id"` line for that same pair names the `median_ms` it took on this
+CPU. Record those three, and the date of that run, as `MEMORY_KIB`, `TIME`,
+`MEDIAN_MS` and `RUN_DATE` — that is what Task 14 turns into
+`identity.Current`.
+
 ## The key that protects the audit log
 
 Every person whose data appears in the audit log has a key of their own, kept
