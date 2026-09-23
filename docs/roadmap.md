@@ -609,7 +609,7 @@ the lawyer's answer changes a value, not code.
 **What is needed from the owner:** nothing.
 
 **Scope:**
-- `user` (per marketplace; staff belong to the platform and carry no marketplace), `credential`,
+- `account` (per marketplace; staff belong to the platform and carry no marketplace), `credential`,
   `session`.
 - Passwords hashed with **argon2id**, with the parameters chosen by a benchmark on the Cloud Run
   CPU and recorded next to the code with the measurement, so a future change is an informed one.
@@ -621,7 +621,8 @@ the lawyer's answer changes a value, not code.
 - templ pages for all of it, in both languages.
 
 **Verification:**
-- Unit tests on the hashing parameters and on token comparison being constant-time.
+- Unit tests on the hashing parameters, on tokens being stored and found only as their hash, and on
+  password verification comparing in constant time.
 - Integration tests: a revoked session is refused on the next request; a password change ends the
   other sessions; an unverified account cannot sign in; the rate limiter blocks a credential-
   stuffing pattern.
