@@ -55,6 +55,16 @@ func TestTheFakeAnswersFromItsList(t *testing.T) {
 	}
 }
 
+func TestAnOversizedBodyIsAnError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(make([]byte, maxRangeBody+1))
+	}))
+	defer server.Close()
+	if found, err := NewPwned(server.Client(), server.URL).Breached(context.Background(), "whatever"); err == nil {
+		t.Fatalf("Breached(oversized body) = %v, nil; want an error", found)
+	}
+}
+
 func TestAnUnreachableServiceIsAnError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)

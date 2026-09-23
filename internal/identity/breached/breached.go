@@ -4,10 +4,12 @@ package breached
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha1" // #nosec G505 -- SHA-1 is the range API's protocol, not a password hash
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -19,6 +21,12 @@ type Checker interface {
 
 // RangeAPI is the address of the Pwned Passwords range API.
 const RangeAPI = "https://api.pwnedpasswords.com"
+
+// maxRangeBody bounds how much of a range response is read. The real API's
+// padded bucket is well under this; anything larger is treated as an error
+// so the caller's fail-open path applies, rather than silently scanning a
+// truncated body and calling the password clean.
+const maxRangeBody = 1 << 20 // 1 MiB
 
 // Pwned asks the range API with the first five hexadecimal characters of the
 // password's SHA-1 and compares the rest locally (k-anonymity). Padding hides
@@ -53,7 +61,15 @@ func (p *Pwned) Breached(ctx context.Context, password string) (bool, error) {
 		return false, fmt.Errorf("breached: the range API answered %d", resp.StatusCode)
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRangeBody+1))
+	if err != nil {
+		return false, fmt.Errorf("breached: %w", err)
+	}
+	if len(body) > maxRangeBody {
+		return false, fmt.Errorf("breached: the range API response exceeded %d bytes", maxRangeBody)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(body))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		found, count, ok := strings.Cut(line, ":")
