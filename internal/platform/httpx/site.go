@@ -191,11 +191,16 @@ func (s Site) page(r *http.Request, path string) web.Page {
 // origin is the address this request reached the site at, as another server
 // would have to write it.
 func origin(r *http.Request) string {
-	scheme := "http"
+	return scheme(r) + "://" + r.Host
+}
+
+// scheme is how this request reached the site: over TLS here, or over TLS to
+// the proxy in front of it.
+func scheme(r *http.Request) string {
 	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
+		return "https"
 	}
-	return scheme + "://" + r.Host
+	return "http"
 }
 
 // names is each language's name in its own language, which is how a person

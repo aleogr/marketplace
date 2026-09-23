@@ -3,7 +3,10 @@ package httpx
 import (
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/aleogr/marketplace/internal/identity"
 	"github.com/aleogr/marketplace/internal/platform/i18n"
@@ -55,13 +58,27 @@ func (s Site) identityRoutes(mux *http.ServeMux) {
 		return ratelimit.Limit(l, subject, id.Pages.Refused, id.Log)(h)
 	}
 
-	mux.HandleFunc("GET /signup", s.signUpForm)
-	mux.Handle("POST /signup", limit(id.Limits.SignUp, byIP, http.HandlerFunc(s.signUp)))
-	mux.HandleFunc("GET /verify", s.verifyForm)
-	mux.HandleFunc("POST /verify", s.verify)
-	mux.HandleFunc("GET /verify/resend", s.resendForm)
-	mux.Handle("POST /verify/resend", limit(id.Limits.Resend, byIP,
-		limit(id.Limits.ResendAddress, byAddress, http.HandlerFunc(s.resend))))
+	mux.Handle("GET /signup", inMarketplace(http.HandlerFunc(s.signUpForm)))
+	mux.Handle("POST /signup", inMarketplace(limit(id.Limits.SignUp, byIP, http.HandlerFunc(s.signUp))))
+	mux.Handle("GET /verify", inMarketplace(http.HandlerFunc(s.verifyForm)))
+	mux.Handle("POST /verify", inMarketplace(http.HandlerFunc(s.verify)))
+	mux.Handle("GET /verify/resend", inMarketplace(http.HandlerFunc(s.resendForm)))
+	mux.Handle("POST /verify/resend", inMarketplace(limit(id.Limits.Resend, byIP,
+		limit(id.Limits.ResendAddress, byAddress, http.HandlerFunc(s.resend)))))
+}
+
+// inMarketplace serves next only on a marketplace's host. Accounts belong to
+// a marketplace, so the platform's own host has none: there the identity
+// routes are not found, before any limit is counted, any password hashed or
+// any transaction opened for a marketplace that is not there.
+func inMarketplace(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if marketplaceOf(r) == "" {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func marketplaceOf(r *http.Request) string {
@@ -73,7 +90,7 @@ func marketplaceOf(r *http.Request) string {
 
 // visit is the request, as the identity flows need it.
 func visit(r *http.Request) identity.Visit {
-	v := identity.Visit{Language: i18n.FromContext(r.Context()), UserAgent: r.UserAgent(), BaseURL: origin(r)}
+	v := identity.Visit{Language: i18n.FromContext(r.Context()), UserAgent: r.UserAgent(), BaseURL: linkBase(r)}
 	if o, ok := OriginFrom(r.Context()); ok {
 		v.IP = o.IP
 	}
@@ -81,6 +98,34 @@ func visit(r *http.Request) identity.Visit {
 		v.Marketplace, v.MarketplaceName = resolution.Marketplace.ID, resolution.Marketplace.Name
 	}
 	return v
+}
+
+// linkBase is the address a mailed link points at: the scheme, the host the
+// request was resolved by, normalised as the resolver normalises it, and the
+// port only when it is a port. The Host header is the sender's to write, and
+// a link built from it verbatim would send somebody else's confirmation
+// wherever the sender chose; the host itself is safe because only a
+// marketplace's own host reaches these routes, and a port is kept because a
+// local run and the end-to-end suite serve on one.
+func linkBase(r *http.Request) string {
+	host := tenancy.Normalise(r.Host)
+	if _, port, err := net.SplitHostPort(r.Host); err == nil && validPort(port) {
+		return scheme(r) + "://" + net.JoinHostPort(host, port)
+	}
+	if strings.Contains(host, ":") {
+		// An IPv6 literal with no port still needs its brackets in a URL.
+		host = "[" + host + "]"
+	}
+	return scheme(r) + "://" + host
+}
+
+// validPort reports whether port is a TCP port written in decimal digits.
+func validPort(port string) bool {
+	if port == "" || len(port) > 5 || strings.Trim(port, "0123456789") != "" {
+		return false
+	}
+	n, err := strconv.Atoi(port)
+	return err == nil && n >= 1 && n <= 65535
 }
 
 // newForm is where every form page starts: the password bounds come from the

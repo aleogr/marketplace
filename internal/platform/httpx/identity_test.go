@@ -129,3 +129,60 @@ func TestTheSignUpFieldCarriesTheRulesBounds(t *testing.T) {
 		}
 	}
 }
+
+// onPlatform is a request as it reaches the routes on the platform's own
+// host, which belongs to no marketplace and so has no accounts.
+func onPlatform(r *http.Request) *http.Request {
+	ctx := tenancy.WithResolution(r.Context(), tenancy.Resolution{Kind: tenancy.PlatformHost})
+	return r.WithContext(i18n.WithLanguage(ctx, "pt-BR"))
+}
+
+// The platform's own host has no accounts: its identity routes are not
+// found, and a form posted there reaches neither the hasher nor the database
+// (identitySite has none, so reaching it would panic).
+func TestTheIdentityRoutesAreNotFoundOnThePlatformHost(t *testing.T) {
+	form := url.Values{"name": {"Leitora"}, "email": {"a@example.test"}, "password": {"correct horse battery"}}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/signup"}, {http.MethodPost, "/signup"},
+		{http.MethodGet, "/verify"}, {http.MethodPost, "/verify"},
+		{http.MethodGet, "/verify/resend"}, {http.MethodPost, "/verify/resend"},
+	} {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			request := httptest.NewRequestWithContext(t.Context(), route.method, route.path,
+				strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			recorder := httptest.NewRecorder()
+			identitySite(t).ServeHTTP(recorder, onPlatform(request))
+
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+			}
+		})
+	}
+}
+
+// The address a mailed link points at is the host the request resolved by,
+// normalised, with a port only when the port is a number: the rest of the Host
+// header is the sender's to write, and the link goes to somebody else.
+func TestTheMailedLinkBaseIsTheResolvedHost(t *testing.T) {
+	for _, tc := range []struct{ host, proto, want string }{
+		{"M1.Example.com.", "", "http://m1.example.com"},
+		{"m1.example.com", "https", "https://m1.example.com"},
+		{"m1.localhost:8080", "", "http://m1.localhost:8080"},
+		{"m1.example.com:evil.example", "", "http://m1.example.com"},
+		{"m1.example.com:99999", "", "http://m1.example.com"},
+		{"m1.example.com:+80", "", "http://m1.example.com"},
+		{"m1.example.com:", "", "http://m1.example.com"},
+	} {
+		t.Run(tc.host, func(t *testing.T) {
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/signup", nil)
+			request.Host = tc.host
+			if tc.proto != "" {
+				request.Header.Set("X-Forwarded-Proto", tc.proto)
+			}
+			if got := httpx.LinkBase(request); got != tc.want {
+				t.Errorf("LinkBase(%q) = %q, want %q", tc.host, got, tc.want)
+			}
+		})
+	}
+}
