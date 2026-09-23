@@ -4,10 +4,12 @@ package outbox_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -236,6 +238,120 @@ func TestAConsumerThatFailsIsNotRecordedAsDone(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Errorf("the consumer ran %d times, want 2: a failed attempt must be retried", attempts)
+	}
+}
+
+// payloadOf reads back an event's payload, verbatim, for a test to inspect
+// what the row itself still holds.
+func payloadOf(t *testing.T, pool *db.Pool, id string) string {
+	t.Helper()
+	var payload string
+	if err := pool.QueryRow(t.Context(),
+		"SELECT payload::text FROM outbox_event WHERE id = $1", id).Scan(&payload); err != nil {
+		t.Fatalf("cannot read the event's payload: %v", err)
+	}
+	return payload
+}
+
+// TestDispatchRedactsAnEmailSendEventsVariables is spec D6: a stolen database
+// dump must not still hold the raw token a verification link carries. The
+// dispatcher hands an event to the queue from what it already read into
+// memory, so the row's own copy is not needed again once it is dispatched.
+func TestDispatchRedactsAnEmailSendEventsVariables(t *testing.T) {
+	pool := migrated(t)
+	queue := &counting{}
+
+	var id string
+	if err := pool.InTx(t.Context(), func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `
+			INSERT INTO outbox_event (kind, queue, payload) VALUES (
+				'email.send', 'notifications',
+				'{"Template":"verify-email","Variables":{"Name":"Reader","Link":"https://one.test/pt-BR/verify?token=super-secret-token"}}'
+			) RETURNING id::text
+		`).Scan(&id)
+	}); err != nil {
+		t.Fatalf("cannot write the event: %v", err)
+	}
+
+	// Not asserting how many events were dispatched in total: the tests of
+	// this package share one database, and TestADuplicateDeliveryIsANoOp and
+	// TestAConsumerThatFailsIsNotRecordedAsDone each leave a pending event of
+	// their own behind, which this call sweeps up too.
+	dispatcher := outbox.NewDispatcher(pool, queue, quiet())
+	if _, err := dispatcher.Dispatch(t.Context()); err != nil {
+		t.Fatalf("Dispatch() = %v", err)
+	}
+
+	// The queue was handed the token: the event was still delivered.
+	var delivered json.RawMessage
+	for _, event := range queue.taken {
+		if event.ID == id {
+			delivered = event.Payload
+		}
+	}
+	if delivered == nil {
+		t.Fatalf("the event was not handed to the queue")
+	}
+	if !strings.Contains(string(delivered), "super-secret-token") {
+		t.Errorf("the queue was not given the message it was meant to deliver: %s", delivered)
+	}
+
+	// But the row behind it no longer holds the token, or any of the
+	// Variables the message carried it in.
+	after := payloadOf(t, pool, id)
+	if strings.Contains(after, "super-secret-token") || strings.Contains(after, "Variables") {
+		t.Errorf("the dispatched event's row still holds Variables: %s", after)
+	}
+	if !strings.Contains(after, "verify-email") {
+		t.Errorf("redaction removed more than Variables: %s", after)
+	}
+}
+
+// TestParkingRedactsAnEmailSendEventsVariables is the other half: an event
+// that will never be retried again must not go on holding the token either.
+func TestParkingRedactsAnEmailSendEventsVariables(t *testing.T) {
+	pool := migrated(t)
+	queue := &counting{refuse: errors.New("the queue is unreachable")}
+
+	var id string
+	if err := pool.InTx(t.Context(), func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `
+			INSERT INTO outbox_event (kind, queue, payload) VALUES (
+				'email.send', 'notifications',
+				'{"Template":"verify-email","Variables":{"Link":"https://one.test/pt-BR/verify?token=another-secret"}}'
+			) RETURNING id::text
+		`).Scan(&id)
+	}); err != nil {
+		t.Fatalf("cannot write the event: %v", err)
+	}
+
+	dispatcher := outbox.NewDispatcher(pool, queue, quiet())
+	for attempt := range 5 {
+		if _, err := dispatcher.Dispatch(t.Context()); err != nil {
+			t.Fatalf("Dispatch() (attempt %d) = %v", attempt, err)
+		}
+
+		// Retried, not yet parked: the payload must still carry what the next
+		// attempt needs to offer the queue.
+		if attempt < 4 {
+			if before := payloadOf(t, pool, id); !strings.Contains(before, "another-secret") {
+				t.Fatalf("a pending retry lost its Variables early: %s", before)
+			}
+		}
+	}
+
+	var state string
+	if err := pool.QueryRow(t.Context(),
+		"SELECT state FROM outbox_event WHERE id = $1", id).Scan(&state); err != nil {
+		t.Fatalf("cannot read the event: %v", err)
+	}
+	if state != "parked" {
+		t.Fatalf("state = %q, want parked", state)
+	}
+
+	after := payloadOf(t, pool, id)
+	if strings.Contains(after, "another-secret") || strings.Contains(after, "Variables") {
+		t.Errorf("a parked event still holds Variables: %s", after)
 	}
 }
 

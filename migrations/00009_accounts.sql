@@ -43,7 +43,9 @@ CREATE TABLE credential (
 );
 
 CREATE TABLE email_verification (
-    -- SHA-256 of the token; the token itself is only ever in the e-mail.
+    -- SHA-256 of the token. The raw token exists only in the e-mail and,
+    -- until the message is dispatched or parked, in the outbox event that
+    -- carries it (migrations/00010_redact_dispatched_mail_variables.sql).
     token_hash     bytea PRIMARY KEY,
     account_id     uuid NOT NULL REFERENCES account (id) ON DELETE CASCADE,
     marketplace_id uuid REFERENCES marketplace (id) ON DELETE RESTRICT,

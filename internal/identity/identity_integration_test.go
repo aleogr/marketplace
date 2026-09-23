@@ -148,6 +148,50 @@ func TestAnUnreachableBreachServiceDoesNotBlockSignUp(t *testing.T) {
 	}
 }
 
+func TestResendReissuesOnlyToAnUnconfirmedAddress(t *testing.T) {
+	s, db, one, _, _ := service(t)
+
+	// An unconfirmed account.
+	if err := s.SignUp(t.Context(), visit(one), "Reader", "reader@example.test", "correct horse battery staple"); err != nil {
+		t.Fatal(err)
+	}
+	firstToken := tokenOf(t, outbox(t, db, one)[0].link)
+
+	// A confirmed account, in the same marketplace.
+	if err := s.SignUp(t.Context(), visit(one), "Verified", "verified@example.test", "correct horse battery staple"); err != nil {
+		t.Fatal(err)
+	}
+	confirmedToken := tokenOf(t, outbox(t, db, one)[1].link)
+	if err := s.Verify(t.Context(), visit(one), confirmedToken); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Resend(t.Context(), visit(one), "unknown@example.test"); err != nil {
+		t.Fatalf("Resend(unknown) = %v, want nil", err)
+	}
+	if err := s.Resend(t.Context(), visit(one), "VERIFIED@example.test"); err != nil {
+		t.Fatalf("Resend(confirmed) = %v, want nil", err)
+	}
+	if err := s.Resend(t.Context(), visit(one), "READER@example.test"); err != nil {
+		t.Fatalf("Resend(unconfirmed) = %v, want nil", err)
+	}
+
+	// Exactly one message more than the two sign-ups sent: the unconfirmed
+	// address's, and none for the unknown or already-confirmed ones.
+	mails := outbox(t, db, one)
+	if len(mails) != 3 || mails[2].template != "verify-email" {
+		t.Fatalf("outbox = %v, want exactly one more verify-email", mails)
+	}
+
+	newToken := tokenOf(t, mails[2].link)
+	if newToken == firstToken {
+		t.Fatalf("Resend reissued the sign-up's own token instead of a new one")
+	}
+	if err := s.Verify(t.Context(), visit(one), newToken); err != nil {
+		t.Fatalf("the reissued token does not verify: %v", err)
+	}
+}
+
 func TestAnExpiredTokenIsRefused(t *testing.T) {
 	s, db, one, _, _ := service(t)
 	if err := s.SignUp(t.Context(), visit(one), "R", "r@example.test", "correct horse battery staple"); err != nil {

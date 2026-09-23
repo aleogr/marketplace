@@ -73,7 +73,9 @@ and then writes, so a hash never holds one of the pool's four connections.
 verification tokens are 32 random bytes; the database stores their SHA-256. A stolen database
 dump holds nothing that signs anyone in. Comparisons are constant-time. A token is found by its
 SHA-256, so the database never compares the secret itself, and a password's derived key is compared
-with `crypto/subtle.ConstantTimeCompare`.
+with `crypto/subtle.ConstantTimeCompare`. The verification link, which carries the raw token, exists
+in the database only while its e-mail is pending delivery: the outbox clears it from the event's
+payload once the message is dispatched or, failing every attempt, parked.
 
 **D7. Nothing tells a stranger whether an address has an account.** Sign-up always answers "we
 sent you an e-mail"; an address that already has an account receives "you already have an
