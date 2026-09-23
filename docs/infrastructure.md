@@ -972,15 +972,14 @@ deployment that runs on that CPU besides the service itself is the migration
 job: 1 vCPU, 512 MiB, the same CPU and memory limits as the service
 (`infra/terraform/migrate_job.tf`, `infra/terraform/cloud_run.tf`).
 
-The shape is not identical, though. Cloud Run jobs always run on the second
-generation execution environment, while the service does not pin
-`execution_environment` and so runs on whichever one Cloud Run picks for it;
-the two can differ in how the vCPU is scheduled, which is exactly what
-argon2id measures. The job's figure is therefore the starting point, not the
-last word: when PR 4 sets `identity.Current` from it, the value is
-cross-checked against the latency of a real sign-in on the service (the
-request's latency in the service's request log, with the chosen parameters
-deployed), and revisited if the two disagree.
+Cloud Run jobs always run on the second generation execution environment. The
+service did not pin one at first, and the cross-check below showed why that
+matters: argon2id is memory bound, and the service hashed about 2.6 times
+slower than the job. Since 2026-09-23 the service pins
+`EXECUTION_ENVIRONMENT_GEN2` (`infra/terraform/cloud_run.tf`), so the job and
+the service run on the same environment and the job's figure is the service's
+figure. It is still cross-checked against a real sign-in in the service's
+request log whenever the parameters change.
 
 The benchmark is therefore that job, executed once with `bench-password`
 instead of `migrate` — the same pattern as the delivery probe above: the
@@ -1029,10 +1028,24 @@ budget on this job's CPU; 65536/t3 is chosen because it is the most expensive
 candidate on the list, so it is the list's ceiling, not the budget, that bounded
 the choice, and 152 of 250 ms leaves headroom.
 
-Pending: once these parameters are deployed, compare the latency of
-`POST /signin` in the service's request log with the 152 ms measured here, and
-revisit `identity.Current` if the two disagree (the cross-check promised
-above).
+The cross-check, read on 2026-09-23 from the service's request log with these
+parameters deployed and the service on its default environment: a sign-in for
+an unknown address, whose only real work is one argon2id verification against
+the dummy hash, took 411 ms, and a successful sign-in 494 ms, against the
+job's 152 ms. The two disagreed, and the cause was the environment, not the
+parameters: the service was pinned to the second generation environment, as
+the job runs (above). After that change deploys, the same query is read again:
+
+```
+gcloud logging read \
+  'resource.type=cloud_run_revision AND resource.labels.service_name=marketplace AND httpRequest.requestMethod="POST" AND httpRequest.requestUrl=~"/(signin|signup)$"' \
+  --project="$PROJECT" --limit=10 --freshness=2h \
+  --format='value(timestamp, httpRequest.requestUrl, httpRequest.status, httpRequest.latency)'
+```
+
+A `401` on `/signin` for an unknown address is the cleanest reading: it is one
+verification and nothing else of weight. If it stays well above the job's
+152 ms on the second generation environment, `identity.Current` is revisited.
 
 ## The key that protects the audit log
 
