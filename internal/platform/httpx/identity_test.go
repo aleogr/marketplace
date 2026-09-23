@@ -1,13 +1,17 @@
 package httpx_test
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aleogr/marketplace/internal/identity"
 	"github.com/aleogr/marketplace/internal/identity/breached"
@@ -184,5 +188,96 @@ func TestTheMailedLinkBaseIsTheResolvedHost(t *testing.T) {
 				t.Errorf("LinkBase(%q) = %q, want %q", tc.host, got, tc.want)
 			}
 		})
+	}
+}
+
+// refusing is a limiter that has had enough of everybody.
+type refusing struct{}
+
+func (refusing) Allow(context.Context, string) (ratelimit.Decision, error) {
+	return ratelimit.Decision{RetryAfter: time.Minute}, nil
+}
+
+// limitsRefusing are the identity limits with slot refusing and every other
+// limit allowing.
+func limitsRefusing(slot string) httpx.IdentityLimits {
+	pick := func(name string) ratelimit.Limiter {
+		if name == slot {
+			return refusing{}
+		}
+		return ratelimit.Never{}
+	}
+	return httpx.IdentityLimits{
+		SignUp: pick("SignUp"), Resend: pick("Resend"), ResendAddress: pick("ResendAddress"),
+		SignIn: pick("SignIn"), SignInAddress: pick("SignInAddress"), Password: pick("Password"),
+	}
+}
+
+// Each limiter guards the routes it is named for, and only those. The forms
+// posted stop before the database whenever they are let through: a sign-up
+// with no name, a resend for an address that is not one.
+func TestEachIdentityLimitGuardsItsOwnRoute(t *testing.T) {
+	signUp := url.Values{"name": {""}, "email": {"a@example.test"}, "password": {"correct horse battery"}}
+	resend := url.Values{"email": {"not an address"}}
+	guarded := map[string][]string{
+		"SignUp":        {"/signup"},
+		"Resend":        {"/verify/resend"},
+		"ResendAddress": {"/verify/resend"},
+		"SignIn":        nil,
+		"SignInAddress": nil,
+		"Password":      nil,
+	}
+	for slot, routes := range guarded {
+		handler := identityHandler(t,
+			identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
+			limitsRefusing(slot))
+		for path, form := range map[string]url.Values{"/signup": signUp, "/verify/resend": resend} {
+			want := slices.Contains(routes, path)
+			t.Run(slot+" POST "+path, func(t *testing.T) {
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, formRequest(t, path, form))
+				if refused := recorder.Code == http.StatusTooManyRequests; refused != want {
+					t.Errorf("status = %d; refused = %v, want %v", recorder.Code, refused, want)
+				}
+			})
+		}
+	}
+}
+
+// Reading a form costs nothing and is never limited, even when every limit
+// refuses.
+func TestTheIdentityPagesAreNotLimited(t *testing.T) {
+	all := refusing{}
+	handler := identityHandler(t,
+		identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
+		httpx.IdentityLimits{SignUp: all, Resend: all, ResendAddress: all, SignIn: all, SignInAddress: all, Password: all})
+	for _, path := range []string{"/signup", "/verify?token=x", "/verify/resend"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, inMarketplace(request))
+			if recorder.Code != http.StatusOK {
+				t.Errorf("status = %d, want %d", recorder.Code, http.StatusOK)
+			}
+		})
+	}
+}
+
+// The name's bound reaches the page from the rule, and so does its message.
+func TestTheNameIsBoundedInThePageAndByTheRule(t *testing.T) {
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/signup", nil)
+	recorder := httptest.NewRecorder()
+	identitySite(t).ServeHTTP(recorder, inMarketplace(request))
+	if want := `maxlength="` + strconv.Itoa(identity.MaxNameLength) + `"`; !strings.Contains(recorder.Body.String(), want) {
+		t.Errorf("the sign-up page does not carry %s", want)
+	}
+
+	recorder = postForm(t, "/signup", url.Values{
+		"name":  {strings.Repeat("a", identity.MaxNameLength+1)},
+		"email": {"a@example.test"}, "password": {"correct horse battery"},
+	})
+	want := "O nome pode ter no máximo 100 caracteres, sem caracteres invisíveis ou de controle."
+	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), want) {
+		t.Fatalf("status %d, body without %q: %s", recorder.Code, want, recorder.Body.String())
 	}
 }

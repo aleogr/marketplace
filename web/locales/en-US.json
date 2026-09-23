@@ -45,6 +45,7 @@
   "identity.field.password": "Password",
   "identity.field.password_hint": "At least %[1]d characters. A phrase is easier to remember than symbols.",
   "identity.error.name_missing": "Tell us your name.",
+  "identity.error.name_invalid": "The name can have at most %[1]d characters, with no invisible or control characters.",
   "identity.error.email_invalid": "This does not look like an e-mail address.",
   "identity.error.password_short": "The password needs at least %[1]d characters.",
   "identity.error.password_long": "The password can have at most %[1]d characters.",

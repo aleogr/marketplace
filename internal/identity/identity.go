@@ -106,13 +106,16 @@ func (s *Service) record(ctx context.Context, tx pgx.Tx, v Visit, account, actio
 
 // SignUp creates an unconfirmed account and sends the confirmation, or, for an
 // address that already has an account, tells its owner so. The caller answers
-// the same page either way (spec, D7). The password is hashed before the
-// transaction opens, and for a taken address too, so both answers cost the
-// same.
+// the same page either way (spec, D7). The dominant cost is equalised: the
+// breached check and the argon2 hash run before the transaction opens, for a
+// taken address too. What remains different is smaller and inside the
+// transaction: a new account also writes its credential and its verification
+// and appends to the audit log, which may create and wrap the person's key,
+// where a taken address reads the existing account instead.
 func (s *Service) SignUp(ctx context.Context, v Visit, name, email, password string) error {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return ErrNameMissing
+	name, err := CheckName(name)
+	if err != nil {
+		return err
 	}
 	normalised, err := NormaliseEmail(email)
 	if err != nil {

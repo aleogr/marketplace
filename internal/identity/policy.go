@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/mail"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
@@ -21,12 +22,23 @@ const (
 	MaxPasswordLength = 128
 )
 
+// MaxNameLength bounds the name a person gives, in Unicode code points after
+// trimming. The name is stored and written into mail sent to an address the
+// sender chose, so it is bounded and holds only visible text; the page reads
+// the bound from here, like the password's.
+const MaxNameLength = 100
+
+// MaxEmailLength is the longest address mail can carry: RFC 5321 bounds a
+// forward path at 256 octets, and two of them are its angle brackets.
+const MaxEmailLength = 254
+
 var (
 	ErrPasswordShort    = errors.New("identity: password too short")
 	ErrPasswordLong     = errors.New("identity: password too long")
 	ErrPasswordBreached = errors.New("identity: password found in a breach")
 	ErrEmailInvalid     = errors.New("identity: e-mail address invalid")
 	ErrNameMissing      = errors.New("identity: name missing")
+	ErrNameInvalid      = errors.New("identity: name too long or not plain text")
 )
 
 // normalise is what a password is before it is counted or hashed: NFKC, so
@@ -46,11 +58,35 @@ func CheckPassword(password string) error {
 	return nil
 }
 
+// CheckName returns the name a person gave, trimmed, or why it cannot be kept:
+// ErrNameMissing when nothing is left, ErrNameInvalid when it is longer than
+// MaxNameLength or holds a control or format character. Control characters
+// would break lines in a mail's text; format characters include the
+// bidirectional overrides that make text read as something it is not.
+func CheckName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", ErrNameMissing
+	}
+	if !utf8.ValidString(name) || utf8.RuneCountInString(name) > MaxNameLength {
+		return "", ErrNameInvalid
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return "", ErrNameInvalid
+		}
+	}
+	return name, nil
+}
+
 // NormaliseEmail returns the form an address is compared in, or
 // ErrEmailInvalid. Only a bare address is accepted: "Name <a@b>" is valid mail
 // syntax and not something a person types into an e-mail field.
 func NormaliseEmail(address string) (string, error) {
 	address = strings.TrimSpace(address)
+	if len(address) > MaxEmailLength {
+		return "", ErrEmailInvalid
+	}
 	parsed, err := mail.ParseAddress(address)
 	if err != nil || parsed.Address != address || parsed.Name != "" {
 		return "", ErrEmailInvalid

@@ -105,12 +105,14 @@ func sortStrings(values []string) {
 
 // Form is what a form page shows back: the fields a visitor typed, except the
 // password; the key of the message explaining what went wrong, with its
-// arguments; and the password's bounds, which come from internal/identity.
+// arguments; and the bounds of the password and of the name, which come from
+// internal/identity.
 type Form struct {
-	Name      string
-	Email     string
-	Error     string
-	ErrorArgs []any
-	MinLength int
-	MaxLength int
+	Name          string
+	Email         string
+	Error         string
+	ErrorArgs     []any
+	MinLength     int
+	MaxLength     int
+	NameMaxLength int
 }

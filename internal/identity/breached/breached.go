@@ -8,9 +8,11 @@ import (
 	"context"
 	"crypto/sha1" // #nosec G505 -- SHA-1 is the range API's protocol, not a password hash
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -54,7 +56,14 @@ func (p *Pwned) Breached(ctx context.Context, password string) (bool, error) {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("breached: %w", err)
+		// A *url.Error names the URL it failed on, and this URL's path is the
+		// prefix of the password's hash. The error is logged when the check
+		// fails open, so only what went wrong is kept, never where.
+		var failed *url.Error
+		if errors.As(err, &failed) {
+			err = failed.Err
+		}
+		return false, fmt.Errorf("breached: the range API could not be reached: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {

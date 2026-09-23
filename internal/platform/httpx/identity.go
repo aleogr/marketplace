@@ -131,7 +131,10 @@ func validPort(port string) bool {
 // newForm is where every form page starts: the password bounds come from the
 // rule itself, so the page, its hint and the rule cannot disagree (spec, D4).
 func newForm() web.Form {
-	return web.Form{MinLength: identity.MinPasswordLength, MaxLength: identity.MaxPasswordLength}
+	return web.Form{
+		MinLength: identity.MinPasswordLength, MaxLength: identity.MaxPasswordLength,
+		NameMaxLength: identity.MaxNameLength,
+	}
 }
 
 // formError names the message a flow's error is shown as, with its
@@ -140,6 +143,8 @@ func formError(err error) (key string, args []any, shown bool) {
 	switch {
 	case errors.Is(err, identity.ErrNameMissing):
 		return "identity.error.name_missing", nil, true
+	case errors.Is(err, identity.ErrNameInvalid):
+		return "identity.error.name_invalid", []any{identity.MaxNameLength}, true
 	case errors.Is(err, identity.ErrEmailInvalid):
 		return "identity.error.email_invalid", nil, true
 	case errors.Is(err, identity.ErrPasswordShort):

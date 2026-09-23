@@ -16,7 +16,13 @@ templ SignUp(page Page, form Form) {
 			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 			<label>
 				{ page.T("identity.field.name") }
-				<input name="name" autocomplete="name" required value={ form.Name }/>
+				<input
+					name="name"
+					autocomplete="name"
+					required
+					maxlength={ strconv.Itoa(form.NameMaxLength) }
+					value={ form.Name }
+				/>
 			</label>
 			<label>
 				{ page.T("identity.field.email") }

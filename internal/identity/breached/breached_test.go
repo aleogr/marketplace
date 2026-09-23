@@ -74,3 +74,21 @@ func TestAnUnreachableServiceIsAnError(t *testing.T) {
 		t.Fatal("a 503 was not reported as an error")
 	}
 }
+
+// An unreachable range API is an error, and the error is logged: it must not
+// carry the request's URL, whose path is the prefix of the password's hash.
+func TestAnUnreachableAPIErrorDoesNotNameThePrefix(t *testing.T) {
+	sum := sha1.Sum([]byte("an unusual passphrase")) // #nosec G401 -- see above
+	prefix := strings.ToUpper(hex.EncodeToString(sum[:]))[:5]
+	server := httptest.NewServer(http.NotFoundHandler())
+	base := server.URL
+	server.Close()
+
+	_, err := NewPwned(&http.Client{}, base).Breached(context.Background(), "an unusual passphrase")
+	if err == nil {
+		t.Fatal("a closed server answered")
+	}
+	if strings.Contains(err.Error(), prefix) || strings.Contains(err.Error(), "/range/") {
+		t.Fatalf("the error names the request: %v", err)
+	}
+}
