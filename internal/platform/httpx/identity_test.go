@@ -364,3 +364,21 @@ func TestThePasswordPageShowsTheRulesMessage(t *testing.T) {
 		t.Fatalf("status %d, body without %q: %s", recorder.Code, want, recorder.Body.String())
 	}
 }
+
+// The page a password change redirects to says the change is done; the page
+// itself, reached any other way, does not.
+func TestThePasswordPageSaysTheChangeIsDoneOnlyAfterIt(t *testing.T) {
+	get := func(path string) string {
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+		recorder := httptest.NewRecorder()
+		identitySite(t).ServeHTTP(recorder, signedIn(inMarketplace(request)))
+		return recorder.Body.String()
+	}
+	const done = "Sua senha foi alterada."
+	if body := get("/account/password?changed=1"); !strings.Contains(body, done) || !strings.Contains(body, `role="status"`) {
+		t.Errorf("the page after a change does not say it is done: %s", body)
+	}
+	if body := get("/account/password"); strings.Contains(body, done) {
+		t.Errorf("the page says a change is done before any: %s", body)
+	}
+}

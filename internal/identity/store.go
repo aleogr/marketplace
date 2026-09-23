@@ -154,11 +154,11 @@ func sweepSessions(ctx context.Context, tx pgx.Tx, now time.Time) (int64, error)
 	return tag.RowsAffected(), nil
 }
 
-// revokeOtherSessions ends every live session of an account but keep, the one
-// that changed the password, at now, the service's clock.
-func revokeOtherSessions(ctx context.Context, tx pgx.Tx, account, keep string, now time.Time) error {
+// revokeSessions ends every live session of an account because its password
+// changed, at now, the service's clock.
+func revokeSessions(ctx context.Context, tx pgx.Tx, account string, now time.Time) error {
 	_, err := tx.Exec(ctx, `
-		UPDATE session SET revoked_at = $3, revoked_reason = 'password_changed'
-		 WHERE account_id = $1 AND id <> $2 AND revoked_at IS NULL`, account, keep, now)
+		UPDATE session SET revoked_at = $2, revoked_reason = 'password_changed'
+		 WHERE account_id = $1 AND revoked_at IS NULL`, account, now)
 	return err
 }

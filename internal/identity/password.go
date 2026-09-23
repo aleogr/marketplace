@@ -30,6 +30,9 @@ var Floor = Params{Memory: 19456, Time: 2, Threads: 1, KeyLen: 32, SaltLen: 16}
 // lab's Cloud Run CPU (1 vCPU, 512 MiB) on 2026-09-23, 152 ms per hash
 // against a 250 ms budget (cmd/marketplace/bench.go, docs/infrastructure.md).
 // A hash made with other parameters is remade at its owner's next sign-in.
+// Raising it makes Waste's dummy, which is made with Current, cost more than
+// verifying a hash made before the raise, so a wrong password on a dormant
+// account then answers faster than an unknown address (spec, Risks).
 var Current = Params{Memory: 65536, Time: 3, Threads: 1, KeyLen: 32, SaltLen: 16}
 
 // maxEncodedLen bounds the salt and the key read back from a stored hash. Ours
