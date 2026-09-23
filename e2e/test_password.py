@@ -40,6 +40,7 @@ def test_changing_the_password_signs_the_other_browser_out(run_marketplace, scre
         first.fill("input[name=new_password]", "a brand new passphrase")
         first.click(SUBMIT)
         expect(first.locator("[role=alert]")).to_have_text(WRONG_CURRENT[language])
+        expect(first.locator("input[name=current_password]")).to_be_focused()
         first.screenshot(path=screenshots / f"f13-password-wrong-{language}.png")
 
         first.fill("input[name=current_password]", PASSWORD)

@@ -1,8 +1,10 @@
 package web
 
 import (
+	"strings"
 	"time"
 
+	"github.com/a-h/templ"
 	"golang.org/x/text/message"
 )
 
@@ -121,4 +123,31 @@ type Form struct {
 	MinLength     int
 	MaxLength     int
 	NameMaxLength int
+	// Field is the name of the input Error is about, chosen by the handler
+	// from the error's key; empty when it is about no one field.
+	Field string
+}
+
+// ErrorID names a page's refusal, so the field it is about can point at it.
+const ErrorID = "form-error"
+
+// PasswordHintID names the hint under a new password, which describes it.
+const PasswordHintID = "password-hint"
+
+// Input is what the input named name carries besides its own attributes:
+// describedBy, the ids of what describes it, always; and, when the refusal is
+// about it, aria-invalid, the refusal first among its descriptions, and
+// autofocus, so the cursor lands where the fix is and a screen reader reads
+// why (docs/requirements.md, section 3).
+func (f Form) Input(name string, describedBy ...string) templ.Attributes {
+	attributes := templ.Attributes{}
+	if f.Error != "" && f.Field == name {
+		describedBy = append([]string{ErrorID}, describedBy...)
+		attributes["aria-invalid"] = "true"
+		attributes["autofocus"] = true
+	}
+	if len(describedBy) > 0 {
+		attributes["aria-describedby"] = strings.Join(describedBy, " ")
+	}
+	return attributes
 }

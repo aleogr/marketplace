@@ -206,6 +206,31 @@ func formError(err error) (key string, args []any, shown bool) {
 	return "", nil, false
 }
 
+// The field each refusal is about, by the key it is shown as, form by form:
+// that field is marked invalid, points at the refusal and takes the cursor.
+// The choice is made here, where the key is known, and not by a template
+// reading words. A key a form does not list is about no one field: an
+// unconfirmed account is not something the visitor fixes by typing.
+var (
+	signUpFields = map[string]string{
+		"identity.error.name_missing":      "name",
+		"identity.error.name_invalid":      "name",
+		"identity.error.email_invalid":     "email",
+		"identity.error.password_short":    "password",
+		"identity.error.password_long":     "password",
+		"identity.error.password_breached": "password",
+	}
+	// One sentence answers an unknown address and a wrong password (D7), and
+	// the password is what a visitor who knows their address types again.
+	signInFields   = map[string]string{"identity.signin.failed": "password"}
+	passwordFields = map[string]string{
+		"identity.password.wrong_current":  "current_password",
+		"identity.error.password_short":    "new_password",
+		"identity.error.password_long":     "new_password",
+		"identity.error.password_breached": "new_password",
+	}
+)
+
 func (s Site) signUpForm(w http.ResponseWriter, r *http.Request) {
 	render(w, r, web.SignUp(s.page(r, "/signup"), newForm()))
 }
@@ -215,7 +240,7 @@ func (s Site) signUp(w http.ResponseWriter, r *http.Request) {
 	form.Name, form.Email = r.PostFormValue("name"), r.PostFormValue("email")
 	err := s.identity.Service.SignUp(r.Context(), visit(r), form.Name, form.Email, r.PostFormValue("password"))
 	if key, args, shown := formError(err); shown {
-		form.Error, form.ErrorArgs = key, args
+		form.Error, form.ErrorArgs, form.Field = key, args, signUpFields[key]
 		renderStatus(w, r, http.StatusUnprocessableEntity, web.SignUp(s.page(r, "/signup"), form))
 		return
 	}
@@ -293,6 +318,7 @@ func (s Site) signIn(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/", http.StatusSeeOther)
 		return
 	}
+	form.Field = signInFields[form.Error]
 	renderStatus(w, r, http.StatusUnauthorized, web.SignIn(s.page(r, "/signin"), form, false))
 }
 
@@ -339,5 +365,6 @@ func (s Site) changePassword(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/account/password?changed=1", http.StatusSeeOther)
 		return
 	}
+	form.Field = passwordFields[form.Error]
 	renderStatus(w, r, http.StatusUnprocessableEntity, web.Password(s.page(r, "/account/password"), form, false))
 }

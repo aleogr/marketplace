@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -380,5 +381,152 @@ func TestThePasswordPageSaysTheChangeIsDoneOnlyAfterIt(t *testing.T) {
 	}
 	if body := get("/account/password"); strings.Contains(body, done) {
 		t.Errorf("the page says a change is done before any: %s", body)
+	}
+}
+
+// breachAware is identitySite over the fake breach list the suite shares, so a
+// breached password is refused before the database too.
+func breachAware(t *testing.T) http.Handler {
+	t.Helper()
+	never := ratelimit.Never{}
+	return identityHandler(t,
+		identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{Known: breached.Common}, nil, silent()),
+		httpx.IdentityLimits{
+			SignUp: never, Resend: never, ResendAddress: never,
+			SignIn: never, SignInAddress: never, Password: never,
+		})
+}
+
+// input finds the tag of the input named name in body.
+func input(t *testing.T, body, name string) string {
+	t.Helper()
+	tag := regexp.MustCompile(`<input[^>]*\sname="` + regexp.QuoteMeta(name) + `"[^>]*>`).FindString(body)
+	if tag == "" {
+		t.Fatalf("the page has no input named %s: %s", name, body)
+	}
+	return tag
+}
+
+// flagged reports how a tag says it is the one a refusal is about.
+func flagged(tag string) (invalid, describedByError, focused bool) {
+	describedBy := regexp.MustCompile(`\saria-describedby="([^"]*)"`).FindStringSubmatch(tag)
+	return strings.Contains(tag, ` aria-invalid="true"`),
+		describedBy != nil && slices.Contains(strings.Fields(describedBy[1]), "form-error"),
+		regexp.MustCompile(`\sautofocus[\s/>=]`).MatchString(tag)
+}
+
+// A refusal is named, so the field it is about can point at it, and that
+// field, and only that one, is marked invalid and takes the cursor: a visitor
+// who does not see the sentence still lands where the fix is. The field is
+// chosen by the handler from the refusal's key, never by the template.
+func TestARefusalIsTiedToTheFieldItIsAbout(t *testing.T) {
+	const good = "correct horse battery"
+	for _, tc := range []struct {
+		name, path string
+		form       url.Values
+		field      string
+	}{
+		{"sign-up without a name", "/signup",
+			url.Values{"name": {""}, "email": {"a@example.test"}, "password": {good}}, "name"},
+		{"sign-up with too long a name", "/signup",
+			url.Values{"name": {strings.Repeat("a", identity.MaxNameLength+1)}, "email": {"a@example.test"}, "password": {good}}, "name"},
+		{"sign-up with an invalid address", "/signup",
+			url.Values{"name": {"Leitora"}, "email": {"not an address"}, "password": {good}}, "email"},
+		{"sign-up with a short password", "/signup",
+			url.Values{"name": {"Leitora"}, "email": {"a@example.test"}, "password": {"curta"}}, "password"},
+		{"sign-up with too long a password", "/signup",
+			url.Values{"name": {"Leitora"}, "email": {"a@example.test"}, "password": {strings.Repeat("a", identity.MaxPasswordLength+1)}}, "password"},
+		{"sign-up with a breached password", "/signup",
+			url.Values{"name": {"Leitora"}, "email": {"a@example.test"}, "password": {"password1234"}}, "password"},
+		{"sign-in refused", "/signin",
+			url.Values{"email": {"not an address"}, "password": {good}}, "password"},
+		// A current password beyond the byte cap no settable password reaches
+		// is refused as a wrong one before the database (identity, policy.go).
+		{"password change with a wrong current password", "/account/password",
+			url.Values{"current_password": {strings.Repeat("a", 16*identity.MaxPasswordLength+1)}, "new_password": {"a brand new passphrase"}}, "current_password"},
+		{"password change to a short password", "/account/password",
+			url.Values{"current_password": {good}, "new_password": {"curta"}}, "new_password"},
+		{"password change to too long a password", "/account/password",
+			url.Values{"current_password": {good}, "new_password": {strings.Repeat("a", identity.MaxPasswordLength+1)}}, "new_password"},
+		{"password change to a breached password", "/account/password",
+			url.Values{"current_password": {good}, "new_password": {"password1234"}}, "new_password"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			breachAware(t).ServeHTTP(recorder, signedIn(formRequest(t, tc.path, tc.form)))
+			body := recorder.Body.String()
+			if recorder.Code < 400 || recorder.Code >= 500 {
+				t.Fatalf("status = %d, want a refusal: %s", recorder.Code, body)
+			}
+			if !regexp.MustCompile(`<p[^>]*\sid="form-error"[^>]*\srole="alert"|<p[^>]*\srole="alert"[^>]*\sid="form-error"`).MatchString(body) {
+				t.Errorf("the refusal is not named form-error: %s", body)
+			}
+			for name := range tc.form {
+				invalid, described, focused := flagged(input(t, body, name))
+				want := name == tc.field
+				if invalid != want || described != want || focused != want {
+					t.Errorf("%s: aria-invalid %v, described by the refusal %v, autofocus %v; want %v for each",
+						name, invalid, described, focused, want)
+				}
+			}
+		})
+	}
+}
+
+// A form nobody has posted is refused about nothing: no field is marked, none
+// takes the cursor, and there is no refusal to point at.
+func TestAFreshFormMarksNoField(t *testing.T) {
+	for path, names := range map[string][]string{
+		"/signup":           {"name", "email", "password"},
+		"/signin":           {"email", "password"},
+		"/account/password": {"current_password", "new_password"},
+		"/verify/resend":    {"email"},
+	} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+			recorder := httptest.NewRecorder()
+			identitySite(t).ServeHTTP(recorder, signedIn(inMarketplace(request)))
+			body := recorder.Body.String()
+			if regexp.MustCompile(`<[a-z]+[^<>]*\s(role="alert"|id="form-error")`).MatchString(body) {
+				t.Errorf("a fresh form carries a refusal: %s", body)
+			}
+			for _, name := range names {
+				if invalid, described, focused := flagged(input(t, body, name)); invalid || described || focused {
+					t.Errorf("%s: aria-invalid %v, described by a refusal %v, autofocus %v on a fresh form",
+						name, invalid, described, focused)
+				}
+			}
+		})
+	}
+}
+
+// The password hint is the new password's description, refused or not, so a
+// screen reader reads the rule with the field.
+func TestThePasswordHintDescribesTheNewPassword(t *testing.T) {
+	get := func(path string) string {
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+		recorder := httptest.NewRecorder()
+		identitySite(t).ServeHTTP(recorder, signedIn(inMarketplace(request)))
+		return recorder.Body.String()
+	}
+	describedBy := regexp.MustCompile(`\saria-describedby="([^"]*)"`)
+	for path, name := range map[string]string{"/signup": "password", "/account/password": "new_password"} {
+		t.Run(path, func(t *testing.T) {
+			body := get(path)
+			if !strings.Contains(body, `<p id="password-hint">No mínimo 12 caracteres.`) {
+				t.Errorf("the hint is not named password-hint: %s", body)
+			}
+			ids := describedBy.FindStringSubmatch(input(t, body, name))
+			if ids == nil || !slices.Contains(strings.Fields(ids[1]), "password-hint") {
+				t.Errorf("%s is not described by the hint: %s", name, input(t, body, name))
+			}
+		})
+	}
+
+	// Refused, it is described by the refusal first and by the hint still.
+	recorder := postForm(t, "/signup", url.Values{"name": {"Leitora"}, "email": {"a@example.test"}, "password": {"curta"}})
+	ids := describedBy.FindStringSubmatch(input(t, recorder.Body.String(), "password"))
+	if ids == nil || strings.Join(strings.Fields(ids[1]), " ") != "form-error password-hint" {
+		t.Errorf("a refused password is described by %q, want the refusal then the hint", ids)
 	}
 }
