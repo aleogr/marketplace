@@ -133,7 +133,7 @@ General rules: every tenant table has `marketplace_id` under row-level security;
 - `fee_schedule` and `fee_rule` (effective date, category, percentage, fixed fee per item or per order, minimum, price bands); `listing_product` (paid listing types: price, duration, exposure) and `plan` (dealers).
 
 **Identity**
-- `user` (per marketplace; staff belong to the platform with a null marketplace), `session`, `credential`, `second_factor` (type, encrypted secret), `recovery_code`, `role`, `permission`, `role_scope`.
+- `account` (per marketplace; staff belong to the platform with a null marketplace; named `account` rather than `user`, a reserved word in PostgreSQL), `session`, `credential`, `second_factor` (type, encrypted secret), `recovery_code`, `role`, `permission`, `role_scope`.
 - `store` (type: private, company, dealer; ICMS-taxpayer flag; "new store" state; current reputation), `store_member`, `store_provider_account` (gateway or shipping: provider, external id, onboarding state, encrypted token).
 
 **Catalog**
