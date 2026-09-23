@@ -83,6 +83,8 @@ The whole plan was transcribed this way into a copy of `main`, and `make check`,
 | `internal/identity/policy.go`, `password.go`, `token.go` (create) | the password rule, argon2id with a concurrency bound, tokens | 2 |
 | `internal/identity/breached/breached.go` (create) | the port, the Pwned Passwords adapter, the fake | 2 |
 | `migrations/00009_accounts.sql` (create) | `account`, `credential`, `email_verification` under RLS | 2 |
+| `migrations/00010_redact_dispatched_mail_variables.sql` (create) | an `email.send` event's Variables are cleared once it is dispatched or parked, so the confirmation token does not stay in the table | 2 |
+| `internal/platform/outbox/outbox_integration_test.go` (modify) | a dispatched or parked `email.send` event's Variables are cleared | 2 |
 | `internal/identity/store.go` (create) | SQL for accounts, credentials, verifications; sessions in PR 3 | 2, 3, 4 |
 | `internal/identity/identity.go` (create) | `Service`, `Visit`, the flows | 2, 3, 4 |
 | `internal/identity/*_test.go` | unit and integration tests | 2, 3, 4 |
@@ -92,7 +94,7 @@ The whole plan was transcribed this way into a copy of `main`, and `make check`,
 | `internal/platform/httpx/render.go` (modify) | `renderStatus`: the type before the status | 2 |
 | `internal/platform/httpx/identity.go` (create) | the identity handlers and their rate limits | 2, 3, 4 |
 | `internal/platform/httpx/site.go` (modify) | the `identity` field, the routes, `page()` carries the signed-in name | 2, 3 |
-| `internal/platform/httpx/identity_test.go`, `identity_integration_test.go` (create) | handler tests; the credential-stuffing limit against the database | 2, 3 |
+| `internal/platform/httpx/identity_test.go`, `identity_integration_test.go`, `export_test.go` (create) | handler tests; the credential-stuffing limit against the database | 2, 3 |
 | `internal/platform/httpx/session.go`, `session_test.go` (create) | the session middleware and cookie | 3 |
 | `internal/platform/httpx/csrf.go` (modify) | `RenewCSRF`, sharing the secret's cookie code | 3 |
 | `migrations/00011_sessions.sql` (create) | `session` under RLS | 3 |
