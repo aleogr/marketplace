@@ -151,6 +151,7 @@ func TestTheIdentityRoutesAreNotFoundOnThePlatformHost(t *testing.T) {
 		{http.MethodGet, "/verify"}, {http.MethodPost, "/verify"},
 		{http.MethodGet, "/verify/resend"}, {http.MethodPost, "/verify/resend"},
 		{http.MethodGet, "/signin"}, {http.MethodPost, "/signin"}, {http.MethodPost, "/signout"},
+		{http.MethodGet, "/account/password"}, {http.MethodPost, "/account/password"},
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			request := httptest.NewRequestWithContext(t.Context(), route.method, route.path,
@@ -214,30 +215,44 @@ func limitsRefusing(slot string) httpx.IdentityLimits {
 	}
 }
 
+// signedIn is a request as it reaches the routes from a signed-in browser:
+// the session middleware has put the account in its context.
+func signedIn(r *http.Request) *http.Request {
+	return r.WithContext(httpx.WithSession(r.Context(), identity.Session{
+		ID:      "00000000-0000-0000-0000-00000000000a",
+		Account: identity.Account{ID: "00000000-0000-0000-0000-00000000000b", Name: "Leitora"},
+	}))
+}
+
 // Each limiter guards the routes it is named for, and only those. The forms
 // posted stop before the database whenever they are let through: a sign-up
-// with no name, a resend or a sign-in for an address that is not one.
+// with no name, a resend or a sign-in for an address that is not one, a
+// password change to a password too short to set.
 func TestEachIdentityLimitGuardsItsOwnRoute(t *testing.T) {
 	signUp := url.Values{"name": {""}, "email": {"a@example.test"}, "password": {"correct horse battery"}}
 	resend := url.Values{"email": {"not an address"}}
 	signIn := url.Values{"email": {"not an address"}, "password": {"correct horse battery"}}
+	password := url.Values{"current_password": {"correct horse battery"}, "new_password": {"curta"}}
 	guarded := map[string][]string{
 		"SignUp":        {"/signup"},
 		"Resend":        {"/verify/resend"},
 		"ResendAddress": {"/verify/resend"},
 		"SignIn":        {"/signin"},
 		"SignInAddress": {"/signin"},
-		"Password":      nil,
+		"Password":      {"/account/password"},
+	}
+	forms := map[string]url.Values{
+		"/signup": signUp, "/verify/resend": resend, "/signin": signIn, "/account/password": password,
 	}
 	for slot, routes := range guarded {
 		handler := identityHandler(t,
 			identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
 			limitsRefusing(slot))
-		for path, form := range map[string]url.Values{"/signup": signUp, "/verify/resend": resend, "/signin": signIn} {
+		for path, form := range forms {
 			want := slices.Contains(routes, path)
 			t.Run(slot+" POST "+path, func(t *testing.T) {
 				recorder := httptest.NewRecorder()
-				handler.ServeHTTP(recorder, formRequest(t, path, form))
+				handler.ServeHTTP(recorder, signedIn(formRequest(t, path, form)))
 				if refused := recorder.Code == http.StatusTooManyRequests; refused != want {
 					t.Errorf("status = %d; refused = %v, want %v", recorder.Code, refused, want)
 				}
@@ -253,11 +268,11 @@ func TestTheIdentityPagesAreNotLimited(t *testing.T) {
 	handler := identityHandler(t,
 		identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
 		httpx.IdentityLimits{SignUp: all, Resend: all, ResendAddress: all, SignIn: all, SignInAddress: all, Password: all})
-	for _, path := range []string{"/signup", "/verify?token=x", "/verify/resend", "/signin"} {
+	for _, path := range []string{"/signup", "/verify?token=x", "/verify/resend", "/signin", "/account/password"} {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, inMarketplace(request))
+			handler.ServeHTTP(recorder, signedIn(inMarketplace(request)))
 			if recorder.Code != http.StatusOK {
 				t.Errorf("status = %d, want %d", recorder.Code, http.StatusOK)
 			}
@@ -279,6 +294,72 @@ func TestTheNameIsBoundedInThePageAndByTheRule(t *testing.T) {
 		"email": {"a@example.test"}, "password": {"correct horse battery"},
 	})
 	want := "O nome pode ter no máximo 100 caracteres, sem caracteres invisíveis ou de controle."
+	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), want) {
+		t.Fatalf("status %d, body without %q: %s", recorder.Code, want, recorder.Body.String())
+	}
+}
+
+// The password page is a signed-in page: anybody else is sent to sign in, and
+// a form posted without a session is not counted against any account's limit
+// (the refusing limiter would answer 429 if it were asked).
+func TestThePasswordPageSendsASignedOutVisitorToSignIn(t *testing.T) {
+	all := refusing{}
+	handler := identityHandler(t,
+		identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
+		httpx.IdentityLimits{SignUp: all, Resend: all, ResendAddress: all, SignIn: all, SignInAddress: all, Password: all})
+	form := url.Values{"current_password": {"correct horse battery"}, "new_password": {"a brand new passphrase"}}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			request := httptest.NewRequestWithContext(t.Context(), method, "/account/password",
+				strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, inMarketplace(request))
+			if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/pt-BR/signin" {
+				t.Errorf("status %d, Location %q; want %d to /pt-BR/signin",
+					recorder.Code, recorder.Header().Get("Location"), http.StatusSeeOther)
+			}
+		})
+	}
+}
+
+// The signed-in page asks for the current password and a new one bounded by
+// the rule, and the header links to it.
+func TestThePasswordPageAsksForBothPasswords(t *testing.T) {
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/account/password", nil)
+	recorder := httptest.NewRecorder()
+	identitySite(t).ServeHTTP(recorder, signedIn(inMarketplace(request)))
+
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	for _, want := range []string{
+		"<h1>Alterar senha</h1>",
+		`action="/pt-BR/account/password"`,
+		`name="current_password" type="password" autocomplete="current-password"`,
+		`autocomplete="new-password"`,
+		`minlength="` + strconv.Itoa(identity.MinPasswordLength) + `"`,
+		`maxlength="` + strconv.Itoa(identity.MaxPasswordLength) + `"`,
+		"No mínimo 12 caracteres.",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the password page does not carry %s", want)
+		}
+	}
+	if nav := accountNav(body); !strings.Contains(nav, `href="/pt-BR/account/password"`) || !strings.Contains(nav, "Senha") {
+		t.Errorf("the signed-in header does not link to the password page: %q", nav)
+	}
+}
+
+// A new password the rule refuses is refused before the database, with the
+// rule's message.
+func TestThePasswordPageShowsTheRulesMessage(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	identitySite(t).ServeHTTP(recorder, signedIn(formRequest(t, "/account/password",
+		url.Values{"current_password": {"correct horse battery"}, "new_password": {"curta"}})))
+
+	want := "A senha precisa de pelo menos 12 caracteres."
 	if recorder.Code != http.StatusUnprocessableEntity || !strings.Contains(recorder.Body.String(), want) {
 		t.Fatalf("status %d, body without %q: %s", recorder.Code, want, recorder.Body.String())
 	}

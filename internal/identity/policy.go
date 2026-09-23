@@ -22,7 +22,7 @@ const (
 	MaxPasswordLength = 128
 )
 
-// maxPasswordBytes is the longest password, in bytes as typed, that sign-in
+// maxPasswordBytes is the longest password, in bytes as typed, that any flow
 // looks at: anything longer is refused before it is normalised or hashed, so a
 // huge input costs nothing. It admits every password that can be set. A code
 // point is at most four bytes, and NFKC composes at most four code points into
@@ -54,8 +54,13 @@ var (
 // SP 800-63B, section 5.1.1.2).
 func normalise(password string) string { return norm.NFKC.String(password) }
 
-// CheckPassword reports whether a password may be set.
+// CheckPassword reports whether a password may be set. One beyond the byte
+// cap is too long before it is normalised: no password that can be set is
+// that long, and NFKC over a huge input is work spent on nothing.
 func CheckPassword(password string) error {
+	if len(password) > maxPasswordBytes {
+		return ErrPasswordLong
+	}
 	n := utf8.RuneCountInString(normalise(password))
 	switch {
 	case n < MinPasswordLength:

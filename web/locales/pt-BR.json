@@ -69,5 +69,12 @@
   "identity.signin.unverified": "Confirme seu e-mail primeiro. Podemos reenviar o link.",
   "identity.signout.submit": "Sair",
   "identity.header.account": "Conta",
-  "identity.header.signed_in_as": "Conectado como %[1]s"
+  "identity.header.signed_in_as": "Conectado como %[1]s",
+  "identity.password.title": "Alterar senha",
+  "identity.field.current_password": "Senha atual",
+  "identity.field.new_password": "Nova senha",
+  "identity.password.submit": "Alterar senha",
+  "identity.password.wrong_current": "A senha atual não confere.",
+  "identity.password.done": "Sua senha foi alterada. Todas as outras sessões foram encerradas.",
+  "identity.header.password": "Senha"
 }

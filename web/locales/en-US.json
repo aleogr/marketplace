@@ -68,5 +68,12 @@
   "identity.signin.unverified": "Confirm your e-mail address first. We can send the link again.",
   "identity.signout.submit": "Sign out",
   "identity.header.account": "Account",
-  "identity.header.signed_in_as": "Signed in as %[1]s"
+  "identity.header.signed_in_as": "Signed in as %[1]s",
+  "identity.password.title": "Change password",
+  "identity.field.current_password": "Current password",
+  "identity.field.new_password": "New password",
+  "identity.password.submit": "Change password",
+  "identity.password.wrong_current": "The current password is not right.",
+  "identity.password.done": "Your password was changed. Every other session was signed out.",
+  "identity.header.password": "Password"
 }

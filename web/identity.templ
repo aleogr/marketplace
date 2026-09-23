@@ -115,3 +115,35 @@ templ SignIn(page Page, form Form, verified bool) {
 		</p>
 	}
 }
+
+templ Password(page Page, form Form, done bool) {
+	@Layout(page, page.T("identity.password.title")) {
+		<h1>{ page.T("identity.password.title") }</h1>
+		if done {
+			<p role="status">{ page.T("identity.password.done") }</p>
+		}
+		if form.Error != "" {
+			<p role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
+		}
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/password") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<label>
+				{ page.T("identity.field.current_password") }
+				<input name="current_password" type="password" autocomplete="current-password" required/>
+			</label>
+			<label>
+				{ page.T("identity.field.new_password") }
+				<input
+					name="new_password"
+					type="password"
+					autocomplete="new-password"
+					required
+					minlength={ strconv.Itoa(form.MinLength) }
+					maxlength={ strconv.Itoa(form.MaxLength) }
+				/>
+			</label>
+			<p>{ page.T("identity.field.password_hint", form.MinLength) }</p>
+			<button type="submit">{ page.T("identity.password.submit") }</button>
+		</form>
+	}
+}
