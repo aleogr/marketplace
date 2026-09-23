@@ -221,7 +221,7 @@ def database(binary: Path):
     deployment never needs a PostgreSQL driver it would not use. pytest puts
     this directory on the import path, as it does for every conftest.
     """
-    from database import APP_ROLE, provision
+    from database import provision
 
     db, remove = provision()
     try:
@@ -229,7 +229,7 @@ def database(binary: Path):
             [str(binary), "migrate"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
             env={"PATH": os.environ.get("PATH", ""), "PROVIDERS_MODE": "fake",
                  "DATABASE_URL": db.owner_url, "DATABASE_NAME": db.name,
-                 "DATABASE_APP_USER": APP_ROLE, "SEED_MARKETPLACES": SEED,
+                 "DATABASE_APP_USER": db.role, "SEED_MARKETPLACES": SEED,
                  "AUDIT_LOCAL_KEY": AUDIT_LOCAL_KEY},
         )
         assert migrate.returncode == 0, migrate.stdout + migrate.stderr
@@ -256,16 +256,19 @@ class Marketplace(Server):
 def run_marketplace(run_server, database, tmp_path):
     """Start the binary against the suite's database, as the application role.
 
-    The rate-limit counters are cleared first. Every test reaches the process
-    from the same loopback address, and the database lives for the whole
-    session, so without this the suite's own sign-ups would add up against the
-    per-address limits and a test would fail for what the tests before it did.
+    The rate-limit counters are cleared first, and so is any mail still
+    waiting to go out. Every test reaches the process from the same loopback
+    address and the database lives for the whole session, so without this the
+    suite's own sign-ups — and the mail they queued — would add up against the
+    next test: a per-address limit tripped by the tests before it, or a
+    message in the mailbox that is the previous test's, not this one's.
     """
     import psycopg
 
     def factory(**env: str) -> Marketplace:
         with psycopg.connect(database.owner_url, autocommit=True) as conn:
             conn.execute("DELETE FROM rate_limit")
+            conn.execute("DELETE FROM outbox_event WHERE state = 'pending'")
         mailbox = tmp_path / "mailbox"
         server = run_server(DATABASE_URL=database.app_url, MAIL_DIRECTORY=str(mailbox),
                             AUDIT_LOCAL_KEY=AUDIT_LOCAL_KEY, **env)

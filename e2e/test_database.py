@@ -8,8 +8,10 @@ identity test signs up in (docs/superpowers/plans/2026-09-23-f13-identity-core.m
 from __future__ import annotations
 
 import json
+import time
 import urllib.request
 
+import psycopg
 import pytest
 
 
@@ -41,3 +43,29 @@ def test_the_health_check_reports_the_database(run_marketplace):
     with urllib.request.urlopen(marketplace.base_url + "/health", timeout=10) as response:
         body = json.load(response)
     assert body["database"] == "ok"
+
+
+@pytest.mark.local_process
+def test_a_queued_message_reaches_the_fake_mailbox(run_marketplace, database):
+    """The outbox is dispatched inside this process (cmd/marketplace/dispatch.go)."""
+    marketplace = run_marketplace()
+
+    with psycopg.connect(database.owner_url, autocommit=True) as conn:
+        marketplace_id = conn.execute("SELECT id FROM marketplace WHERE slug = 'm1'").fetchone()[0]
+        payload = json.dumps({"Template": "probe", "Language": "pt-BR", "To": "probe@example.test",
+                               "From": "Loja Um", "Marketplace": str(marketplace_id)})
+        conn.execute(
+            "INSERT INTO outbox_event (marketplace_id, kind, queue, payload) "
+            "VALUES (%s, 'email.send', 'notifications', %s)", (marketplace_id, payload))
+
+    deadline = time.monotonic() + 10
+    written: list = []
+    while time.monotonic() < deadline and not written:
+        written = list(marketplace.mailbox.glob("*.json")) if marketplace.mailbox.exists() else []
+        if not written:
+            time.sleep(0.2)
+
+    assert written, "no message reached the mailbox within 10s of the queued event"
+    message = json.loads(written[0].read_text())
+    assert message["to"] == "probe@example.test"
+    assert message["template"] == "probe"

@@ -148,8 +148,9 @@ delivers mail locally:
   `TEST_DATABASE_URL` is unset, runs `migrate` with test marketplaces on `m1.localhost` and
   `m2.localhost` (which Chromium resolves to the loopback address without configuration), and
   starts the binary against it.
-- With `PROVIDERS_MODE=fake`, and only then, the outbox dispatcher runs inside the process every
-  second, so the verification e-mail reaches the fake mailbox the way a real one reaches Brevo.
+- With `PROVIDERS_MODE=fake` and no Cloud Tasks queue configured, and only then, the outbox
+  dispatcher runs inside the process every second, so the verification e-mail reaches the fake
+  mailbox the way a real one reaches Brevo.
 
 **Unit:** the argon2id parameters and PHC round trip; the token hash round trip (a token is stored
 and found only as its SHA-256) and password verification, which compares with
