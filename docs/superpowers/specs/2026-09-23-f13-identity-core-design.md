@@ -1,7 +1,8 @@
 # F13 — Identity core: design
 
 **Date:** 2026-09-23
-**Status:** agreed with the owner, not yet implemented
+**Status:** implemented on 2026-09-23, in aleogr/marketplace #70, #72, #73 and the fourth pull
+request
 **Delivers:** roadmap F13 (`docs/roadmap.md`), against `docs/requirements.md` §4, §18.1 and §19,
 and `docs/design.md` §2 and §4.
 
@@ -214,6 +215,14 @@ rule means an outage costs a weaker check, not a broken sign-up.
 
 **Argon2id memory under load.** Bounded by the semaphore; the benchmark measures time on the real
 CPU, and the semaphore's size is chosen with the instance's memory in view.
+
+**A future parameter raise unbalances the dummy's timing.** `Hasher.Waste` hashes against a dummy
+made with the hasher's own current parameters (D7), so a hash made with older, cheaper parameters
+costs less to verify than that dummy does: after a future parameter raise, a wrong password on a
+dormant account (one still holding a hash from before the raise) answers faster than an unknown
+address. No account exists in production before this delivery, so every real account starts on
+`identity.Current` as raised here; the gap is a consequence of the next raise, handled when the
+parameters next change (F17).
 
 **A marketplace host that is not under `__Host-`'s rules.** The prefix requires HTTPS and no
 `Domain` attribute; every marketplace host is served over HTTPS, and the local suite uses the

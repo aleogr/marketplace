@@ -322,6 +322,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 // quarter of the instance's 512 MiB at the memory one hash takes, and never
 // fewer than two (spec, D5). The rest of the instance is the process itself
 // and the requests it is serving.
+//
+// At identity.Current's 64 MiB, that is max(2, 131072/65536) = 2 slots: at
+// most two hashes run at once, together holding 2 x 64 MiB = 128 MiB of the
+// instance's 512 MiB.
 func hashSlots(params identity.Params) int {
 	return max(2, 128*1024/int(params.Memory))
 }
