@@ -65,6 +65,10 @@ func (s Site) identityRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /verify/resend", inMarketplace(http.HandlerFunc(s.resendForm)))
 	mux.Handle("POST /verify/resend", inMarketplace(limit(id.Limits.Resend, byIP,
 		limit(id.Limits.ResendAddress, byAddress, http.HandlerFunc(s.resend)))))
+	mux.Handle("GET /signin", inMarketplace(http.HandlerFunc(s.signInForm)))
+	mux.Handle("POST /signin", inMarketplace(limit(id.Limits.SignIn, byIP,
+		limit(id.Limits.SignInAddress, byAddress, http.HandlerFunc(s.signIn)))))
+	mux.Handle("POST /signout", inMarketplace(http.HandlerFunc(s.signOut)))
 }
 
 // inMarketplace serves next only on a marketplace's host. Accounts belong to
@@ -207,4 +211,45 @@ func (s Site) resend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	render(w, r, web.Resend(s.page(r, "/verify/resend"), true))
+}
+
+func (s Site) signInForm(w http.ResponseWriter, r *http.Request) {
+	render(w, r, web.SignIn(s.page(r, "/signin"), newForm(), r.URL.Query().Get("verified") == "1"))
+}
+
+// signIn answers an unknown address and a wrong password with one sentence
+// (D7), and tells the owner of an unconfirmed account to confirm it. A
+// session opened here also renews the CSRF secret.
+func (s Site) signIn(w http.ResponseWriter, r *http.Request) {
+	form := newForm()
+	form.Email = r.PostFormValue("email")
+	token, err := s.identity.Service.SignIn(r.Context(), visit(r), form.Email, r.PostFormValue("password"))
+	switch {
+	case errors.Is(err, identity.ErrCredentials):
+		form.Error = "identity.signin.failed"
+	case errors.Is(err, identity.ErrUnverified):
+		form.Error = "identity.signin.unverified"
+	case err != nil:
+		s.identity.Log.ErrorContext(r.Context(), "sign-in failed", "error", err)
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	default:
+		setSession(w, r, token)
+		RenewCSRF(w, r)
+		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/", http.StatusSeeOther)
+		return
+	}
+	renderStatus(w, r, http.StatusUnauthorized, web.SignIn(s.page(r, "/signin"), form, false))
+}
+
+// signOut revokes the session the cookie names, if it names one, and clears
+// the cookie either way.
+func (s Site) signOut(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(sessionCookieName(r)); err == nil && cookie.Value != "" {
+		if err := s.identity.Service.SignOut(r.Context(), visit(r), cookie.Value); err != nil {
+			s.identity.Log.ErrorContext(r.Context(), "sign-out failed", "error", err)
+		}
+	}
+	clearSession(w, r)
+	http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/", http.StatusSeeOther)
 }

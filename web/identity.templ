@@ -87,3 +87,31 @@ templ Resend(page Page, sent bool) {
 		}
 	}
 }
+
+templ SignIn(page Page, form Form, verified bool) {
+	@Layout(page, page.T("identity.signin.title")) {
+		<h1>{ page.T("identity.signin.title") }</h1>
+		if verified {
+			<p role="status">{ page.T("identity.verify.done") }</p>
+		}
+		if form.Error != "" {
+			<p role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
+		}
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/signin") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<label>
+				{ page.T("identity.field.email") }
+				<input name="email" type="email" autocomplete="username" required value={ form.Email }/>
+			</label>
+			<label>
+				{ page.T("identity.field.password") }
+				<input name="password" type="password" autocomplete="current-password" required/>
+			</label>
+			<button type="submit">{ page.T("identity.signin.submit") }</button>
+		</form>
+		<p>
+			<a href={ templ.SafeURL("/" + page.Language + "/signup") }>{ page.T("identity.link.signup") }</a>
+			<a href={ templ.SafeURL("/" + page.Language + "/verify/resend") }>{ page.T("identity.link.resend") }</a>
+		</p>
+	}
+}

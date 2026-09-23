@@ -62,5 +62,12 @@
   "identity.resend.sent": "Se este endereço tiver uma conta aguardando confirmação, um novo link está a caminho.",
   "identity.link.signin": "Entrar",
   "identity.link.signup": "Criar conta",
-  "identity.link.resend": "Não recebeu?"
+  "identity.link.resend": "Não recebeu?",
+  "identity.signin.title": "Entrar",
+  "identity.signin.submit": "Entrar",
+  "identity.signin.failed": "O e-mail ou a senha não conferem.",
+  "identity.signin.unverified": "Confirme seu e-mail primeiro. Podemos reenviar o link.",
+  "identity.signout.submit": "Sair",
+  "identity.header.account": "Conta",
+  "identity.header.signed_in_as": "Conectado como %[1]s"
 }

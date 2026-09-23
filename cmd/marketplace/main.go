@@ -259,6 +259,14 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	handler := site.Handler()
 
+	// The session is read after the marketplace and the language are known,
+	// because a session belongs to one marketplace and is looked up in its
+	// transaction (docs/design.md, section 2.3). The resolvers below wrap
+	// this, so a request meets them first.
+	if identityService != nil {
+		handler = httpx.Sessions(identityService, log)(handler)
+	}
+
 	// Language comes next, and it redirects: the language is part of the URL,
 	// so a page is never served at an address that does not say which language
 	// it is in (docs/design.md, decision 10). Country detection is a port with

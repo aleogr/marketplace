@@ -177,6 +177,9 @@ func (s Site) page(r *http.Request, path string) web.Page {
 	if resolution, ok := tenancy.FromContext(r.Context()); ok && resolution.Marketplace != nil {
 		page.Marketplace = resolution.Marketplace.Name
 	}
+	if session, ok := SessionFrom(r.Context()); ok {
+		page.Account = session.Account.Name
+	}
 
 	// One source for every description the page carries, cut once
 	// (docs/requirements.md, section 7.2).

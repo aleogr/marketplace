@@ -61,5 +61,12 @@
   "identity.resend.sent": "If this address has an account waiting for confirmation, a new link is on its way.",
   "identity.link.signin": "Sign in",
   "identity.link.signup": "Create account",
-  "identity.link.resend": "Did not receive it?"
+  "identity.link.resend": "Did not receive it?",
+  "identity.signin.title": "Sign in",
+  "identity.signin.submit": "Sign in",
+  "identity.signin.failed": "The e-mail or the password is not right.",
+  "identity.signin.unverified": "Confirm your e-mail address first. We can send the link again.",
+  "identity.signout.submit": "Sign out",
+  "identity.header.account": "Account",
+  "identity.header.signed_in_as": "Signed in as %[1]s"
 }

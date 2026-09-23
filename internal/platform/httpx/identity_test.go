@@ -150,6 +150,7 @@ func TestTheIdentityRoutesAreNotFoundOnThePlatformHost(t *testing.T) {
 		{http.MethodGet, "/signup"}, {http.MethodPost, "/signup"},
 		{http.MethodGet, "/verify"}, {http.MethodPost, "/verify"},
 		{http.MethodGet, "/verify/resend"}, {http.MethodPost, "/verify/resend"},
+		{http.MethodGet, "/signin"}, {http.MethodPost, "/signin"}, {http.MethodPost, "/signout"},
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
 			request := httptest.NewRequestWithContext(t.Context(), route.method, route.path,
@@ -215,23 +216,24 @@ func limitsRefusing(slot string) httpx.IdentityLimits {
 
 // Each limiter guards the routes it is named for, and only those. The forms
 // posted stop before the database whenever they are let through: a sign-up
-// with no name, a resend for an address that is not one.
+// with no name, a resend or a sign-in for an address that is not one.
 func TestEachIdentityLimitGuardsItsOwnRoute(t *testing.T) {
 	signUp := url.Values{"name": {""}, "email": {"a@example.test"}, "password": {"correct horse battery"}}
 	resend := url.Values{"email": {"not an address"}}
+	signIn := url.Values{"email": {"not an address"}, "password": {"correct horse battery"}}
 	guarded := map[string][]string{
 		"SignUp":        {"/signup"},
 		"Resend":        {"/verify/resend"},
 		"ResendAddress": {"/verify/resend"},
-		"SignIn":        nil,
-		"SignInAddress": nil,
+		"SignIn":        {"/signin"},
+		"SignInAddress": {"/signin"},
 		"Password":      nil,
 	}
 	for slot, routes := range guarded {
 		handler := identityHandler(t,
 			identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
 			limitsRefusing(slot))
-		for path, form := range map[string]url.Values{"/signup": signUp, "/verify/resend": resend} {
+		for path, form := range map[string]url.Values{"/signup": signUp, "/verify/resend": resend, "/signin": signIn} {
 			want := slices.Contains(routes, path)
 			t.Run(slot+" POST "+path, func(t *testing.T) {
 				recorder := httptest.NewRecorder()
@@ -251,7 +253,7 @@ func TestTheIdentityPagesAreNotLimited(t *testing.T) {
 	handler := identityHandler(t,
 		identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
 		httpx.IdentityLimits{SignUp: all, Resend: all, ResendAddress: all, SignIn: all, SignInAddress: all, Password: all})
-	for _, path := range []string{"/signup", "/verify?token=x", "/verify/resend"} {
+	for _, path := range []string{"/signup", "/verify?token=x", "/verify/resend", "/signin"} {
 		t.Run(path, func(t *testing.T) {
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 			recorder := httptest.NewRecorder()

@@ -44,6 +44,8 @@ type Page struct {
 	Nonce string
 	// CSRFToken is what a form on this page sends back.
 	CSRFToken string
+	// Account is the signed-in account's name, empty when signed out.
+	Account string
 
 	// printer writes this page's language.
 	printer *message.Printer
