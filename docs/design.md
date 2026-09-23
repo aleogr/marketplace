@@ -68,7 +68,7 @@ Modules:
 
 ### 2.2 Ports and adapters
 
-External integrations sit behind interfaces defined by the domain (§25): `payments`, `shipping`, `email`, `geoip`, `translation`, `search` and `identityverification`. Each port has one real adapter and one fake used by tests. The `identityverification` port is satisfied in the MVP by the payment gateway's KYC; a dedicated provider can be added later without touching the store onboarding flow. The `search` port is satisfied by PostgreSQL; a dedicated engine can replace it later.
+External integrations sit behind interfaces defined by the domain (§25): `payments`, `shipping`, `email`, `geoip`, `translation`, `search`, `identityverification` and `breached` (whether a password appears in a public breach; Pwned Passwords, failing open). Each port has one real adapter and one fake used by tests. The `identityverification` port is satisfied in the MVP by the payment gateway's KYC; a dedicated provider can be added later without touching the store onboarding flow. The `search` port is satisfied by PostgreSQL; a dedicated engine can replace it later.
 
 Webhooks arrive at one handler per provider. The handler verifies the signature where the provider signs, or the shared token otherwise, stores the raw event with the provider's event id as a unique key, answers immediately, and enqueues processing. The processor re-reads the object from the provider's API before acting, applies the state transition, and writes the resulting domain events to the outbox in the same transaction.
 

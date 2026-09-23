@@ -34,6 +34,9 @@ type Site struct {
 	// robots.txt and nothing else: the refusal itself is a header on every
 	// response (docs/requirements.md, section 7.1).
 	indexable bool
+	// identity serves sign-up, sign-in and the account's pages. It is nil in
+	// a process with no database, which has no accounts to serve.
+	identity *IdentityRoutes
 }
 
 // NewSite returns the site's routes, ready to be mounted behind the pipeline.
@@ -66,6 +69,7 @@ func (s Site) Handler() http.Handler {
 	if s.mail != nil {
 		mux.HandleFunc("POST "+MailWebhookPrefix+"{provider}", s.mail.Handle)
 	}
+	s.identityRoutes(mux)
 	mux.HandleFunc("GET /{$}", s.home)
 	return mux
 }

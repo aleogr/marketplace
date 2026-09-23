@@ -1,0 +1,83 @@
+package web
+
+import "strconv"
+
+// The identity pages. Layout already holds the page's <main>, so each of these
+// is that main's content. Every visible string goes through a key, and the
+// password's bounds come from the form, which takes them from the rule
+// (internal/identity), never from a number written here.
+templ SignUp(page Page, form Form) {
+	@Layout(page, page.T("identity.signup.title")) {
+		<h1>{ page.T("identity.signup.title") }</h1>
+		if form.Error != "" {
+			<p role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
+		}
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/signup") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<label>
+				{ page.T("identity.field.name") }
+				<input name="name" autocomplete="name" required value={ form.Name }/>
+			</label>
+			<label>
+				{ page.T("identity.field.email") }
+				<input name="email" type="email" autocomplete="email" required value={ form.Email }/>
+			</label>
+			<label>
+				{ page.T("identity.field.password") }
+				<input
+					name="password"
+					type="password"
+					autocomplete="new-password"
+					required
+					minlength={ strconv.Itoa(form.MinLength) }
+					maxlength={ strconv.Itoa(form.MaxLength) }
+				/>
+			</label>
+			<p>{ page.T("identity.field.password_hint", form.MinLength) }</p>
+			<button type="submit">{ page.T("identity.signup.submit") }</button>
+		</form>
+		<p><a href={ templ.SafeURL("/" + page.Language + "/signin") }>{ page.T("identity.link.signin") }</a></p>
+	}
+}
+
+templ CheckEmail(page Page) {
+	@Layout(page, page.T("identity.check_email.title")) {
+		<h1>{ page.T("identity.check_email.title") }</h1>
+		<p>{ page.T("identity.check_email.body") }</p>
+		<p><a href={ templ.SafeURL("/" + page.Language + "/verify/resend") }>{ page.T("identity.link.resend") }</a></p>
+	}
+}
+
+templ Verify(page Page, token string, failed bool) {
+	@Layout(page, page.T("identity.verify.title")) {
+		<h1>{ page.T("identity.verify.title") }</h1>
+		if failed {
+			<p role="alert">{ page.T("identity.verify.failed") }</p>
+			<p><a href={ templ.SafeURL("/" + page.Language + "/verify/resend") }>{ page.T("identity.resend.title") }</a></p>
+		} else {
+			<form method="post" action={ templ.SafeURL("/" + page.Language + "/verify") }>
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<input type="hidden" name="token" value={ token }/>
+				<button type="submit">{ page.T("identity.verify.submit") }</button>
+			</form>
+		}
+	}
+}
+
+templ Resend(page Page, sent bool) {
+	@Layout(page, page.T("identity.resend.title")) {
+		<h1>{ page.T("identity.resend.title") }</h1>
+		if sent {
+			<p role="status">{ page.T("identity.resend.sent") }</p>
+		} else {
+			<form method="post" action={ templ.SafeURL("/" + page.Language + "/verify/resend") }>
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<label>
+					{ page.T("identity.field.email") }
+					<input name="email" type="email" autocomplete="email" required/>
+				</label>
+				<button type="submit">{ page.T("identity.resend.submit") }</button>
+			</form>
+		}
+	}
+}
