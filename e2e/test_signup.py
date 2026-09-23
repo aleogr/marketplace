@@ -38,6 +38,7 @@ def test_sign_up_confirm_and_resend(run_marketplace, screenshots, language):
         page.goto(link)
         page.click(SUBMIT)
         expect(page.locator("[role=alert]")).to_be_visible()
+        expect(page.locator("[role=alert]")).to_have_attribute("id", "form-error")
         page.screenshot(path=screenshots / f"f13-verify-failed-{language}.png")
 
         page.click(f"main a[href='/{language}/verify/resend']")
@@ -50,19 +51,36 @@ def test_sign_up_confirm_and_resend(run_marketplace, screenshots, language):
         browser.close()
 
 
+# identity.error.password_breached, as web/locales words it.
+BREACHED = {
+    "pt-BR": "Esta senha já apareceu em um vazamento de dados em outro lugar. Escolha outra.",
+    "en-US": "This password has appeared in a data breach elsewhere. Choose another.",
+}
+
+
 @pytest.mark.local_process
-def test_a_breached_password_is_refused_in_the_page(run_marketplace):
+@pytest.mark.parametrize("language", ["pt-BR", "en-US"])
+def test_a_breached_password_is_refused_in_the_page(run_marketplace, screenshots, language):
     marketplace = run_marketplace()
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
-        page.goto(marketplace.url("m1.localhost", "/pt-BR/signup"))
+        page.goto(marketplace.url("m1.localhost", f"/{language}/signup"))
         page.fill("input[name=name]", "Leitora")
-        page.fill("input[name=email]", "vazada@example.test")
+        page.fill("input[name=email]", f"vazada-{language}@example.test")
+        # From the fake's list (breached.Common), so no request leaves the machine.
         page.fill("input[name=password]", "password1234")
         page.click(SUBMIT)
-        expect(page.locator("[role=alert]")).to_have_text(
-            "Esta senha já apareceu em um vazamento de dados em outro lugar. Escolha outra.")
+        alert = page.locator("[role=alert]")
+        expect(alert).to_be_visible()
+        expect(alert).to_have_text(BREACHED[language])
+        # The refusal is tied to the field it is about, and the cursor is
+        # there: a visitor who misses the sentence still lands on the fix.
+        password = page.locator("input[name=password]")
+        expect(password).to_be_focused()
+        expect(password).to_have_attribute("aria-invalid", "true")
+        expect(password).to_have_attribute("aria-describedby", "form-error password-hint")
+        page.screenshot(path=screenshots / f"f13-signup-refused-{language}.png")
         browser.close()
 
 

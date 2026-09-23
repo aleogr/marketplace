@@ -37,6 +37,7 @@ def test_wrong_password_and_unknown_address_read_the_same(run_marketplace):
         sign_in(page, marketplace, "existe@example.test", password="not the right password")
         expect(page.locator("[role=alert]")).to_be_visible()
         wrong = page.locator("[role=alert]").inner_text()
+        expect(page.locator("input[name=password]")).to_be_focused()
         sign_in(page, marketplace, "nao-existe@example.test", password="not the right password")
         expect(page.locator("[role=alert]")).to_be_visible()
         unknown = page.locator("[role=alert]").inner_text()

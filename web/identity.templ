@@ -10,7 +10,7 @@ templ SignUp(page Page, form Form) {
 	@Layout(page, page.T("identity.signup.title")) {
 		<h1>{ page.T("identity.signup.title") }</h1>
 		if form.Error != "" {
-			<p role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
+			<p id={ ErrorID } role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
 		}
 		<form method="post" action={ templ.SafeURL("/" + page.Language + "/signup") }>
 			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
@@ -22,11 +22,12 @@ templ SignUp(page Page, form Form) {
 					required
 					maxlength={ strconv.Itoa(form.NameMaxLength) }
 					value={ form.Name }
+					{ form.Input("name")... }
 				/>
 			</label>
 			<label>
 				{ page.T("identity.field.email") }
-				<input name="email" type="email" autocomplete="email" required value={ form.Email }/>
+				<input name="email" type="email" autocomplete="email" required value={ form.Email } { form.Input("email")... }/>
 			</label>
 			<label>
 				{ page.T("identity.field.password") }
@@ -37,9 +38,10 @@ templ SignUp(page Page, form Form) {
 					required
 					minlength={ strconv.Itoa(form.MinLength) }
 					maxlength={ strconv.Itoa(form.MaxLength) }
+					{ form.Input("password", PasswordHintID)... }
 				/>
 			</label>
-			<p>{ page.T("identity.field.password_hint", form.MinLength) }</p>
+			<p id={ PasswordHintID }>{ page.T("identity.field.password_hint", form.MinLength) }</p>
 			<button type="submit">{ page.T("identity.signup.submit") }</button>
 		</form>
 		<p><a href={ templ.SafeURL("/" + page.Language + "/signin") }>{ page.T("identity.link.signin") }</a></p>
@@ -58,7 +60,7 @@ templ Verify(page Page, token string, failed bool) {
 	@Layout(page, page.T("identity.verify.title")) {
 		<h1>{ page.T("identity.verify.title") }</h1>
 		if failed {
-			<p role="alert">{ page.T("identity.verify.failed") }</p>
+			<p id={ ErrorID } role="alert">{ page.T("identity.verify.failed") }</p>
 			<p><a href={ templ.SafeURL("/" + page.Language + "/verify/resend") }>{ page.T("identity.resend.title") }</a></p>
 		} else {
 			<form method="post" action={ templ.SafeURL("/" + page.Language + "/verify") }>
@@ -95,17 +97,17 @@ templ SignIn(page Page, form Form, verified bool) {
 			<p role="status">{ page.T("identity.verify.done") }</p>
 		}
 		if form.Error != "" {
-			<p role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
+			<p id={ ErrorID } role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
 		}
 		<form method="post" action={ templ.SafeURL("/" + page.Language + "/signin") }>
 			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 			<label>
 				{ page.T("identity.field.email") }
-				<input name="email" type="email" autocomplete="username" required value={ form.Email }/>
+				<input name="email" type="email" autocomplete="username" required value={ form.Email } { form.Input("email")... }/>
 			</label>
 			<label>
 				{ page.T("identity.field.password") }
-				<input name="password" type="password" autocomplete="current-password" required/>
+				<input name="password" type="password" autocomplete="current-password" required { form.Input("password")... }/>
 			</label>
 			<button type="submit">{ page.T("identity.signin.submit") }</button>
 		</form>
@@ -123,13 +125,13 @@ templ Password(page Page, form Form, done bool) {
 			<p role="status">{ page.T("identity.password.done") }</p>
 		}
 		if form.Error != "" {
-			<p role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
+			<p id={ ErrorID } role="alert">{ page.T(form.Error, form.ErrorArgs...) }</p>
 		}
 		<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/password") }>
 			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 			<label>
 				{ page.T("identity.field.current_password") }
-				<input name="current_password" type="password" autocomplete="current-password" required/>
+				<input name="current_password" type="password" autocomplete="current-password" required { form.Input("current_password")... }/>
 			</label>
 			<label>
 				{ page.T("identity.field.new_password") }
@@ -140,9 +142,10 @@ templ Password(page Page, form Form, done bool) {
 					required
 					minlength={ strconv.Itoa(form.MinLength) }
 					maxlength={ strconv.Itoa(form.MaxLength) }
+					{ form.Input("new_password", PasswordHintID)... }
 				/>
 			</label>
-			<p>{ page.T("identity.field.password_hint", form.MinLength) }</p>
+			<p id={ PasswordHintID }>{ page.T("identity.field.password_hint", form.MinLength) }</p>
 			<button type="submit">{ page.T("identity.password.submit") }</button>
 		</form>
 	}
