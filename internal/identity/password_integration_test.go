@@ -118,6 +118,17 @@ func TestAPasswordChangedMidChangeIsRefused(t *testing.T) {
 	if len(trail.entries) != 0 {
 		t.Errorf("a refused change was audited: %v", trail.actions())
 	}
+	var secret string
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		var err error
+		secret, err = passwordOf(t.Context(), tx, session.Account.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if secret != "$argon2id$another" {
+		t.Errorf("the credential = %q, want the racer's value: the refused change overwrote it", secret)
+	}
 	if !strings.Contains(logged.String(), "the password changed while it was being verified") {
 		t.Errorf("the refusal left no trace in the log: %q", logged.String())
 	}
