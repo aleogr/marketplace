@@ -601,7 +601,7 @@ the lawyer's answer changes a value, not code.
 
 ### F13 — Identity core: users, credentials and sessions
 
-- [ ] **Objective:** a person creates an account in a marketplace, signs in, signs out, changes
+- [x] **Objective:** a person creates an account in a marketplace, signs in, signs out, changes
   the password, and every other session of that account ends with the change (§18.1).
 
 **Depends on:** F12, F11, F7, F8.

@@ -469,23 +469,25 @@ func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (
 }
 
 // ChangePassword replaces the password of a session's account and ends every
-// other session of that account, keeping the one that asked
-// (docs/requirements.md, section 18.1). A wrong current password is
-// ErrCredentials, as at sign-in; the new one follows D4.
+// session of that account (docs/requirements.md, section 18.1). The browser
+// that asked stays signed in on a new session, whose token it returns: OWASP's
+// session management guidance renews the session identifier after a password
+// change, so a stolen copy of the old cookie ends with the change too. A wrong
+// current password is ErrCredentials, as at sign-in; the new one follows D4.
 //
 // As in SignIn, argon2 runs in no transaction: the new password is checked
 // first (the breach check is a network call), the current hash is read in one
 // transaction, the current password verified and the new one hashed with none
 // open, and the change written in a second, which first checks that nobody
 // changed the password in between.
-func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, current, next string) error {
+func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, current, next string) (string, error) {
 	if len(current) > maxPasswordBytes {
 		// No password that can be set is this long: refused as a wrong one,
 		// before it costs a normalisation, a hash or a transaction.
-		return ErrCredentials
+		return "", ErrCredentials
 	}
 	if err := s.checkNew(ctx, next); err != nil {
-		return err
+		return "", err
 	}
 	account := session.Account.ID
 	var secret string
@@ -494,21 +496,25 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 		secret, err = passwordOf(ctx, tx, account)
 		return err
 	}); err != nil {
-		return err
+		return "", err
 	}
 	ok, _, err := s.hasher.Verify(ctx, current, secret)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !ok {
 		s.log.InfoContext(ctx, "password change refused: the current password is wrong", "account", account)
-		return ErrCredentials
+		return "", ErrCredentials
 	}
 	fresh, err := s.hasher.Hash(ctx, next)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	token, hash, err := NewToken()
+	if err != nil {
+		return "", err
+	}
+	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		still, err := passwordStill(ctx, tx, account, secret)
 		if err != nil {
 			return err
@@ -524,7 +530,11 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 		if err := setPassword(ctx, tx, v.Marketplace, account, fresh); err != nil {
 			return err
 		}
-		if err := revokeOtherSessions(ctx, tx, account, session.ID, s.now()); err != nil {
+		now := s.now()
+		if err := revokeSessions(ctx, tx, account, now); err != nil {
+			return err
+		}
+		if err := insertSession(ctx, tx, v.Marketplace, account, hash, v.IP, v.UserAgent, now); err != nil {
 			return err
 		}
 		if err := s.record(ctx, tx, v, account, "identity.password_changed"); err != nil {
@@ -536,4 +546,8 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 			Variables: map[string]string{"Name": session.Account.Name},
 		})
 	})
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }

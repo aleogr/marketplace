@@ -53,10 +53,10 @@ func TestAnOversizedPasswordChangeIsRefusedForNothing(t *testing.T) {
 	defer cancel()
 	huge := strings.Repeat("a", maxPasswordBytes+1)
 	session := Session{ID: "s", Account: Account{ID: "a"}}
-	if err := s.ChangePassword(ctx, Visit{Marketplace: "m"}, session, huge, "a brand new passphrase"); !errors.Is(err, ErrCredentials) {
+	if _, err := s.ChangePassword(ctx, Visit{Marketplace: "m"}, session, huge, "a brand new passphrase"); !errors.Is(err, ErrCredentials) {
 		t.Errorf("ChangePassword(oversized current) = %v, want ErrCredentials", err)
 	}
-	if err := s.ChangePassword(ctx, Visit{Marketplace: "m"}, session, "correct horse battery staple", huge); !errors.Is(err, ErrPasswordLong) {
+	if _, err := s.ChangePassword(ctx, Visit{Marketplace: "m"}, session, "correct horse battery staple", huge); !errors.Is(err, ErrPasswordLong) {
 		t.Errorf("ChangePassword(oversized new) = %v, want ErrPasswordLong", err)
 	}
 }

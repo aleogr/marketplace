@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func TestChangingThePasswordEndsEveryOtherSession(t *testing.T) {
+func TestChangingThePasswordEndsEverySessionAndRenewsTheOneThatAsked(t *testing.T) {
 	s, db, one, _, trail := service(t)
 	confirmed(t, s, db, one, "r@example.test")
 	here := signIn(t, s, one, "r@example.test", "correct horse battery staple")
@@ -23,21 +23,31 @@ func TestChangingThePasswordEndsEveryOtherSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.ChangePassword(t.Context(), visit(one), session, "wrong current password", "a brand new passphrase"); !errors.Is(err, ErrCredentials) {
+	if _, err := s.ChangePassword(t.Context(), visit(one), session, "wrong current password", "a brand new passphrase"); !errors.Is(err, ErrCredentials) {
 		t.Fatalf("wrong current: %v, want ErrCredentials", err)
 	}
-	if err := s.ChangePassword(t.Context(), visit(one), session, "correct horse battery staple", "password1234"); !errors.Is(err, ErrPasswordBreached) {
+	if _, err := s.ChangePassword(t.Context(), visit(one), session, "correct horse battery staple", "password1234"); !errors.Is(err, ErrPasswordBreached) {
 		t.Fatalf("breached new: %v, want ErrPasswordBreached", err)
 	}
 	if slices.Contains(trail.actions(), "identity.password_changed") {
 		t.Fatalf("a refused change was audited as done: %v", trail.actions())
 	}
 
-	if err := s.ChangePassword(t.Context(), visit(one), session, "correct horse battery staple", "a brand new passphrase"); err != nil {
+	renewed, err := s.ChangePassword(t.Context(), visit(one), session, "correct horse battery staple", "a brand new passphrase")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Authenticate(t.Context(), one, here); err != nil {
-		t.Fatalf("the session that changed the password ended: %v", err)
+	// The browser that changed the password stays signed in, on a new token:
+	// a stolen copy of its old cookie ends with the change (OWASP Session
+	// Management).
+	if renewed == "" || renewed == here {
+		t.Fatalf("ChangePassword returned %q, want a new token", renewed)
+	}
+	if again, err := s.Authenticate(t.Context(), one, renewed); err != nil || again.Account.ID != session.Account.ID || again.ID == session.ID {
+		t.Fatalf("the new session = %+v, %v; want a new session of the same account", again, err)
+	}
+	if _, err := s.Authenticate(t.Context(), one, here); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("the old token of the session that changed the password survived: %v", err)
 	}
 	if _, err := s.Authenticate(t.Context(), one, there); !errors.Is(err, ErrSessionInvalid) {
 		t.Fatalf("the other session survived: %v", err)
@@ -59,15 +69,27 @@ func TestChangingThePasswordEndsEveryOtherSession(t *testing.T) {
 		t.Errorf("password_changed recorded as %+v", changed)
 	}
 
-	var reason string
+	for name, token := range map[string]string{"old": here, "other": there} {
+		var reason string
+		if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+			return tx.QueryRow(t.Context(), `SELECT revoked_reason FROM session WHERE token_hash = $1`,
+				HashToken(token)).Scan(&reason)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if reason != "password_changed" {
+			t.Errorf("the %s session's revoked_reason = %q, want password_changed", name, reason)
+		}
+	}
+	var agent, ip string
 	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
-		return tx.QueryRow(t.Context(), `SELECT revoked_reason FROM session WHERE token_hash = $1`,
-			HashToken(there)).Scan(&reason)
+		return tx.QueryRow(t.Context(), `SELECT user_agent, ip FROM session WHERE token_hash = $1`,
+			HashToken(renewed)).Scan(&agent, &ip)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if reason != "password_changed" {
-		t.Errorf("revoked_reason = %q, want password_changed", reason)
+	if agent != visit(one).UserAgent || ip != visit(one).IP {
+		t.Errorf("the new session was opened for %s, %s; want the visit's %s, %s", agent, ip, visit(one).UserAgent, visit(one).IP)
 	}
 }
 
@@ -83,7 +105,7 @@ func TestChangingThePasswordLeavesOtherAccountsSignedIn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := s.ChangePassword(t.Context(), visit(one), session, "correct horse battery staple", "a brand new passphrase"); err != nil {
+	if _, err := s.ChangePassword(t.Context(), visit(one), session, "correct horse battery staple", "a brand new passphrase"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Authenticate(t.Context(), one, theirs); err != nil {
@@ -108,12 +130,14 @@ func TestAPasswordChangedMidChangeIsRefused(t *testing.T) {
 	trail := &recording{}
 	raced := NewService(&racing{serving: db, marketplace: one}, NewHasher(cheap, 1), breachedNone, trail,
 		slog.New(slog.NewTextHandler(&logged, nil)))
-	err = raced.ChangePassword(t.Context(), visit(one), session, "correct horse battery staple", "a brand new passphrase")
+	_, err = raced.ChangePassword(t.Context(), visit(one), session, "correct horse battery staple", "a brand new passphrase")
 	if !errors.Is(err, ErrCredentials) {
 		t.Fatalf("ChangePassword = %v, want ErrCredentials", err)
 	}
-	if _, err := s.Authenticate(t.Context(), one, there); err != nil {
-		t.Fatalf("a refused change ended the other session: %v", err)
+	for _, token := range []string{here, there} {
+		if _, err := s.Authenticate(t.Context(), one, token); err != nil {
+			t.Fatalf("a refused change ended a session: %v", err)
+		}
 	}
 	if len(trail.entries) != 0 {
 		t.Errorf("a refused change was audited: %v", trail.actions())

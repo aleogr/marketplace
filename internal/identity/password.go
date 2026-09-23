@@ -26,10 +26,14 @@ type Params struct {
 // stronger parameters (spec, D5), and what the benchmark falls back to.
 var Floor = Params{Memory: 19456, Time: 2, Threads: 1, KeyLen: 32, SaltLen: 16}
 
-// Current is what new hashes are made with. Until the benchmark has run on the
-// service's CPU it is the floor; the measurement that replaces it is recorded
-// here, beside the value (spec, D5).
-var Current = Floor
+// Current is what new hashes are made with: what `bench-password` chose on the
+// lab's Cloud Run CPU (1 vCPU, 512 MiB) on 2026-09-23, 152 ms per hash
+// against a 250 ms budget (cmd/marketplace/bench.go, docs/infrastructure.md).
+// A hash made with other parameters is remade at its owner's next sign-in.
+// Raising it makes Waste's dummy, which is made with Current, cost more than
+// verifying a hash made before the raise, so a wrong password on a dormant
+// account then answers faster than an unknown address (spec, Risks).
+var Current = Params{Memory: 65536, Time: 3, Threads: 1, KeyLen: 32, SaltLen: 16}
 
 // maxEncodedLen bounds the salt and the key read back from a stored hash. Ours
 // are 16 and 32 bytes; anything past this is not a hash this service wrote.

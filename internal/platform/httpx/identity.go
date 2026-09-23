@@ -308,18 +308,21 @@ func (s Site) signOut(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/", http.StatusSeeOther)
 }
 
+// passwordForm serves the password page; after a change, which redirects here
+// with changed=1, it says the change is done.
 func (s Site) passwordForm(w http.ResponseWriter, r *http.Request) {
-	render(w, r, web.Password(s.page(r, "/account/password"), newForm(), false))
+	render(w, r, web.Password(s.page(r, "/account/password"), newForm(), r.URL.Query().Get("changed") == "1"))
 }
 
 // changePassword answers a wrong current password with one sentence, as a
 // refused sign-in is answered, and a new password the rule refuses with the
-// rule's message. The session that asked stays signed in; every other one of
-// the account ends.
+// rule's message. A change ends every session of the account: this browser
+// gets the new one's cookie and a new CSRF secret, and is redirected, so a
+// reload asks for the page again instead of posting a spent form.
 func (s Site) changePassword(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
 	form := newForm()
-	err := s.identity.Service.ChangePassword(r.Context(), visit(r), session,
+	token, err := s.identity.Service.ChangePassword(r.Context(), visit(r), session,
 		r.PostFormValue("current_password"), r.PostFormValue("new_password"))
 	switch key, args, shown := formError(err); {
 	case errors.Is(err, identity.ErrCredentials):
@@ -331,7 +334,9 @@ func (s Site) changePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	default:
-		render(w, r, web.Password(s.page(r, "/account/password"), newForm(), true))
+		setSession(w, r, token)
+		RenewCSRF(w, r)
+		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/account/password?changed=1", http.StatusSeeOther)
 		return
 	}
 	renderStatus(w, r, http.StatusUnprocessableEntity, web.Password(s.page(r, "/account/password"), form, false))

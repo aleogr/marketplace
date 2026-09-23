@@ -304,7 +304,9 @@ func TestSigningInAgainRevokesTheSessionItReplaces(t *testing.T) {
 
 // A password change through the real handler and database: a wrong current
 // password is refused with its own sentence, the right one changes it, the
-// browser that changed it stays signed in and the other one is signed out.
+// browser that changed it stays signed in on a new session cookie with a new
+// CSRF secret, is redirected to the page that says so, and the other browser
+// and the old cookie are signed out.
 // The limit counts per account: once one account has used its attempts,
 // another account is still served.
 func TestChangingThePasswordThroughThePage(t *testing.T) {
@@ -344,20 +346,37 @@ func TestChangingThePasswordThroughThePage(t *testing.T) {
 		t.Fatalf("wrong current password: status %d, body %s", wrong.Code, wrong.Body.String())
 	}
 	done := change(here, password, "a brand new passphrase")
-	if done.Code != http.StatusOK || !strings.Contains(done.Body.String(), "Sua senha foi alterada.") {
-		t.Fatalf("password change: status %d, body %s", done.Code, done.Body.String())
+	if done.Code != http.StatusSeeOther || done.Header().Get("Location") != "/pt-BR/account/password?changed=1" {
+		t.Fatalf("password change: status %d, Location %q", done.Code, done.Header().Get("Location"))
 	}
-	if got := done.Header().Get("Cache-Control"); got != "no-store" {
-		t.Errorf("the signed-in page's Cache-Control = %q, want no-store", got)
+	renewed := cookie(done, "session")
+	if renewed == nil || renewed.Value == "" || renewed.Value == here {
+		t.Fatalf("the password change set no new session cookie: %+v", renewed)
 	}
-	if _, err := service.Authenticate(t.Context(), marketplace.ID, here); err != nil {
+	if csrf := cookie(done, "csrf"); csrf == nil || csrf.Value == "" {
+		t.Error("the password change did not renew the CSRF secret")
+	}
+	if _, err := service.Authenticate(t.Context(), marketplace.ID, renewed.Value); err != nil {
 		t.Errorf("the browser that changed the password was signed out: %v", err)
 	}
-	if _, err := service.Authenticate(t.Context(), marketplace.ID, there); !errors.Is(err, identity.ErrSessionInvalid) {
-		t.Errorf("the other browser is still signed in: %v", err)
+	for name, token := range map[string]string{"the old cookie": here, "the other browser": there} {
+		if _, err := service.Authenticate(t.Context(), marketplace.ID, token); !errors.Is(err, identity.ErrSessionInvalid) {
+			t.Errorf("%s is still signed in: %v", name, err)
+		}
 	}
 
-	if limited := change(here, "a brand new passphrase", "yet another passphrase"); limited.Code != http.StatusTooManyRequests {
+	shown := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/account/password?changed=1", nil)
+	shown.AddCookie(&http.Cookie{Name: "session", Value: renewed.Value})
+	page := httptest.NewRecorder()
+	handler.ServeHTTP(page, in(shown, marketplace, "203.0.113.9"))
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Sua senha foi alterada.") {
+		t.Fatalf("the page after the change: status %d, body %s", page.Code, page.Body.String())
+	}
+	if got := page.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("the signed-in page's Cache-Control = %q, want no-store", got)
+	}
+
+	if limited := change(renewed.Value, "a brand new passphrase", "yet another passphrase"); limited.Code != http.StatusTooManyRequests {
 		t.Errorf("the third attempt of one account = %d, want %d", limited.Code, http.StatusTooManyRequests)
 	}
 	if served := change(other, "not the password at all", "a brand new passphrase"); served.Code != http.StatusUnprocessableEntity {

@@ -1009,6 +1009,31 @@ CPU. Record those three, and the date of that run, as `MEMORY_KIB`, `TIME`,
 `MEDIAN_MS` and `RUN_DATE` — that is what Task 14 turns into
 `identity.Current`.
 
+### Read back on 2026-09-23
+
+Execution `marketplace-migrate-gp7sh`, 17:36 UTC, budget 250 ms:
+
+```
+argon2id         memory_kib=19456 time=2 median_ms=37
+argon2id         memory_kib=47104 time=1 median_ms=52
+argon2id         memory_kib=47104 time=2 median_ms=87
+argon2id         memory_kib=65536 time=2 median_ms=117
+argon2id         memory_kib=65536 time=3 median_ms=152
+argon2id chosen  memory_kib=65536 time=3 budget_ms=250
+```
+
+`MEMORY_KIB = 65536`, `TIME = 3`, `MEDIAN_MS = 152`, `RUN_DATE = 2026-09-23` —
+what the fourth pull request sets `identity.Current` to
+(`internal/identity/password.go`). All five candidates stayed within the 250 ms
+budget on this job's CPU; 65536/t3 is chosen because it is the most expensive
+candidate on the list, so it is the list's ceiling, not the budget, that bounded
+the choice, and 152 of 250 ms leaves headroom.
+
+Pending: once these parameters are deployed, compare the latency of
+`POST /signin` in the service's request log with the 152 ms measured here, and
+revisit `identity.Current` if the two disagree (the cross-check promised
+above).
+
 ## The key that protects the audit log
 
 Every person whose data appears in the audit log has a key of their own, kept

@@ -1,7 +1,7 @@
 # F13 — Identity core: design
 
 **Date:** 2026-09-23
-**Status:** agreed with the owner, not yet implemented
+**Status:** implemented on 2026-09-23, in aleogr/marketplace #70, #72, #73, #74 and #75
 **Delivers:** roadmap F13 (`docs/roadmap.md`), against `docs/requirements.md` §4, §18.1 and §19,
 and `docs/design.md` §2 and §4.
 
@@ -144,8 +144,11 @@ for the signing-in marketplace, so row-level security scopes it there.
 as `identity.signout`.
 
 **Password change** (`GET/POST /account/password`): the current password is required and the new
-one follows D4. The credential is replaced, every other session of the account is revoked, the
-current one survives, and a `password-changed` mail tells the person it happened. Audited as
+one follows D4. The credential is replaced, every session of the account is revoked, and a
+`password-changed` mail tells the person it happened. The browser that changed the password stays
+signed in, on a new session token with a renewed CSRF secret (OWASP Session Management: renew the
+session identifier after a password change), so a stolen copy of its old cookie ends too; the answer
+redirects to `/account/password?changed=1`, which shows that the change is done. Audited as
 `identity.password_changed`.
 
 Every page, message and e-mail exists in en-US and pt-BR; the parity check and the literal check
@@ -170,9 +173,10 @@ and found only as its SHA-256) and password verification, which compares with
 and the range-response parser.
 
 **Integration** (real PostgreSQL, as the application role under RLS): a revoked session is refused
-on the next request; a password change ends the other sessions and keeps the current one; an
-unconfirmed account cannot sign in; the limiter blocks a credential-stuffing pattern; an account
-and a session of one marketplace are invisible from the other.
+on the next request; a password change ends every session and keeps the browser that made it
+signed in on a new one; an unconfirmed account cannot sign in; the limiter blocks a
+credential-stuffing pattern; an account and a session of one marketplace are invisible from the
+other.
 
 **End-to-end:** in two browser contexts, sign up, read the link from the fake mailbox, confirm,
 sign in on both, change the password on one, and assert the other is signed out. Screenshots of
@@ -214,6 +218,14 @@ rule means an outage costs a weaker check, not a broken sign-up.
 
 **Argon2id memory under load.** Bounded by the semaphore; the benchmark measures time on the real
 CPU, and the semaphore's size is chosen with the instance's memory in view.
+
+**A future parameter raise unbalances the dummy's timing.** `Hasher.Waste` hashes against a dummy
+made with the hasher's own current parameters (D7), so a hash made with older, cheaper parameters
+costs less to verify than that dummy does: after a future parameter raise, a wrong password on a
+dormant account (one still holding a hash from before the raise) answers faster than an unknown
+address. No account exists in production before this delivery, so every real account starts on
+`identity.Current` as raised here; the gap is a consequence of the next raise, handled by whoever
+next raises `identity.Current`.
 
 **A marketplace host that is not under `__Host-`'s rules.** The prefix requires HTTPS and no
 `Domain` attribute; every marketplace host is served over HTTPS, and the local suite uses the
