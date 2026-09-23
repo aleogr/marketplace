@@ -103,10 +103,12 @@ func passwordStill(ctx context.Context, tx pgx.Tx, account, verified string) (bo
 	return secret == verified, nil
 }
 
-func insertSession(ctx context.Context, tx pgx.Tx, marketplace, account string, hash []byte, ip, agent string) error {
+// insertSession opens a session at now, the service's clock, which is the one
+// every later check of it reads: the column defaults are the database's.
+func insertSession(ctx context.Context, tx pgx.Tx, marketplace, account string, hash []byte, ip, agent string, now time.Time) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO session (account_id, marketplace_id, token_hash, ip, user_agent)
-		VALUES ($1, $2, $3, $4, $5)`, account, marketplace, hash, ip, agent)
+		INSERT INTO session (account_id, marketplace_id, token_hash, ip, user_agent, created_at, last_seen_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $6)`, account, marketplace, hash, ip, agent, now)
 	return err
 }
 

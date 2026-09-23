@@ -338,8 +338,12 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 			return err
 		}
 		if !still {
-			// Changed between the read and now: what was verified is no
-			// longer the password.
+			// Changed between the read and now — a password change, or
+			// another sign-in's rehash — so what was verified is no longer
+			// the password. The visitor reads a plain refusal; the log is
+			// where the reason is.
+			s.log.WarnContext(ctx, "sign-in refused: the password changed while it was being verified",
+				"account", account.ID)
 			return ErrCredentials
 		}
 		if fresh != "" {
@@ -347,7 +351,7 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 				return err
 			}
 		}
-		if err := insertSession(ctx, tx, v.Marketplace, account.ID, hash, v.IP, v.UserAgent); err != nil {
+		if err := insertSession(ctx, tx, v.Marketplace, account.ID, hash, v.IP, v.UserAgent, s.now()); err != nil {
 			return err
 		}
 		return s.record(ctx, tx, v, account.ID, "identity.signin")
@@ -361,15 +365,29 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 // SignOut revokes the session a token opened. A token that opens no live
 // session is not an error: there is nothing left to end.
 func (s *Service) SignOut(ctx context.Context, v Visit, token string) error {
+	return s.end(ctx, v, token, "signout", "identity.signout")
+}
+
+// Supersede revokes the session a token opened because the browser holding
+// it has just signed in again, possibly as another account: the cookie is
+// about to be replaced, and a session nobody holds a cookie for must not stay
+// valid on the server. Like SignOut, a token that opens nothing is not an
+// error.
+func (s *Service) Supersede(ctx context.Context, v Visit, token string) error {
+	return s.end(ctx, v, token, "replaced", "identity.session_replaced")
+}
+
+// end revokes the session a token opened, for reason, and audits action.
+func (s *Service) end(ctx context.Context, v Visit, token, reason, action string) error {
 	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
-		account, err := revokeSession(ctx, tx, HashToken(token), "signout", s.now())
+		account, err := revokeSession(ctx, tx, HashToken(token), reason, s.now())
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		return s.record(ctx, tx, v, account, "identity.signout")
+		return s.record(ctx, tx, v, account, action)
 	})
 }
 

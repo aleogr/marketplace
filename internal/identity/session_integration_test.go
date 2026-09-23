@@ -3,10 +3,14 @@
 package identity
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -272,5 +276,102 @@ func TestPasswordStillNoticesAChange(t *testing.T) {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A session's clock is the service's, like every check made against it: a
+// database clock that drifts from the process's would make a session idle or
+// expired early or late.
+func TestASessionStartsAtTheServicesClock(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	confirmed(t, s, db, one, "r@example.test")
+	at := time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Microsecond)
+	s.now = func() time.Time { return at }
+	token := signIn(t, s, one, "r@example.test", "correct horse battery staple")
+
+	var created, seen time.Time
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT created_at, last_seen_at FROM session WHERE token_hash = $1`,
+			HashToken(token)).Scan(&created, &seen)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !created.Equal(at) || !seen.Equal(at) {
+		t.Errorf("created_at %v, last_seen_at %v; want both %v", created, seen, at)
+	}
+}
+
+// racing is a Transactor that changes the account's password just before the
+// second transaction opens: what another sign-in's rehash, or a password
+// change, does when it lands between a sign-in's read and its write.
+type racing struct {
+	serving
+	marketplace string
+	calls       int
+}
+
+func (r *racing) InTxFor(ctx context.Context, marketplaceID string, fn func(pgx.Tx) error) error {
+	r.calls++
+	if r.calls == 2 {
+		if err := r.serving.InTxFor(ctx, r.marketplace, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE credential SET secret = '$argon2id$another'`)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	return r.serving.InTxFor(ctx, marketplaceID, fn)
+}
+
+// A correct password whose hash changed while it was being verified is
+// refused, and the refusal leaves a line in the log, without the address.
+func TestAPasswordChangedMidSignInIsRefusedAndLogged(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	confirmed(t, s, db, one, "r@example.test")
+
+	var logged bytes.Buffer
+	raced := NewService(&racing{serving: db, marketplace: one}, NewHasher(cheap, 1), breachedNone, &recording{},
+		slog.New(slog.NewTextHandler(&logged, nil)))
+	_, err := raced.SignIn(t.Context(), visit(one), "r@example.test", "correct horse battery staple")
+	if !errors.Is(err, ErrCredentials) {
+		t.Fatalf("SignIn = %v, want ErrCredentials", err)
+	}
+	if !strings.Contains(logged.String(), "the password changed while it was being verified") {
+		t.Errorf("the refusal left no trace in the log: %q", logged.String())
+	}
+	if strings.Contains(logged.String(), "r@example.test") || strings.Contains(logged.String(), "correct horse") {
+		t.Errorf("the log carries the address or the password: %q", logged.String())
+	}
+}
+
+// A session replaced by a new sign-in in the same browser is revoked with
+// its own reason, and recorded.
+func TestSupersedeRevokesTheSession(t *testing.T) {
+	s, db, one, _, trail := service(t)
+	confirmed(t, s, db, one, "r@example.test")
+	token := signIn(t, s, one, "r@example.test", "correct horse battery staple")
+
+	if err := s.Supersede(t.Context(), visit(one), token); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Authenticate(t.Context(), one, token); !errors.Is(err, ErrSessionInvalid) {
+		t.Fatalf("a superseded session still authenticates: %v", err)
+	}
+	var reason string
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT revoked_reason FROM session WHERE token_hash = $1`,
+			HashToken(token)).Scan(&reason)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "replaced" {
+		t.Errorf("revoked_reason = %q, want replaced", reason)
+	}
+	if !slices.Contains(trail.actions(), "identity.session_replaced") {
+		t.Errorf("the replacement was not audited: %v", trail.actions())
+	}
+	// A token that opens nothing is not an error.
+	if err := s.Supersede(t.Context(), visit(one), token); err != nil {
+		t.Errorf("superseding a revoked session = %v, want nil", err)
 	}
 }
