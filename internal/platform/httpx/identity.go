@@ -19,7 +19,7 @@ import (
 // IdentityLimits are the per-route limits of the identity flows, in the
 // database so they hold across instances (docs/roadmap.md, F13). Each limiter
 // is named, and namespaces its own counters (internal/platform/ratelimit), so
-// the subjects below are just the client or the address.
+// the subjects below are just the client, the address or the account.
 type IdentityLimits struct {
 	SignUp, Resend, ResendAddress, SignIn, SignInAddress, Password ratelimit.Limiter
 }
@@ -70,6 +70,29 @@ func (s Site) identityRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /signin", inMarketplace(limit(id.Limits.SignIn, byIP,
 		limit(id.Limits.SignInAddress, byAddress, http.HandlerFunc(s.signIn)))))
 	mux.Handle("POST /signout", inMarketplace(http.HandlerFunc(s.signOut)))
+	mux.Handle("GET /account/password", inMarketplace(signedIn(http.HandlerFunc(s.passwordForm))))
+	mux.Handle("POST /account/password", inMarketplace(signedIn(
+		limit(id.Limits.Password, byAccount, http.HandlerFunc(s.changePassword)))))
+}
+
+// signedIn serves next only to a signed-in request, and sends anybody else to
+// sign in. It runs before any limit, so a request with no session is not
+// counted against an account it does not have.
+func signedIn(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := SessionFrom(r.Context()); !ok {
+			http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/signin", http.StatusSeeOther)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// byAccount limits by the signed-in account. It is only mounted behind
+// signedIn, so there always is one.
+func byAccount(r *http.Request) string {
+	session, _ := SessionFrom(r.Context())
+	return session.Account.ID
 }
 
 // inMarketplace serves next only on a marketplace's host. Accounts belong to
@@ -283,4 +306,33 @@ func (s Site) signOut(w http.ResponseWriter, r *http.Request) {
 	}
 	clearSession(w, r)
 	http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/", http.StatusSeeOther)
+}
+
+func (s Site) passwordForm(w http.ResponseWriter, r *http.Request) {
+	render(w, r, web.Password(s.page(r, "/account/password"), newForm(), false))
+}
+
+// changePassword answers a wrong current password with one sentence, as a
+// refused sign-in is answered, and a new password the rule refuses with the
+// rule's message. The session that asked stays signed in; every other one of
+// the account ends.
+func (s Site) changePassword(w http.ResponseWriter, r *http.Request) {
+	session, _ := SessionFrom(r.Context())
+	form := newForm()
+	err := s.identity.Service.ChangePassword(r.Context(), visit(r), session,
+		r.PostFormValue("current_password"), r.PostFormValue("new_password"))
+	switch key, args, shown := formError(err); {
+	case errors.Is(err, identity.ErrCredentials):
+		form.Error = "identity.password.wrong_current"
+	case shown:
+		form.Error, form.ErrorArgs = key, args
+	case err != nil:
+		s.identity.Log.ErrorContext(r.Context(), "password change failed", "error", err)
+		http.Error(w, "", http.StatusInternalServerError)
+		return
+	default:
+		render(w, r, web.Password(s.page(r, "/account/password"), newForm(), true))
+		return
+	}
+	renderStatus(w, r, http.StatusUnprocessableEntity, web.Password(s.page(r, "/account/password"), form, false))
 }

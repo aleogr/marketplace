@@ -115,7 +115,8 @@ func (s *Service) checkNew(ctx context.Context, password string) error {
 	}
 	found, err := s.breached.Breached(ctx, normalise(password))
 	if err != nil {
-		// Fail open (spec, D4): a third party being down must not stop sign-up.
+		// Fail open (spec, D4): a third party being down must not stop a
+		// password being set.
 		s.log.WarnContext(ctx, "the breached-password check could not run", "error", err)
 		return nil
 	}
@@ -465,4 +466,74 @@ func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (
 		return nil
 	})
 	return session, err
+}
+
+// ChangePassword replaces the password of a session's account and ends every
+// other session of that account, keeping the one that asked
+// (docs/requirements.md, section 18.1). A wrong current password is
+// ErrCredentials, as at sign-in; the new one follows D4.
+//
+// As in SignIn, argon2 runs in no transaction: the new password is checked
+// first (the breach check is a network call), the current hash is read in one
+// transaction, the current password verified and the new one hashed with none
+// open, and the change written in a second, which first checks that nobody
+// changed the password in between.
+func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, current, next string) error {
+	if len(current) > maxPasswordBytes {
+		// No password that can be set is this long: refused as a wrong one,
+		// before it costs a normalisation, a hash or a transaction.
+		return ErrCredentials
+	}
+	if err := s.checkNew(ctx, next); err != nil {
+		return err
+	}
+	account := session.Account.ID
+	var secret string
+	if err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+		var err error
+		secret, err = passwordOf(ctx, tx, account)
+		return err
+	}); err != nil {
+		return err
+	}
+	ok, _, err := s.hasher.Verify(ctx, current, secret)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		s.log.InfoContext(ctx, "password change refused: the current password is wrong", "account", account)
+		return ErrCredentials
+	}
+	fresh, err := s.hasher.Hash(ctx, next)
+	if err != nil {
+		return err
+	}
+	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+		still, err := passwordStill(ctx, tx, account, secret)
+		if err != nil {
+			return err
+		}
+		if !still {
+			// Changed between the read and now — another change, or a
+			// sign-in's rehash — so what was verified is no longer the
+			// password.
+			s.log.WarnContext(ctx, "password change refused: the password changed while it was being verified",
+				"account", account)
+			return ErrCredentials
+		}
+		if err := setPassword(ctx, tx, v.Marketplace, account, fresh); err != nil {
+			return err
+		}
+		if err := revokeOtherSessions(ctx, tx, account, session.ID, s.now()); err != nil {
+			return err
+		}
+		if err := s.record(ctx, tx, v, account, "identity.password_changed"); err != nil {
+			return err
+		}
+		return mail.Request(ctx, tx, mail.Message{
+			Template: "password-changed", Language: v.Language, To: session.Account.Email,
+			From: v.MarketplaceName, Marketplace: v.Marketplace,
+			Variables: map[string]string{"Name": session.Account.Name},
+		})
+	})
 }

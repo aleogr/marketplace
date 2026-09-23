@@ -301,3 +301,66 @@ func TestSigningInAgainRevokesTheSessionItReplaces(t *testing.T) {
 		t.Errorf("the new session does not authenticate: %v", err)
 	}
 }
+
+// A password change through the real handler and database: a wrong current
+// password is refused with its own sentence, the right one changes it, the
+// browser that changed it stays signed in and the other one is signed out.
+// The limit counts per account: once one account has used its attempts,
+// another account is still served.
+func TestChangingThePasswordThroughThePage(t *testing.T) {
+	pool, marketplace := migrated(t)
+	service := identity.NewService(serving{t, pool}, identity.NewHasher(cheap, 2), breached.Fake{}, unaudited{}, silent())
+	never := ratelimit.Never{}
+	handler := httpx.Sessions(service, silent())(identityHandler(t, service, httpx.IdentityLimits{
+		SignUp: never, Resend: never, ResendAddress: never, SignIn: never, SignInAddress: never,
+		Password: ratelimit.NewDatabase(pool, "password", 2, time.Hour),
+	}))
+	const password = "correct horse battery staple"
+	confirmedAccount(t, pool, service, marketplace, "Leitora", "leitora@example.test", password)
+	confirmedAccount(t, pool, service, marketplace, "Outra", "outra@example.test", password)
+	visit := identity.Visit{Marketplace: marketplace.ID, Language: "pt-BR"}
+	open := func(email string) string {
+		t.Helper()
+		token, err := service.SignIn(t.Context(), visit, email, password)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return token
+	}
+	here, there, other := open("leitora@example.test"), open("leitora@example.test"), open("outra@example.test")
+
+	change := func(token, current, next string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := formRequest(t, "/account/password",
+			url.Values{"current_password": {current}, "new_password": {next}})
+		request.AddCookie(&http.Cookie{Name: "session", Value: token})
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, in(request, marketplace, "203.0.113.9"))
+		return recorder
+	}
+
+	wrong := change(here, "not the password at all", "a brand new passphrase")
+	if wrong.Code != http.StatusUnprocessableEntity || !strings.Contains(wrong.Body.String(), "A senha atual não confere.") {
+		t.Fatalf("wrong current password: status %d, body %s", wrong.Code, wrong.Body.String())
+	}
+	done := change(here, password, "a brand new passphrase")
+	if done.Code != http.StatusOK || !strings.Contains(done.Body.String(), "Sua senha foi alterada.") {
+		t.Fatalf("password change: status %d, body %s", done.Code, done.Body.String())
+	}
+	if got := done.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("the signed-in page's Cache-Control = %q, want no-store", got)
+	}
+	if _, err := service.Authenticate(t.Context(), marketplace.ID, here); err != nil {
+		t.Errorf("the browser that changed the password was signed out: %v", err)
+	}
+	if _, err := service.Authenticate(t.Context(), marketplace.ID, there); !errors.Is(err, identity.ErrSessionInvalid) {
+		t.Errorf("the other browser is still signed in: %v", err)
+	}
+
+	if limited := change(here, "a brand new passphrase", "yet another passphrase"); limited.Code != http.StatusTooManyRequests {
+		t.Errorf("the third attempt of one account = %d, want %d", limited.Code, http.StatusTooManyRequests)
+	}
+	if served := change(other, "not the password at all", "a brand new passphrase"); served.Code != http.StatusUnprocessableEntity {
+		t.Errorf("another account = %d, want %d: the limit is per account", served.Code, http.StatusUnprocessableEntity)
+	}
+}

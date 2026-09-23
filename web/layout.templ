@@ -109,10 +109,10 @@ templ LanguageSwitch(page Page) {
 	</nav>
 }
 
-// AccountNav is who is signed in, where there are accounts: the name and the
-// way out, or the two ways in. The platform's own pages, a marketplace still
-// in preparation and a process with no identity routes have none, and carry
-// none (Page.Accounts).
+// AccountNav is who is signed in, where there are accounts: the name, the way
+// out and the password page, or the two ways in. The platform's own pages, a
+// marketplace still in preparation and a process with no identity routes have
+// none, and carry none (Page.Accounts).
 templ AccountNav(page Page) {
 	<nav class="account" aria-label={ page.T("identity.header.account") }>
 		if page.Account != "" {
@@ -121,6 +121,7 @@ templ AccountNav(page Page) {
 				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 				<button type="submit">{ page.T("identity.signout.submit") }</button>
 			</form>
+			<a href={ templ.SafeURL("/" + page.Language + "/account/password") }>{ page.T("identity.header.password") }</a>
 		} else {
 			<a href={ templ.SafeURL("/" + page.Language + "/signin") }>{ page.T("identity.link.signin") }</a>
 			<a href={ templ.SafeURL("/" + page.Language + "/signup") }>{ page.T("identity.link.signup") }</a>

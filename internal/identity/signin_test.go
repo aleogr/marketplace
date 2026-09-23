@@ -40,3 +40,23 @@ func TestAnOversizedPasswordIsRefusedForNothing(t *testing.T) {
 		t.Fatalf("SignIn(oversized password) = %v, want ErrCredentials", err)
 	}
 }
+
+// A password change applies the same cap to both passwords it is given: an
+// oversized current one is refused as a wrong one, and an oversized new one as
+// too long, before anything is spent on either.
+func TestAnOversizedPasswordChangeIsRefusedForNothing(t *testing.T) {
+	h := NewHasher(cheap, 1)
+	h.slots <- struct{}{} // occupy the only slot: a hash would wait for it
+	s := NewService(untouched{t}, h, breached.Fake{}, nil, quiet)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	huge := strings.Repeat("a", maxPasswordBytes+1)
+	session := Session{ID: "s", Account: Account{ID: "a"}}
+	if err := s.ChangePassword(ctx, Visit{Marketplace: "m"}, session, huge, "a brand new passphrase"); !errors.Is(err, ErrCredentials) {
+		t.Errorf("ChangePassword(oversized current) = %v, want ErrCredentials", err)
+	}
+	if err := s.ChangePassword(ctx, Visit{Marketplace: "m"}, session, "correct horse battery staple", huge); !errors.Is(err, ErrPasswordLong) {
+		t.Errorf("ChangePassword(oversized new) = %v, want ErrPasswordLong", err)
+	}
+}

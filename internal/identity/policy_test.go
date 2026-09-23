@@ -98,3 +98,12 @@ func TestNormaliseEmailRefusesAnAddressLongerThanMailAllows(t *testing.T) {
 		t.Errorf("NormaliseEmail(%d bytes) err = %v, want ErrEmailInvalid", len(longest)+1, err)
 	}
 }
+
+// A password beyond the byte cap is too long before it is normalised: no
+// password that can be set is that long, and NFKC over a huge input is work
+// spent on nothing.
+func TestCheckPasswordRefusesBeyondTheByteCap(t *testing.T) {
+	if err := CheckPassword(strings.Repeat("a", maxPasswordBytes+1)); !errors.Is(err, ErrPasswordLong) {
+		t.Errorf("CheckPassword(beyond the byte cap) = %v, want ErrPasswordLong", err)
+	}
+}
