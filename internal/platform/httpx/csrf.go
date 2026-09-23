@@ -85,17 +85,30 @@ func safeMethod(method string) bool {
 // csrfSecret returns this browser's secret, setting a new one when it has none
 // or when what it sent is not one.
 func csrfSecret(w http.ResponseWriter, r *http.Request) []byte {
-	name := csrfCookie
-	if !isHTTPS(r) {
-		name = csrfCookieInsecure
-	}
-
-	if cookie, err := r.Cookie(name); err == nil {
+	if cookie, err := r.Cookie(csrfCookieName(r)); err == nil {
 		if secret, err := base64.RawURLEncoding.DecodeString(cookie.Value); err == nil && len(secret) == secretBytes {
 			return secret
 		}
 	}
+	return newCSRFSecret(w, r)
+}
 
+// RenewCSRF gives the browser a new secret whatever it held. Sign-in calls it,
+// so a token minted before the session existed — possibly by somebody who
+// planted the secret — does not carry over into it (sign-in CSRF, session
+// fixation).
+func RenewCSRF(w http.ResponseWriter, r *http.Request) { newCSRFSecret(w, r) }
+
+// csrfCookieName is the cookie's name for the scheme the request came in on.
+func csrfCookieName(r *http.Request) string {
+	if isHTTPS(r) {
+		return csrfCookie
+	}
+	return csrfCookieInsecure
+}
+
+// newCSRFSecret sets a new secret in the browser and returns it.
+func newCSRFSecret(w http.ResponseWriter, r *http.Request) []byte {
 	secret := make([]byte, secretBytes)
 	_, _ = rand.Read(secret)
 
@@ -105,7 +118,7 @@ func csrfSecret(w http.ResponseWriter, r *http.Request) []byte {
 	// discard a Secure cookie and nothing could be tested at all.
 	// #nosec G124 -- the flags follow the scheme of the request, see above.
 	http.SetCookie(w, &http.Cookie{
-		Name:     name,
+		Name:     csrfCookieName(r),
 		Value:    base64.RawURLEncoding.EncodeToString(secret),
 		Path:     "/",
 		HttpOnly: true,

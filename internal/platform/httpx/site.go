@@ -34,6 +34,9 @@ type Site struct {
 	// robots.txt and nothing else: the refusal itself is a header on every
 	// response (docs/requirements.md, section 7.1).
 	indexable bool
+	// identity serves sign-up, sign-in and the account's pages. It is nil in
+	// a process with no database, which has no accounts to serve.
+	identity *IdentityRoutes
 }
 
 // NewSite returns the site's routes, ready to be mounted behind the pipeline.
@@ -66,6 +69,7 @@ func (s Site) Handler() http.Handler {
 	if s.mail != nil {
 		mux.HandleFunc("POST "+MailWebhookPrefix+"{provider}", s.mail.Handle)
 	}
+	s.identityRoutes(mux)
 	mux.HandleFunc("GET /{$}", s.home)
 	return mux
 }
@@ -173,6 +177,9 @@ func (s Site) page(r *http.Request, path string) web.Page {
 	if resolution, ok := tenancy.FromContext(r.Context()); ok && resolution.Marketplace != nil {
 		page.Marketplace = resolution.Marketplace.Name
 	}
+	if session, ok := SessionFrom(r.Context()); ok {
+		page.Account = session.Account.Name
+	}
 
 	// One source for every description the page carries, cut once
 	// (docs/requirements.md, section 7.2).
@@ -187,11 +194,16 @@ func (s Site) page(r *http.Request, path string) web.Page {
 // origin is the address this request reached the site at, as another server
 // would have to write it.
 func origin(r *http.Request) string {
-	scheme := "http"
+	return scheme(r) + "://" + r.Host
+}
+
+// scheme is how this request reached the site: over TLS here, or over TLS to
+// the proxy in front of it.
+func scheme(r *http.Request) string {
 	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		scheme = "https"
+		return "https"
 	}
-	return scheme + "://" + r.Host
+	return "http"
 }
 
 // names is each language's name in its own language, which is how a person

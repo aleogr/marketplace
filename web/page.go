@@ -44,6 +44,8 @@ type Page struct {
 	Nonce string
 	// CSRFToken is what a form on this page sends back.
 	CSRFToken string
+	// Account is the signed-in account's name, empty when signed out.
+	Account string
 
 	// printer writes this page's language.
 	printer *message.Printer
@@ -101,4 +103,18 @@ func sortStrings(values []string) {
 			values[j], values[j-1] = values[j-1], values[j]
 		}
 	}
+}
+
+// Form is what a form page shows back: the fields a visitor typed, except the
+// password; the key of the message explaining what went wrong, with its
+// arguments; and the bounds of the password and of the name, which come from
+// internal/identity.
+type Form struct {
+	Name          string
+	Email         string
+	Error         string
+	ErrorArgs     []any
+	MinLength     int
+	MaxLength     int
+	NameMaxLength int
 }

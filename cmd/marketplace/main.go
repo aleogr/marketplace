@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/aleogr/marketplace/internal/identity"
+	"github.com/aleogr/marketplace/internal/identity/breached"
 	"github.com/aleogr/marketplace/internal/platform/audit"
 	"github.com/aleogr/marketplace/internal/platform/config"
 	"github.com/aleogr/marketplace/internal/platform/db"
@@ -98,6 +101,8 @@ func run(ctx context.Context, args []string, lookup config.Lookup, stdout io.Wri
 		return migrate(ctx, cfg, log)
 	case "send-probe":
 		return sendProbe(ctx, cfg, log, args[1:])
+	case "bench-password":
+		return benchPassword(ctx, log)
 	default:
 		return fmt.Errorf(
 			"unknown command %q: the binary serves when given no arguments, and applies migrations with `migrate`",
@@ -142,6 +147,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	defer closeKeeper()
 	log.InfoContext(ctx, "audit keys", "keeper", keeper.Name())
+
+	// One audit log for the whole process: the work below and the identity
+	// flows append to the same chains.
+	trail := audit.NewLog(audit.NewKeys(keeper), log)
 
 	var listenConfig net.ListenConfig
 	listener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf(":%d", cfg.Port))
@@ -215,8 +224,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// has no outbox to move and no lock to take, so it serves pages and
 	// nothing else (docs/design.md, section 2.5).
 	if database != nil {
-		tasks, closeTasks, err := work(ctx, cfg, database, mailer,
-			audit.NewLog(audit.NewKeys(keeper), log), log)
+		tasks, closeTasks, err := work(ctx, cfg, database, mailer, trail, log)
 		if err != nil {
 			return err
 		}
@@ -224,7 +232,42 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		site = site.WithTasks(tasks)
 	}
 
+	// Accounts, sign-up and, later, sessions. They need the database, so a
+	// process running without one serves no identity pages at all.
+	var identityService *identity.Service
+	if database != nil {
+		var checker breached.Checker = breached.Fake{Known: breached.Common}
+		if cfg.ProvidersMode == config.ProvidersReal {
+			checker = breached.NewPwned(&http.Client{Timeout: 3 * time.Second}, breached.RangeAPI)
+		}
+		identityService = identity.NewService(database,
+			identity.NewHasher(identity.Current, hashSlots(identity.Current)), checker, trail, log)
+		site = site.WithIdentity(httpx.IdentityRoutes{
+			Service: identityService,
+			Pages:   pages,
+			Log:     log,
+			// Each limiter is named, and its counters are its own
+			// (internal/platform/ratelimit).
+			Limits: httpx.IdentityLimits{
+				SignUp:        ratelimit.NewDatabase(database, "signup", 10, time.Hour),
+				Resend:        ratelimit.NewDatabase(database, "resend", 10, time.Hour),
+				ResendAddress: ratelimit.NewDatabase(database, "resend-address", 3, time.Hour),
+				SignIn:        ratelimit.NewDatabase(database, "signin", 30, 10*time.Minute),
+				SignInAddress: ratelimit.NewDatabase(database, "signin-address", 10, 15*time.Minute),
+				Password:      ratelimit.NewDatabase(database, "password", 10, time.Hour),
+			},
+		})
+	}
+
 	handler := site.Handler()
+
+	// The session is read after the marketplace and the language are known,
+	// because a session belongs to one marketplace and is looked up in its
+	// transaction (docs/design.md, section 2.3). The resolvers below wrap
+	// this, so a request meets them first.
+	if identityService != nil {
+		handler = httpx.Sessions(identityService, log)(handler)
+	}
 
 	// Language comes next, and it redirects: the language is part of the URL,
 	// so a page is never served at an address that does not say which language
@@ -273,6 +316,14 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	log.InfoContext(context.WithoutCancel(ctx), "server stopped")
 	return nil
+}
+
+// hashSlots is how many passwords are hashed at once: as many as fit in a
+// quarter of the instance's 512 MiB at the memory one hash takes, and never
+// fewer than two (spec, D5). The rest of the instance is the process itself
+// and the requests it is serving.
+func hashSlots(params identity.Params) int {
+	return max(2, 128*1024/int(params.Memory))
 }
 
 // protection returns the keeper that wraps every person's key, and the

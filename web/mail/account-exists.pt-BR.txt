@@ -1,0 +1,8 @@
+Subject: Você já tem uma conta em {{.From}}
+Olá, {{.Name}}.
+
+Alguém tentou criar uma conta em {{.From}} com este e-mail, que já tem uma. Para entrar:
+
+{{.SignIn}}
+
+Se não foi você, pode ignorar esta mensagem: nada foi alterado.

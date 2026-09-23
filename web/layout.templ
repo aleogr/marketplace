@@ -70,6 +70,9 @@ templ Layout(page Page, title string) {
 			<header>
 				<strong>{ page.Title() }</strong>
 				@LanguageSwitch(page)
+				if page.Marketplace != "" {
+					@AccountNav(page)
+				}
 			</header>
 			<main>
 				{ children... }
@@ -102,6 +105,24 @@ templ LanguageSwitch(page Page) {
 					}
 				>{ page.Name(tag) }</button>
 			</form>
+		}
+	</nav>
+}
+
+// AccountNav is who is signed in, on a marketplace's pages: the name and the
+// way out, or the two ways in. The platform's own pages belong to no
+// marketplace and have no accounts, so they carry none.
+templ AccountNav(page Page) {
+	<nav class="account" aria-label={ page.T("identity.header.account") }>
+		if page.Account != "" {
+			<span>{ page.T("identity.header.signed_in_as", page.Account) }</span>
+			<form method="post" action={ templ.SafeURL("/" + page.Language + "/signout") }>
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<button type="submit">{ page.T("identity.signout.submit") }</button>
+			</form>
+		} else {
+			<a href={ templ.SafeURL("/" + page.Language + "/signin") }>{ page.T("identity.link.signin") }</a>
+			<a href={ templ.SafeURL("/" + page.Language + "/signup") }>{ page.T("identity.link.signup") }</a>
 		}
 	</nav>
 }

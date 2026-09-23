@@ -20,6 +20,16 @@ func templates(t *testing.T) *mail.Templates {
 	return loaded
 }
 
+// sampleVariables fills every variable any template asks for. The templates
+// are parsed with missingkey=error, so a template that asks for a variable
+// missing here fails this test: add the variable here when a template gains
+// one.
+var sampleVariables = map[string]string{
+	"Name":   "Reader",
+	"Link":   "https://marketplace1.example/en-US/verify?token=sample",
+	"SignIn": "https://marketplace1.example/en-US/signin",
+}
+
 // The definition of done: every user-facing text exists in both languages
 // (CLAUDE.md). A template is user-facing text, and a reader who chose pt-BR
 // and receives nothing is the failure this prevents.
@@ -34,7 +44,7 @@ func TestEveryTemplateExistsInEveryLanguageThePlatformSpeaks(t *testing.T) {
 		for _, name := range loaded.Names() {
 			rendered, err := loaded.Render(mail.Message{
 				Template: name, Language: language, To: "reader@example.test",
-				From: "Marketplace 1",
+				From: "Marketplace 1", Variables: sampleVariables,
 			}, i18n.Default)
 			if err != nil {
 				t.Fatalf("the template %q does not render in %s: %v", name, language, err)
