@@ -1,0 +1,8 @@
+Subject: You already have an account at {{.From}}
+Hello, {{.Name}}.
+
+Someone tried to create an account at {{.From}} with this address, which already has one. To sign in:
+
+{{.SignIn}}
+
+If it was not you, you can ignore this message: nothing was changed.

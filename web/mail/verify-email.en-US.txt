@@ -1,0 +1,8 @@
+Subject: Confirm your e-mail address at {{.From}}
+Hello, {{.Name}}.
+
+Confirm your e-mail address to finish creating your account at {{.From}}:
+
+{{.Link}}
+
+The link works once and expires in 24 hours. If you did not create an account, ignore this message.
