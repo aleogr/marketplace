@@ -9,6 +9,12 @@ import (
 // LinkBase exposes linkBase to the external tests.
 var LinkBase = linkBase
 
+// SetSession exposes setSession, and VisitOf visit, to the external tests.
+var (
+	SetSession = setSession
+	VisitOf    = visit
+)
+
 // WithSession puts a session in a context, as the middleware does after the
 // service authenticated it.
 func WithSession(ctx context.Context, s identity.Session) context.Context {

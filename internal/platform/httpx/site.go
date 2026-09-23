@@ -177,6 +177,7 @@ func (s Site) page(r *http.Request, path string) web.Page {
 	if resolution, ok := tenancy.FromContext(r.Context()); ok && resolution.Marketplace != nil {
 		page.Marketplace = resolution.Marketplace.Name
 	}
+	page.Accounts = s.identity != nil && page.Marketplace != ""
 	if session, ok := SessionFrom(r.Context()); ok {
 		page.Account = session.Account.Name
 	}

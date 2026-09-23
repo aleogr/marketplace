@@ -44,6 +44,10 @@ type Page struct {
 	Nonce string
 	// CSRFToken is what a form on this page sends back.
 	CSRFToken string
+	// Accounts is true where a visitor can sign in: a serving marketplace's
+	// pages, in a process that serves the identity routes. The header's
+	// account navigation shows only then.
+	Accounts bool
 	// Account is the signed-in account's name, empty when signed out.
 	Account string
 
