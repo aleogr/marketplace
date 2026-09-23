@@ -59,12 +59,10 @@ resource "google_cloud_run_v2_service" "marketplace" {
     timeout = "60s"
 
     # The second generation environment, pinned rather than left to Cloud
-    # Run's choice. Password hashing (argon2id, 64 MiB per hash) is memory
-    # bound, and on 2026-09-23 the service verified a password in about 400 ms
-    # where the migration job, which always runs on this environment, took
-    # 152 ms for the same parameters (docs/infrastructure.md, "Measure argon2id
-    # on the service's CPU"). Pinning it also makes the job's benchmark measure
-    # the service's own environment.
+    # Run's choice, so that the service runs where the migration job always
+    # runs and the job's argon2id benchmark measures the service's own
+    # environment (docs/infrastructure.md, "Measure argon2id on the service's
+    # CPU", which also records what the service measured afterwards).
     execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
 
     scaling {
