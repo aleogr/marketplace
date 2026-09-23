@@ -19,9 +19,28 @@ import (
 // VerificationLifetime is how long a confirmation link works (spec).
 const VerificationLifetime = 24 * time.Hour
 
-// ErrTokenInvalid is a token that is unknown, spent or expired. One error for
-// all three: which one it was is nobody's business but the log's.
-var ErrTokenInvalid = errors.New("identity: token invalid")
+// Session lengths (spec, D3): the owner's choice of 2026-09-23. Constants now,
+// parameters in F17. last_seen_at is written at most once every touchEvery, so
+// a click does not cost a write.
+const (
+	SessionIdle     = 30 * 24 * time.Hour
+	SessionLifetime = 90 * 24 * time.Hour
+	touchEvery      = time.Hour
+)
+
+var (
+	// ErrTokenInvalid is a token that is unknown, spent or expired. One error
+	// for all three: which one it was is nobody's business but the log's.
+	ErrTokenInvalid = errors.New("identity: token invalid")
+	// ErrCredentials is a wrong password and an unknown address alike (D7).
+	ErrCredentials = errors.New("identity: credentials refused")
+	// ErrUnverified is a right password on an unconfirmed account: the one
+	// case where the answer says more than "refused", because only the owner
+	// of the password can reach it.
+	ErrUnverified = errors.New("identity: address not confirmed")
+	// ErrSessionInvalid is a session that is unknown, revoked, idle or expired.
+	ErrSessionInvalid = errors.New("identity: session invalid")
+)
 
 // Transactor opens a transaction for one marketplace (db.Pool.InTxFor).
 type Transactor interface {
@@ -208,4 +227,179 @@ func (s *Service) Resend(ctx context.Context, v Visit, email string) error {
 			Variables: map[string]string{"Name": account.Name, "Link": v.link("/verify", url.Values{"token": {token}})},
 		})
 	})
+}
+
+// Session is a signed-in request's account.
+type Session struct {
+	ID      string
+	Account Account
+}
+
+// refusal audits an attempt against an account by somebody not known to be
+// its owner. The platform is the actor and the account only the subject, not
+// the person the record is about: the address the attempt came from is then
+// sealed under the platform's key, so the owner's erasure request cannot
+// erase the evidence about somebody else (internal/platform/audit).
+func (s *Service) refusal(ctx context.Context, tx pgx.Tx, v Visit, account, action string) error {
+	after, err := json.Marshal(map[string]string{"user_agent": v.UserAgent})
+	if err != nil {
+		return err
+	}
+	return s.audit.Append(ctx, tx, audit.Entry{
+		Marketplace: v.Marketplace,
+		Actor:       audit.Actor{Kind: audit.System},
+		Action:      action,
+		Subject:     audit.Subject{Kind: "account", ID: account},
+		From:        v.IP,
+		After:       after,
+	})
+}
+
+// credentials reads an account and its password hash, or reports found false
+// for an address with no account in this marketplace.
+func (s *Service) credentials(ctx context.Context, marketplace, normalised string) (account Account, secret string, found bool, err error) {
+	err = s.db.InTxFor(ctx, marketplace, func(tx pgx.Tx) error {
+		a, err := accountByEmail(ctx, tx, normalised)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		account, found = a, true
+		secret, err = passwordOf(ctx, tx, a.ID)
+		return err
+	})
+	return account, secret, found, err
+}
+
+// SignIn checks a password and opens a new session, returning its token. A
+// session is never reused: each sign-in opens its own.
+//
+// Three steps, and argon2 runs in none of the transactions: the account is
+// read in one, the password verified with none open, and the session written
+// in a second, which first checks that the password it verified is still the
+// account's (spec, D5).
+func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (string, error) {
+	if len(password) > maxPasswordBytes {
+		// No password that can be set is this long, so it is refused before
+		// it costs a normalisation, a hash or a transaction. What that answer
+		// takes tells nobody anything about the address.
+		s.log.InfoContext(ctx, "sign-in with a password beyond the byte cap")
+		return "", ErrCredentials
+	}
+	normalised, err := NormaliseEmail(email)
+	if err != nil {
+		s.hasher.Waste(ctx, password)
+		return "", ErrCredentials
+	}
+	account, secret, found, err := s.credentials(ctx, v.Marketplace, normalised)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		// The same work as a wrong password, so the two take as long (D7).
+		s.hasher.Waste(ctx, password)
+		s.log.InfoContext(ctx, "sign-in for an unknown address")
+		return "", ErrCredentials
+	}
+
+	ok, stale, err := s.hasher.Verify(ctx, password, secret)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		if err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+			return s.refusal(ctx, tx, v, account.ID, "identity.signin_failed")
+		}); err != nil {
+			return "", err
+		}
+		return "", ErrCredentials
+	}
+	if account.VerifiedAt == nil {
+		return "", ErrUnverified
+	}
+
+	// A hash made with other parameters is made again now, while the password
+	// is at hand (spec, D5).
+	var fresh string
+	if stale {
+		if fresh, err = s.hasher.Hash(ctx, password); err != nil {
+			return "", err
+		}
+	}
+	token, hash, err := NewToken()
+	if err != nil {
+		return "", err
+	}
+	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+		still, err := passwordStill(ctx, tx, account.ID, secret)
+		if err != nil {
+			return err
+		}
+		if !still {
+			// Changed between the read and now: what was verified is no
+			// longer the password.
+			return ErrCredentials
+		}
+		if fresh != "" {
+			if err := setPassword(ctx, tx, v.Marketplace, account.ID, fresh); err != nil {
+				return err
+			}
+		}
+		if err := insertSession(ctx, tx, v.Marketplace, account.ID, hash, v.IP, v.UserAgent); err != nil {
+			return err
+		}
+		return s.record(ctx, tx, v, account.ID, "identity.signin")
+	})
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// SignOut revokes the session a token opened. A token that opens no live
+// session is not an error: there is nothing left to end.
+func (s *Service) SignOut(ctx context.Context, v Visit, token string) error {
+	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+		account, err := revokeSession(ctx, tx, HashToken(token), "signout", s.now())
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return s.record(ctx, tx, v, account, "identity.signout")
+	})
+}
+
+// Authenticate returns the session a token belongs to in marketplace, or
+// ErrSessionInvalid for one that is unknown, revoked, idle or expired.
+func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (Session, error) {
+	var session Session
+	err := s.db.InTxFor(ctx, marketplace, func(tx pgx.Tx) error {
+		now := s.now()
+		row, err := liveSession(ctx, tx, HashToken(token))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrSessionInvalid
+		}
+		if err != nil {
+			return err
+		}
+		if now.Sub(row.seen) > SessionIdle || now.Sub(row.created) > SessionLifetime {
+			return ErrSessionInvalid
+		}
+		if now.Sub(row.seen) > touchEvery {
+			if err := touchSession(ctx, tx, row.id, now); err != nil {
+				return err
+			}
+		}
+		account, err := accountByID(ctx, tx, row.account)
+		if err != nil {
+			return err
+		}
+		session = Session{ID: row.id, Account: account}
+		return nil
+	})
+	return session, err
 }

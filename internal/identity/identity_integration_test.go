@@ -5,8 +5,6 @@ package identity
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -16,8 +14,6 @@ import (
 	"github.com/aleogr/marketplace/internal/identity/breached"
 	"github.com/aleogr/marketplace/internal/platform/audit"
 )
-
-var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 // recording is an Auditor that remembers the entries it was given.
 type recording struct{ entries []audit.Entry }

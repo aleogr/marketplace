@@ -77,3 +77,61 @@ func consumeVerification(ctx context.Context, tx pgx.Tx, hash []byte, now time.T
 		`UPDATE account SET verified_at = coalesce(verified_at, $2) WHERE id = $1`, account, now)
 	return account, err
 }
+
+func accountByID(ctx context.Context, tx pgx.Tx, id string) (Account, error) {
+	return scanAccount(tx.QueryRow(ctx, `SELECT `+accountColumns+` FROM account WHERE id = $1`, id))
+}
+
+func passwordOf(ctx context.Context, tx pgx.Tx, account string) (string, error) {
+	var secret string
+	err := tx.QueryRow(ctx,
+		`SELECT secret FROM credential WHERE account_id = $1 AND kind = 'password'`, account).Scan(&secret)
+	return secret, err
+}
+
+// passwordStill locks an account's password and reports whether it is still
+// the one a flow verified outside the transaction. A flow that hashed with no
+// transaction open writes only if nobody changed the password meanwhile.
+func passwordStill(ctx context.Context, tx pgx.Tx, account, verified string) (bool, error) {
+	var secret string
+	err := tx.QueryRow(ctx,
+		`SELECT secret FROM credential WHERE account_id = $1 AND kind = 'password' FOR UPDATE`,
+		account).Scan(&secret)
+	if err != nil {
+		return false, err
+	}
+	return secret == verified, nil
+}
+
+func insertSession(ctx context.Context, tx pgx.Tx, marketplace, account string, hash []byte, ip, agent string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO session (account_id, marketplace_id, token_hash, ip, user_agent)
+		VALUES ($1, $2, $3, $4, $5)`, account, marketplace, hash, ip, agent)
+	return err
+}
+
+type sessionRow struct {
+	id, account   string
+	created, seen time.Time
+}
+
+func liveSession(ctx context.Context, tx pgx.Tx, hash []byte) (sessionRow, error) {
+	var r sessionRow
+	err := tx.QueryRow(ctx, `
+		SELECT id::text, account_id::text, created_at, last_seen_at FROM session
+		 WHERE token_hash = $1 AND revoked_at IS NULL`, hash).Scan(&r.id, &r.account, &r.created, &r.seen)
+	return r, err
+}
+
+func touchSession(ctx context.Context, tx pgx.Tx, id string, now time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE session SET last_seen_at = $2 WHERE id = $1`, id, now)
+	return err
+}
+
+func revokeSession(ctx context.Context, tx pgx.Tx, hash []byte, reason string, now time.Time) (string, error) {
+	var account string
+	err := tx.QueryRow(ctx, `
+		UPDATE session SET revoked_at = $3, revoked_reason = $2
+		 WHERE token_hash = $1 AND revoked_at IS NULL RETURNING account_id::text`, hash, reason, now).Scan(&account)
+	return account, err
+}

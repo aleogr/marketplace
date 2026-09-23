@@ -25,6 +25,25 @@ func TestCheckPasswordCountsCharactersNotBytes(t *testing.T) {
 	}
 }
 
+// The byte cap sign-in applies before normalising must never refuse a password
+// that could have been set: one of MaxPasswordLength characters, typed in the
+// most decomposed form that NFKC composes back.
+func TestTheByteCapAdmitsEveryPasswordThatCanBeSet(t *testing.T) {
+	for name, one := range map[string]string{
+		"four bytes":         "\U0001F600",               // an emoji, one code point of four bytes
+		"hangul jamo":        "\u1100\u1161\u11a8",       // three jamo composing to one syllable
+		"stacked diacritics": "\u03b1\u0313\u0300\u0345", // four code points composing to U+1F82
+	} {
+		password := strings.Repeat(one, MaxPasswordLength)
+		if err := CheckPassword(password); err != nil {
+			t.Errorf("%s: CheckPassword = %v, want nil", name, err)
+		}
+		if len(password) > maxPasswordBytes {
+			t.Errorf("%s: %d bytes, beyond the cap of %d", name, len(password), maxPasswordBytes)
+		}
+	}
+}
+
 func TestNormaliseEmail(t *testing.T) {
 	good := []struct{ in, want string }{
 		{"\tReader@Example.Test \n", "reader@example.test"}, // trimmed, then lower-cased

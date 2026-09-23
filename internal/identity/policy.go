@@ -22,6 +22,14 @@ const (
 	MaxPasswordLength = 128
 )
 
+// maxPasswordBytes is the longest password, in bytes as typed, that sign-in
+// looks at: anything longer is refused before it is normalised or hashed, so a
+// huge input costs nothing. It admits every password that can be set. A code
+// point is at most four bytes, and NFKC composes at most four code points into
+// one (U+1F82 is four), so no password within MaxPasswordLength after
+// normalisation is longer than this before it.
+const maxPasswordBytes = 16 * MaxPasswordLength
+
 // MaxNameLength bounds the name a person gives, in Unicode code points after
 // trimming. The name is stored and written into mail sent to an address the
 // sender chose, so it is bounded and holds only visible text; the page reads

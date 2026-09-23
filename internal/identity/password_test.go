@@ -2,9 +2,11 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // cheap keeps the unit tests fast; the real parameters are measured by the
@@ -44,6 +46,25 @@ func TestAHashWithOtherParametersIsStale(t *testing.T) {
 	ok, stale, err := current.Verify(context.Background(), "passphrase long enough", encoded)
 	if !ok || !stale || err != nil {
 		t.Fatalf("Verify = %v, %v, %v; want true, true, nil", ok, stale, err)
+	}
+}
+
+// Every parameter a hash records is one a change of Current must reach, not
+// only the memory.
+func TestAHashWithAnyOtherParameterIsStale(t *testing.T) {
+	for name, other := range map[string]Params{
+		"time":    {Memory: 64, Time: 2, Threads: 1, KeyLen: 32, SaltLen: 16},
+		"threads": {Memory: 64, Time: 1, Threads: 2, KeyLen: 32, SaltLen: 16},
+		"key":     {Memory: 64, Time: 1, Threads: 1, KeyLen: 16, SaltLen: 16},
+	} {
+		encoded, err := NewHasher(other, 1).Hash(context.Background(), "passphrase long enough")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ok, stale, err := NewHasher(cheap, 1).Verify(context.Background(), "passphrase long enough", encoded)
+		if !ok || !stale || err != nil {
+			t.Errorf("%s differs: Verify = %v, %v, %v; want true, true, nil", name, ok, stale, err)
+		}
 	}
 }
 
@@ -97,5 +118,42 @@ func TestCurrentIsNoWeakerThanTheFloor(t *testing.T) {
 	if uint64(Current.Memory)*uint64(Current.Time) < uint64(Floor.Memory)*uint64(Floor.Time) ||
 		Current.Threads < Floor.Threads || Current.KeyLen < Floor.KeyLen || Current.SaltLen < Floor.SaltLen {
 		t.Fatalf("Current = %+v is weaker than Floor = %+v", Current, Floor)
+	}
+}
+
+func TestVerifyingWaitsForASlotAndHonoursTheContext(t *testing.T) {
+	h := NewHasher(cheap, 1)
+	encoded, err := h.Hash(context.Background(), "any password at all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.slots <- struct{}{} // occupy the only slot
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if ok, _, err := h.Verify(ctx, "any password at all", encoded); ok || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Verify with a cancelled context = %v, %v; want false, context.Canceled", ok, err)
+	}
+}
+
+func TestWasteSpendsASlotAndGivesItBack(t *testing.T) {
+	h := NewHasher(cheap, 1)
+	h.Waste(context.Background(), "any password at all")
+	if len(h.slots) != 0 {
+		t.Fatal("Waste kept its slot")
+	}
+
+	// And it gives up with its context, like a verification.
+	h.slots <- struct{}{} // occupy the only slot
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan struct{})
+	go func() {
+		h.Waste(ctx, "any password at all")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Waste did not give up when its context was cancelled while waiting")
 	}
 }
