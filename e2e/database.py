@@ -76,20 +76,27 @@ def provision():
 
     name = "e2e_" + secrets.token_hex(6)
     password = secrets.token_hex(16)
-    deadline = time.monotonic() + 30
-    while True:
-        try:
-            with psycopg.connect(server, autocommit=True) as conn:
-                conn.execute(f'CREATE DATABASE "{name}"')
-                conn.execute(
-                    f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{APP_ROLE}') "
-                    f"THEN CREATE ROLE {APP_ROLE} LOGIN; END IF; END $$")
-                conn.execute(f"ALTER ROLE {APP_ROLE} PASSWORD '{password}'")
-            break
-        except psycopg.OperationalError:
-            if time.monotonic() > deadline:
-                raise
-            time.sleep(0.5)
+    try:
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                with psycopg.connect(server, autocommit=True) as conn:
+                    conn.execute(f'CREATE DATABASE "{name}"')
+                    conn.execute(
+                        f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{APP_ROLE}') "
+                        f"THEN CREATE ROLE {APP_ROLE} LOGIN; END IF; END $$")
+                    conn.execute(f"ALTER ROLE {APP_ROLE} PASSWORD '{password}'")
+                break
+            except psycopg.OperationalError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.5)
+    except Exception:
+        # A cluster started for this call and never handed back is a process
+        # and a data directory nothing else will ever stop or remove.
+        if stop_cluster is not None:
+            stop_cluster()
+        raise
 
     database = Database(
         name=name,

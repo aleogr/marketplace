@@ -224,16 +224,21 @@ def database(binary: Path):
     from database import APP_ROLE, provision
 
     db, remove = provision()
-    migrate = subprocess.run(
-        [str(binary), "migrate"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
-        env={"PATH": os.environ.get("PATH", ""), "PROVIDERS_MODE": "fake",
-             "DATABASE_URL": db.owner_url, "DATABASE_NAME": db.name,
-             "DATABASE_APP_USER": APP_ROLE, "SEED_MARKETPLACES": SEED,
-             "AUDIT_LOCAL_KEY": AUDIT_LOCAL_KEY},
-    )
-    assert migrate.returncode == 0, migrate.stdout + migrate.stderr
-    yield db
-    remove()
+    try:
+        migrate = subprocess.run(
+            [str(binary), "migrate"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
+            env={"PATH": os.environ.get("PATH", ""), "PROVIDERS_MODE": "fake",
+                 "DATABASE_URL": db.owner_url, "DATABASE_NAME": db.name,
+                 "DATABASE_APP_USER": APP_ROLE, "SEED_MARKETPLACES": SEED,
+                 "AUDIT_LOCAL_KEY": AUDIT_LOCAL_KEY},
+        )
+        assert migrate.returncode == 0, migrate.stdout + migrate.stderr
+        yield db
+    finally:
+        # A migration that failed still leaves the database provision()
+        # created (and, without TEST_DATABASE_URL, the cluster it started);
+        # nothing else runs remove() for it.
+        remove()
 
 
 @dataclass
