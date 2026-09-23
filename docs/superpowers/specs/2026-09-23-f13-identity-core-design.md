@@ -1,8 +1,7 @@
 # F13 — Identity core: design
 
 **Date:** 2026-09-23
-**Status:** implemented on 2026-09-23, in aleogr/marketplace #70, #72, #73 and the fourth pull
-request
+**Status:** implemented on 2026-09-23, in aleogr/marketplace #70, #72, #73 and #75
 **Delivers:** roadmap F13 (`docs/roadmap.md`), against `docs/requirements.md` §4, §18.1 and §19,
 and `docs/design.md` §2 and §4.
 
