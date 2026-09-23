@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,20 @@ const (
 	SessionLifetime = 90 * 24 * time.Hour
 	touchEvery      = time.Hour
 )
+
+// RevokedKept is how long a revoked session's row survives the sweep: long
+// enough to answer a sessions screen or a support question about a sign-out
+// that just happened, short because the row keeps ip and user_agent in clear
+// (owner's decision of 2026-09-23; LGPD's necessity principle,
+// docs/requirements.md §18.3). The audit log already keeps the sealed
+// identity.signin/identity.signout records, which are the access record; the
+// session row is only needed while it can still be used.
+const RevokedKept = 7 * 24 * time.Hour
+
+// sweepEvery bounds how often SignIn triggers the session sweep: at most
+// once an hour per process, so an active service does not run it on every
+// sign-in.
+const sweepEvery = time.Hour
 
 var (
 	// ErrTokenInvalid is a token that is unknown, spent or expired. One error
@@ -82,6 +97,9 @@ type Service struct {
 	audit    Auditor
 	log      *slog.Logger
 	now      func() time.Time
+
+	sweepMu   sync.Mutex
+	lastSweep time.Time // process-local; guarded by sweepMu
 }
 
 // NewService returns the flows.
@@ -359,7 +377,34 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 	if err != nil {
 		return "", err
 	}
+	s.sweep(ctx, v.Marketplace)
 	return token, nil
+}
+
+// sweep removes session rows that can never authenticate again (Task 12b),
+// at most once an hour per process: an in-memory timestamp, guarded by a
+// mutex against concurrent sign-ins, decides whether this call is due. It
+// runs in its own transaction, opened only after the sign-in's has
+// committed, so a sweep failure can never roll the sign-in back — the person
+// already has their session — and is only logged. Row-level security scopes
+// the sweep to marketplace, the one that just signed in.
+func (s *Service) sweep(ctx context.Context, marketplace string) {
+	now := s.now()
+	s.sweepMu.Lock()
+	due := now.Sub(s.lastSweep) >= sweepEvery
+	if due {
+		s.lastSweep = now
+	}
+	s.sweepMu.Unlock()
+	if !due {
+		return
+	}
+	if err := s.db.InTxFor(ctx, marketplace, func(tx pgx.Tx) error {
+		_, err := sweepSessions(ctx, tx, now)
+		return err
+	}); err != nil {
+		s.log.WarnContext(ctx, "session sweep failed", "error", err)
+	}
 }
 
 // SignOut revokes the session a token opened. A token that opens no live

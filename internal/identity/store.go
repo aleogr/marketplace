@@ -137,3 +137,19 @@ func revokeSession(ctx context.Context, tx pgx.Tx, hash []byte, reason string, n
 		 WHERE token_hash = $1 AND revoked_at IS NULL RETURNING account_id::text`, hash, reason, now).Scan(&account)
 	return account, err
 }
+
+// sweepSessions deletes the session rows that can never authenticate again
+// (Task 12b): created more than SessionLifetime ago, unseen for more than
+// SessionIdle, or revoked more than RevokedKept ago. now is the caller's
+// clock, not the database's, like every other check made against a session.
+// Row-level security scopes the DELETE to one marketplace.
+func sweepSessions(ctx context.Context, tx pgx.Tx, now time.Time) (int64, error) {
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM session
+		 WHERE created_at < $1 OR last_seen_at < $2 OR revoked_at < $3`,
+		now.Add(-SessionLifetime), now.Add(-SessionIdle), now.Add(-RevokedKept))
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}

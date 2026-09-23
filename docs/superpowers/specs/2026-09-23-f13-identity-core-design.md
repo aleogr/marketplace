@@ -130,6 +130,16 @@ looks up the hash in a transaction for that marketplace, and refuses a session t
 been unused for 30 days, or is older than 90. `last_seen_at` is written at most once an hour, so a
 click does not cost a write. The signed-in account is in the request context.
 
+**The retention sweep** (owner's decision, 2026-09-23) removes a session row once it can never
+authenticate again: created more than 90 days ago, unseen for more than 30, or revoked more than 7
+days ago (`RevokedKept`, long enough for a sessions screen or a support question about a sign-out
+that just happened). The row is deleted rather than only marked, because it keeps `ip` and
+`user_agent` in clear (LGPD's necessity principle) and the audit log already keeps the sealed
+`identity.signin`/`identity.signout` records as the access record. `SignIn` triggers it after the
+new session is written, at most once an hour per process (an in-memory timestamp on `Service`), in
+its own transaction so a sweep failure never rolls the sign-in back; it runs as the application role
+for the signing-in marketplace, so row-level security scopes it there.
+
 **Sign-out** (`POST /signout`): revokes the session in the database and clears the cookie. Audited
 as `identity.signout`.
 
