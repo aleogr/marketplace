@@ -972,14 +972,12 @@ deployment that runs on that CPU besides the service itself is the migration
 job: 1 vCPU, 512 MiB, the same CPU and memory limits as the service
 (`infra/terraform/migrate_job.tf`, `infra/terraform/cloud_run.tf`).
 
-Cloud Run jobs always run on the second generation execution environment. The
-service did not pin one at first, and the cross-check below showed why that
-matters: argon2id is memory bound, and the service hashed about 2.6 times
-slower than the job. Since 2026-09-23 the service pins
-`EXECUTION_ENVIRONMENT_GEN2` (`infra/terraform/cloud_run.tf`), so the job and
-the service run on the same environment and the job's figure is the service's
-figure. It is still cross-checked against a real sign-in in the service's
-request log whenever the parameters change.
+Cloud Run jobs always run on the second generation execution environment.
+Since 2026-09-23 the service pins it too (`EXECUTION_ENVIRONMENT_GEN2`,
+`infra/terraform/cloud_run.tf`), so the job and the service run on the same
+environment. The job's figure is still a best case: nine hashes back to back in
+a process doing nothing else. What a real sign-in costs is read from the
+service's request log whenever the parameters change (below).
 
 The benchmark is therefore that job, executed once with `bench-password`
 instead of `migrate` — the same pattern as the delivery probe above: the
@@ -1029,23 +1027,34 @@ candidate on the list, so it is the list's ceiling, not the budget, that bounded
 the choice, and 152 of 250 ms leaves headroom.
 
 The cross-check, read on 2026-09-23 from the service's request log with these
-parameters deployed and the service on its default environment: a sign-in for
-an unknown address, whose only real work is one argon2id verification against
-the dummy hash, took 411 ms, and a successful sign-in 494 ms, against the
-job's 152 ms. The two disagreed, and the cause was the environment, not the
-parameters: the service was pinned to the second generation environment, as
-the job runs (above). After that change deploys, the same query is read again:
+parameters deployed. A `401` on `/signin` for an unknown address is the
+cleanest reading: one argon2id verification against the dummy hash, plus the
+two rate-limit counters and the account lookup, which cost a few milliseconds
+together.
+
+| request | latency |
+|---|---|
+| `401`, instance warm (eight requests within two minutes, second generation) | 230–280 ms |
+| `401`, first request after several minutes without traffic (both environments) | about 410 ms |
+| `303`, a successful sign-in, first request after a pause | 490–590 ms |
+| `200`, an accepted sign-up (breach check, hash, account, audit key) | 930 ms |
+
+So a warm instance verifies a password in roughly 200–250 ms, against the
+job's 152 ms, and the first request after a pause pays about 150 ms more; the
+data does not separate a cold instance from CPU being withheld between requests
+(`cpu_idle`), and there was no warm reading on the first generation environment
+to compare with, so the pin is recorded as an alignment with the job, not as the
+cause of a difference. A sign-in of a quarter to half a second is acceptable,
+and under a burst, when hashes follow one another on a warm instance, the
+capacity stays close to what the job measured; `identity.Current` stays as it
+is. The query, to read it again after a change:
 
 ```
 gcloud logging read \
   'resource.type=cloud_run_revision AND resource.labels.service_name=marketplace AND httpRequest.requestMethod="POST" AND httpRequest.requestUrl=~"/(signin|signup)$"' \
-  --project="$PROJECT" --limit=10 --freshness=2h \
+  --project="$PROJECT" --limit=20 --freshness=2h \
   --format='value(timestamp, httpRequest.requestUrl, httpRequest.status, httpRequest.latency)'
 ```
-
-A `401` on `/signin` for an unknown address is the cleanest reading: it is one
-verification and nothing else of weight. If it stays well above the job's
-152 ms on the second generation environment, `identity.Current` is revisited.
 
 ## The key that protects the audit log
 
