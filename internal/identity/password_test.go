@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -48,8 +49,14 @@ func TestAHashWithOtherParametersIsStale(t *testing.T) {
 
 func TestNormalisedFormsVerifyAlike(t *testing.T) {
 	h := NewHasher(cheap, 1)
-	composed := "senha com cedilha ç ok"   // one code point
-	decomposed := "senha com cedilha ç ok" // c and a combining cedilla
+	composed := "senha com cedilha ç ok"    // U+00E7, one code point
+	decomposed := "senha com cedilha ç ok" // 'c' followed by U+0327, a combining cedilla
+	if composed == decomposed {
+		// Guards against an editor or a copy/paste silently re-normalising
+		// the decomposed literal back to its composed form, which would
+		// make this test pass even with no normalisation in Verify at all.
+		t.Fatal("composed and decomposed literals are byte-identical; the test is vacuous")
+	}
 	encoded, _ := h.Hash(context.Background(), composed)
 	if ok, _, _ := h.Verify(context.Background(), decomposed, encoded); !ok {
 		t.Fatal("the same password typed on another keyboard did not verify")
@@ -61,8 +68,12 @@ func TestAMalformedHashIsAnErrorNotAMatch(t *testing.T) {
 	for _, encoded := range []string{
 		"",
 		"$argon2i$v=19$m=64,t=1,p=1$c2FsdHNhbHRzYWx0c2FsdA$a2V5",
-		"$argon2id$v=19$m=64,t=1,p=1$c2FsdHNhbHRzYWx0c2FsdA$",                // no key
-		"$argon2id$v=19$m=64,t=1,p=1$" + strings.Repeat("A", 2000) + "$a2V5", // salt beyond the bound
+		"$argon2id$v=19$m=64,t=1,p=1$c2FsdHNhbHRzYWx0c2FsdA$",                                  // no key
+		"$argon2id$v=19$m=64,t=1,p=1$" + strings.Repeat("A", 2000) + "$a2V5",                   // salt beyond the bound
+		"$argon2id$v=19$m=64,t=0,p=1$c2FsdHNhbHRzYWx0c2FsdA$a2V5",                              // t=0 would panic inside argon2
+		"$argon2id$v=19$m=64,t=1,p=0$c2FsdHNhbHRzYWx0c2FsdA$a2V5",                              // p=0 would panic inside argon2
+		fmt.Sprintf("$argon2id$v=19$m=%d,t=1,p=1$c2FsdHNhbHRzYWx0c2FsdA$a2V5", maxMemoryKiB+1), // m beyond the ceiling
+		fmt.Sprintf("$argon2id$v=19$m=64,t=%d,p=1$c2FsdHNhbHRzYWx0c2FsdA$a2V5", maxTime+1),     // t beyond the ceiling
 	} {
 		if ok, _, err := h.Verify(context.Background(), "whatever", encoded); ok || err == nil {
 			t.Errorf("Verify(%.40q) = %v, %v; want false and an error", encoded, ok, err)

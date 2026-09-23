@@ -35,6 +35,16 @@ var Current = Floor
 // are 16 and 32 bytes; anything past this is not a hash this service wrote.
 const maxEncodedLen = 1024
 
+// maxMemoryKiB and maxTime bound the cost parameters read back from a stored
+// hash, which is untrusted input. argon2.IDKey panics when Time or Threads is
+// zero, and an unbounded Memory allocates without limit — a hash we did not
+// write ourselves must not be able to crash the process or pin a slot for an
+// unbounded time.
+const (
+	maxMemoryKiB = 262144 // 256 MiB
+	maxTime      = 10
+)
+
 var errNotPHC = errors.New("identity: not an argon2id PHC string")
 
 // Hasher hashes and verifies passwords, a bounded number at a time.
@@ -119,6 +129,11 @@ func decode(encoded string) (Params, []byte, []byte, error) {
 	}
 	var p Params
 	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &p.Memory, &p.Time, &p.Threads); err != nil {
+		return Params{}, nil, nil, errNotPHC
+	}
+	// Bounded before argon2 ever sees them: t=0 or p=0 panics inside
+	// argon2.IDKey, and an unbounded m allocates without limit.
+	if p.Memory < 1 || p.Memory > maxMemoryKiB || p.Time < 1 || p.Time > maxTime || p.Threads < 1 {
 		return Params{}, nil, nil, errNotPHC
 	}
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
