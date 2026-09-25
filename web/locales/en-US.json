@@ -139,7 +139,7 @@
   "identity.stepup.for.store": "Before this change to your store, confirm it is you.",
   "identity.stepup.expired": "The confirmation expired. Confirm again.",
   "identity.stepup.exhausted": "Too many wrong codes. Confirm again with a new code.",
-  "identity.challenge.method.email": "We send a six-digit code to your e-mail address. It works once, for ten minutes.",
+  "identity.challenge.method.email": "We can send a six-digit code to your e-mail address. It works once, for ten minutes.",
   "identity.challenge.send": "Send a code",
   "identity.challenge.sent": "We sent a code to your e-mail address.",
   "identity.challenge.use.email": "Receive a code by e-mail",
@@ -148,6 +148,6 @@
   "identity.security.add_email": "Code by e-mail",
   "identity.email.title": "Receive codes by e-mail",
   "identity.email.intro": "When you sign in, we can send a six-digit code to %[1]s. To add this method, ask for a code and type it here.",
-  "identity.email.submit": "Add the e-mail",
+  "identity.email.submit": "Add e-mail codes",
   "identity.email.wrong": "That code is not right, or it has expired. Ask for a new one if you need to."
 }

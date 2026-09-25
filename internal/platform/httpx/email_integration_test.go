@@ -57,7 +57,8 @@ func TestAddingEmailAndSigningInWithItThroughThePages(t *testing.T) {
 		t.Fatalf("sending the code: status %d, Location %q", sent.Code, sent.Header().Get("Location"))
 	}
 	if wrong := b.post("/account/security/email", url.Values{"code": {"12345x"}}); wrong.Code != http.StatusUnprocessableEntity ||
-		!strings.Contains(wrong.Body.String(), "Esse código não confere ou expirou.") {
+		!strings.Contains(wrong.Body.String(), "Esse código não confere ou expirou.") ||
+		!strings.Contains(wrong.Body.String(), "Adicionar códigos por e-mail") {
 		t.Fatalf("a wrong code: status %d, body %s", wrong.Code, wrong.Body.String())
 	}
 	added := b.post("/account/security/email", url.Values{"code": {mailedCode(t, pool, marketplace)}})
@@ -76,7 +77,7 @@ func TestAddingEmailAndSigningInWithItThroughThePages(t *testing.T) {
 		t.Fatalf("the password opened no challenge: status %d", out.Code)
 	}
 	step := visitor.get("/signin/verify")
-	if !strings.Contains(step.Body.String(), "Enviamos um código de seis dígitos para seu e-mail.") {
+	if !strings.Contains(step.Body.String(), "Podemos enviar um código de seis dígitos para seu e-mail.") {
 		t.Fatalf("the second step does not offer the e-mail code: %s", step.Body.String())
 	}
 	tooSoon := visitor.post("/signin/verify/email", url.Values{})
