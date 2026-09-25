@@ -20,7 +20,7 @@ templ SecurityPage(page Page, view Security) {
 	@Layout(page, page.T("identity.security.title")) {
 		<h1>{ page.T("identity.security.title") }</h1>
 		if view.Done != "" {
-			<p role="status">{ page.T(view.Done) }</p>
+			<p role="status">{ page.T(view.Done, view.DoneArgs...) }</p>
 		}
 		if view.Form.Error != "" {
 			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>

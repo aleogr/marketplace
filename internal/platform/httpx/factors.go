@@ -72,7 +72,13 @@ func (s Site) securityPage(w http.ResponseWriter, r *http.Request) {
 		s.failed(w, r, "the security page could not be read", err)
 		return
 	}
-	view.Done = securityDone[r.URL.Query().Get("done")]
+	done := r.URL.Query().Get("done")
+	view.Done = securityDone[done]
+	if done == "recovery_used" {
+		// Signed in with a recovery code: say how many are left, which is
+		// the moment to make new ones.
+		view.Done, view.DoneArgs = "identity.security.done.recovery_used", []any{view.RecoveryLeft}
+	}
 	render(w, r, web.SecurityPage(s.page(r, securityPath), view))
 }
 

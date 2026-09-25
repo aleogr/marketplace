@@ -18,9 +18,11 @@ type Security struct {
 	Factors        []Factor
 	RecoveryIssued int
 	RecoveryLeft   int
-	// Done is the key of what was just done, for the status line.
-	Done string
-	Form Form
+	// Done is the key of what was just done, for the status line, with its
+	// arguments.
+	Done     string
+	DoneArgs []any
+	Form     Form
 }
 
 // AppEnrolment is the page that adds an authenticator app: the QR code, as a

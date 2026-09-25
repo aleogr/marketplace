@@ -116,5 +116,20 @@
   "identity.error.label_invalid": "The name can have at most %[1]d characters, with no invisible or control characters.",
   "identity.recovery.title": "Your recovery codes",
   "identity.recovery.keep": "Keep these codes somewhere safe, such as a password manager or on paper. Each code works once, to sign in if you lose your other second factors. They are shown only now.",
-  "identity.recovery.done": "I kept them"
+  "identity.recovery.done": "I kept them",
+  "identity.challenge.title": "Confirm it is you",
+  "identity.challenge.method.totp": "Type the code your authenticator app shows now.",
+  "identity.challenge.method.recovery": "Type one of your recovery codes. Each code works once.",
+  "identity.challenge.submit": "Confirm",
+  "identity.challenge.other": "Or confirm another way:",
+  "identity.challenge.use.totp": "Use your authenticator app",
+  "identity.challenge.use.recovery": "Use a recovery code",
+  "identity.challenge.wrong": "That code is not right. Try again.",
+  "identity.challenge.expired": "The confirmation expired. Sign in again.",
+  "identity.challenge.exhausted": "Too many wrong codes. Sign in again.",
+  "identity.security.done.recovery_used": {
+    "=0": "You signed in with your last recovery code. Make new ones now, and add a second factor if you lost yours.",
+    "one": "You signed in with a recovery code. %[1]d is left: if you lost your second factor, add a new one and make new codes.",
+    "other": "You signed in with a recovery code. %[1]d are left: if you lost your second factor, add a new one and make new codes."
+  }
 }
