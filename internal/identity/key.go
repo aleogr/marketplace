@@ -177,13 +177,23 @@ func (s *Service) ConfirmKey(ctx context.Context, v Visit, session Session, labe
 			refused = true
 			return nil
 		}
-		if _, err := tx.Exec(ctx, `
+		// A credential id is unique across marketplaces, and another
+		// marketplace's row is out of sight under row-level security, so an
+		// id already added is found by the insert that adds nothing.
+		added, err := tx.Exec(ctx, `
 			INSERT INTO second_factor (account_id, marketplace_id, kind, label, credential_id, public_key,
 			                           sign_count, credential_flags, created_at)
-			VALUES ($1, $2, 'webauthn', $3, $4, $5, $6, $7, $8)`,
+			VALUES ($1, $2, 'webauthn', $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (credential_id) DO NOTHING`,
 			account, v.Marketplace, label, credential.ID, credential.PublicKey,
-			int64(credential.Authenticator.SignCount), int16(credential.Flags.ProtocolValue()), now); err != nil {
+			int64(credential.Authenticator.SignCount), int16(credential.Flags.ProtocolValue()), now)
+		if err != nil {
 			return err
+		}
+		if added.RowsAffected() == 0 {
+			s.log.InfoContext(ctx, "a key's registration was refused: its credential id was already added")
+			refused = true
+			return nil
 		}
 		if err := dropEnrolment(ctx, tx, session.ID); err != nil {
 			return err
