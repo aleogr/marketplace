@@ -183,7 +183,8 @@ templ EnrolKey(page Page, view KeyEnrolment) {
 				/>
 			</label>
 			<p id="label-hint" class="hint">{ page.T("identity.field.label_hint") }</p>
-			<button type="submit">{ page.T("identity.key.submit") }</button>
+			// Hidden until the script shows it, as the challenge page's.
+			<button type="submit" hidden>{ page.T("identity.key.submit") }</button>
 		</form>
 		@keyScript(page)
 		<p><a href={ templ.SafeURL("/" + page.Language + "/account/security") }>{ page.T("identity.security.back") }</a></p>

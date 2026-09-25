@@ -23,7 +23,9 @@ templ ChallengePage(page Page, view Challenge) {
 		@challengeForm(page, view) {
 			if view.Method == "webauthn" {
 				<input type="hidden" name="key"/>
-				<button type="submit">{ page.T("identity.challenge.use_key") }</button>
+				// Hidden until the script shows it: without the script the
+				// button would post an empty answer and spend an attempt.
+				<button type="submit" hidden>{ page.T("identity.challenge.use_key") }</button>
 			} else {
 				<label>
 					{ page.T("identity.field.code") }
@@ -101,9 +103,10 @@ func keyAttributes(view Challenge) templ.Attributes {
 }
 
 // keyScript is what a page that uses a key adds: the message the script
-// shows when the browser does not complete the ceremony, what a browser with
-// no script reads instead, and the script itself, from this origin under the
-// page's nonce.
+// shows when the browser has no WebAuthn or does not complete the ceremony,
+// what a browser with no script reads instead, and the script itself, from
+// this origin under the page's nonce. The script also shows the key form's
+// button, which the page hides.
 templ keyScript(page Page) {
 	<p id="key-failed" role="alert" hidden>{ page.T("identity.key.failed") }</p>
 	<noscript><p>{ page.T("identity.key.needs_script") }</p></noscript>

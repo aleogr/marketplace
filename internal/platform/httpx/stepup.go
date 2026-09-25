@@ -110,7 +110,15 @@ func (s Site) renderStepUp(w http.ResponseWriter, r *http.Request, status int, t
 		s.failed(w, r, "a key's options could not be prepared", err)
 		return
 	}
-	renderStatus(w, r, status, web.ChallengePage(s.page(r, stepUpPath), view))
+	page := s.page(r, stepUpPath)
+	if r.Method == http.MethodPost {
+		// A page shown in answer to a post has no query of its own: the
+		// language switch is given the step-up's, with the method shown, so
+		// that it returns to this step-up rather than to one that no longer
+		// knows what it is for.
+		page.Query = url.Values{"for": {string(action)}, "next": {next}, "method": {view.Method}}.Encode()
+	}
+	renderStatus(w, r, status, web.ChallengePage(page, view))
 }
 
 // answerStepUp checks the step-up's answer and returns where the step-up was
