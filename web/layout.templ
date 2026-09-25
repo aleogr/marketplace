@@ -46,7 +46,9 @@ templ Layout(page Page, title string) {
 					max-width: 40rem;
 					padding: 2rem 1rem;
 				}
-				header { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+				header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 1rem; }
+				header > strong { flex-shrink: 0; white-space: nowrap; }
+				nav.account { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; }
 				nav form { display: inline; }
 				nav button {
 					background: none;
