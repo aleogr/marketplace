@@ -82,3 +82,17 @@ def a_minute_passes(database, email):
             "UPDATE email_code SET created_at = created_at - interval '2 minutes'"
             " WHERE account_id IN (SELECT id FROM account WHERE email_normalised = %s)",
             (email.lower(),))
+
+
+def virtual_authenticator(page):
+    """A security key inside Chromium, driven through the DevTools Protocol:
+    it answers every WebAuthn ceremony of this page as a real key would,
+    touch and fingerprint included, with nobody there to touch it."""
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("WebAuthn.enable")
+    added = cdp.send("WebAuthn.addVirtualAuthenticator", {"options": {
+        "protocol": "ctap2", "transport": "usb", "hasResidentKey": False,
+        "hasUserVerification": True, "isUserVerified": True,
+        "automaticPresenceSimulation": True,
+    }})
+    return cdp, added["authenticatorId"]
