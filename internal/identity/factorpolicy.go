@@ -95,13 +95,14 @@ func (Policy) Required(kind UserKind) bool {
 // a second factor. Changing the password or the factors asks again whoever
 // has one (D2), whatever the kind: staff must end up with a factor (Required,
 // enforced at sign-in by F15), but is not asked before enrolling the first
-// one, or could never enrol one at all. Everything else, including an action
-// this policy does not know, always asks, and accepts a code to the
+// one, or could never enrol one at all. A kind this policy does not know is
+// asked even without one: it fails closed. Everything else, including an
+// action this policy does not know, always asks, and accepts a code to the
 // account's own address where the kind may use e-mail at all.
 func (p Policy) StepUpFor(kind UserKind, action Action, hasFactor bool) StepUp {
 	switch action {
 	case ActionPassword, ActionFactors:
-		return StepUp{Asked: hasFactor}
+		return StepUp{Asked: hasFactor || (p.Required(kind) && kind != KindStaff)}
 	}
 	return StepUp{Asked: true, Email: p.Permits(kind, MethodEmail, Verify)}
 }
