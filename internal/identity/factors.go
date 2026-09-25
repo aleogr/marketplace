@@ -288,6 +288,9 @@ func (s *Service) RegenerateRecoveryCodes(ctx context.Context, v Visit, session 
 	}
 	account := session.Account.ID
 	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+		if err := lockAccount(ctx, tx, account); err != nil {
+			return err
+		}
 		n, err := countFactors(ctx, tx, account)
 		if err != nil {
 			return err

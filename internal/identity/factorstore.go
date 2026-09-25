@@ -56,6 +56,17 @@ func insertApp(ctx context.Context, tx pgx.Tx, marketplace, account, label strin
 	return err
 }
 
+// lockAccount takes an account's row lock so that concurrent requests that
+// touch its factors and recovery codes serialise instead of each reading a
+// state the other is about to change. FOR NO KEY UPDATE, not FOR UPDATE, so
+// it does not block the FOR KEY SHARE lock a session insert takes on the same
+// row at sign-in. Exec, not Scan: a staff account's row is invisible to the
+// application role under RLS, and a missing row must not be an error.
+func lockAccount(ctx context.Context, tx pgx.Tx, account string) error {
+	_, err := tx.Exec(ctx, `SELECT 1 FROM account WHERE id = $1 FOR NO KEY UPDATE`, account)
+	return err
+}
+
 // deleteFactor removes one of an account's factors and returns what it was,
 // or pgx.ErrNoRows for one the account does not have. An id that is not a
 // well-formed UUID is that too, rather than a database error: id's column is
@@ -64,6 +75,9 @@ func deleteFactor(ctx context.Context, tx pgx.Tx, account, id string) (factor, e
 	var parsed pgtype.UUID
 	if err := parsed.Scan(id); err != nil {
 		return factor{}, pgx.ErrNoRows
+	}
+	if err := lockAccount(ctx, tx, account); err != nil {
+		return factor{}, err
 	}
 	return scanFactor(tx.QueryRow(ctx,
 		`DELETE FROM second_factor WHERE account_id = $1 AND id = $2 RETURNING `+factorColumns, account, parsed))
@@ -130,7 +144,16 @@ func putEnrolment(ctx context.Context, tx pgx.Tx, marketplace, session, account 
 var ErrNoEnrolment = errors.New("identity: no enrolment in progress")
 
 // enrolmentOf locks a session's enrolment of method, if it is still live.
+// It locks the session's account first, then the enrolment row itself
+// (lock order: account, then enrolment, everywhere), so that confirming an
+// enrolment serialises with anything else that touches the same account's
+// factors.
 func enrolmentOf(ctx context.Context, tx pgx.Tx, session string, method Method, now time.Time) (enrolment, error) {
+	if _, err := tx.Exec(ctx,
+		`SELECT 1 FROM account WHERE id = (SELECT account_id FROM session WHERE id = $1) FOR NO KEY UPDATE`,
+		session); err != nil {
+		return enrolment{}, err
+	}
 	var e enrolment
 	err := tx.QueryRow(ctx, `
 		SELECT kind, secret, webauthn_session FROM factor_enrolment
