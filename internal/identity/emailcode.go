@@ -28,7 +28,9 @@ const (
 )
 
 // A code's purpose: the second step of a sign-in, a step-up, or adding e-mail
-// as a second factor. A code of one is never accepted for another.
+// as a second factor. A code of one is never accepted for another. The code's
+// mail receives it as its Purpose, and web/mail/second-factor-code.* words
+// each value.
 const (
 	purposeSignIn = "signin"
 	purposeStepUp = "stepup"
@@ -162,7 +164,9 @@ func (s *Service) sendCode(ctx context.Context, tx pgx.Tx, v Visit, account Acco
 	return mail.Request(ctx, tx, mail.Message{
 		Template: "second-factor-code", Language: v.Language, To: account.Email,
 		From: v.MarketplaceName, Marketplace: v.Marketplace,
-		Variables: map[string]string{"Name": account.Name, "Code": code},
+		// The mail says what the code is for, so that a code nobody asked
+		// for reads as the warning it is; the template words the purpose.
+		Variables: map[string]string{"Name": account.Name, "Code": code, "Purpose": purpose},
 	})
 }
 

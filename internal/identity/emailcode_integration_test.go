@@ -29,6 +29,22 @@ func lastCode(t *testing.T, db serving, marketplace string) string {
 	return code
 }
 
+// lastPurpose is what the last second-factor-code mail requested in a
+// marketplace says its code is for.
+func lastPurpose(t *testing.T, db serving, marketplace string) string {
+	t.Helper()
+	var purpose string
+	if err := db.InTxFor(t.Context(), marketplace, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `
+			SELECT coalesce(payload->'Variables'->>'Purpose', '') FROM outbox_event
+			 WHERE kind = 'email.send' AND payload->>'Template' = 'second-factor-code'
+			 ORDER BY created_at DESC, id DESC LIMIT 1`).Scan(&purpose)
+	}); err != nil {
+		t.Fatalf("no code was mailed: %v", err)
+	}
+	return purpose
+}
+
 // otherCode is a six-digit code that is not code.
 func otherCode(code string) string {
 	if code == "000000" {
@@ -355,5 +371,45 @@ func TestSigningInWithAnEmailCodeRecordsItsLastUse(t *testing.T) {
 	}
 	if used := security.Factors[0].LastUsedAt; used == nil || used.Sub(later).Abs() > time.Millisecond {
 		t.Fatalf("the e-mail factor was last used at %v, want %v", used, later)
+	}
+}
+
+// Each code's mail says what the code is for: adding e-mail as a second
+// factor, the second step of a sign-in, or a step-up.
+func TestTheCodeMailSaysWhatTheCodeIsFor(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session := signedIn(t, s, db, one, "r@example.test")
+	v := visit(one)
+	if err := s.BeginEmail(t.Context(), v, session); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastPurpose(t, db, one); got != purposeEnrol {
+		t.Fatalf("the enrolment's code mail says %q, want %q", got, purposeEnrol)
+	}
+	if err := s.ConfirmEmail(t.Context(), v, session, lastCode(t, db, one)); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now().UTC()
+	at := start.Add(emailCodeEvery)
+	s.now = func() time.Time { return at }
+	if err := s.SendChallengeCode(t.Context(), v, challenged(t, s, one, "r@example.test"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastPurpose(t, db, one); got != purposeSignIn {
+		t.Fatalf("the second step's code mail says %q, want %q", got, purposeSignIn)
+	}
+
+	at = start.Add(2 * emailCodeEvery)
+	token, err := s.BeginStepUp(t.Context(), v, session, ActionAddCard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SendChallengeCode(t.Context(), v, token, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := lastPurpose(t, db, one); got != purposeStepUp {
+		t.Fatalf("the step-up's code mail says %q, want %q", got, purposeStepUp)
 	}
 }

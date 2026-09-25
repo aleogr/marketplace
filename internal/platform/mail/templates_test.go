@@ -25,12 +25,13 @@ func templates(t *testing.T) *mail.Templates {
 // missing here fails this test: add the variable here when a template gains
 // one.
 var sampleVariables = map[string]string{
-	"Name":   "Reader",
-	"Link":   "https://marketplace1.example/en-US/verify?token=sample",
-	"SignIn": "https://marketplace1.example/en-US/signin",
-	"Code":   "123456",
-	"Method": "totp",
-	"Left":   "9",
+	"Name":    "Reader",
+	"Link":    "https://marketplace1.example/en-US/verify?token=sample",
+	"SignIn":  "https://marketplace1.example/en-US/signin",
+	"Code":    "123456",
+	"Method":  "totp",
+	"Left":    "9",
+	"Purpose": "signin",
 }
 
 // The definition of done: every user-facing text exists in both languages
@@ -164,6 +165,40 @@ func TestTheFailureNoticesExistInBothLanguages(t *testing.T) {
 		for _, part := range []string{rendered.Text, rendered.HTML} {
 			if !strings.Contains(part, "Leitora") || !strings.Contains(part, "Loja Um") || !strings.Contains(part, tc.want) {
 				t.Errorf("%s in %s does not name the reader and the marketplace and say %q: %s", tc.template, tc.language, tc.want, part)
+			}
+		}
+	}
+}
+
+// The code's mail says what the code is for — signing in, confirming a
+// change, adding e-mail as a second factor — in the reader's language, and
+// keeps the code out of the subject, which lock screens and the provider's
+// activity logs show; the body carries it.
+func TestTheCodeMailSaysWhatItIsForAndKeepsTheCodeOutOfTheSubject(t *testing.T) {
+	for _, tc := range []struct{ language, purpose, want string }{
+		{"en-US", "signin", "to sign in"},
+		{"en-US", "stepup", "to confirm a change"},
+		{"en-US", "enrol", "to add e-mail as a second factor"},
+		{"pt-BR", "signin", "para entrar"},
+		{"pt-BR", "stepup", "para confirmar uma alteração"},
+		{"pt-BR", "enrol", "para adicionar o e-mail como segundo fator"},
+	} {
+		rendered, err := templates(t).Render(mail.Message{
+			Template: "second-factor-code", Language: tc.language, To: "reader@example.test", From: "Loja Um",
+			Variables: map[string]string{"Name": "Leitora", "Code": "481516", "Purpose": tc.purpose},
+		}, i18n.Default)
+		if err != nil {
+			t.Fatalf("second-factor-code in %s for %s: %v", tc.language, tc.purpose, err)
+		}
+		if strings.Contains(rendered.Subject, "481516") {
+			t.Errorf("the subject in %s for %s carries the code: %q", tc.language, tc.purpose, rendered.Subject)
+		}
+		if !strings.Contains(rendered.Subject, "Loja Um") || !strings.Contains(rendered.Subject, tc.want) {
+			t.Errorf("the subject in %s for %s = %q; want the marketplace and %q", tc.language, tc.purpose, rendered.Subject, tc.want)
+		}
+		for _, part := range []string{rendered.Text, rendered.HTML} {
+			if !strings.Contains(part, "481516") || !strings.Contains(part, tc.want) {
+				t.Errorf("second-factor-code in %s for %s does not carry the code and say %q: %s", tc.language, tc.purpose, tc.want, part)
 			}
 		}
 	}
