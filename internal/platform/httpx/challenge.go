@@ -127,7 +127,12 @@ func (s Site) renderSecondStep(w http.ResponseWriter, r *http.Request, status in
 		s.failed(w, r, "a key's options could not be prepared", err)
 		return
 	}
-	renderStatus(w, r, status, web.ChallengePage(s.page(r, secondStepPath), view))
+	page := s.page(r, secondStepPath)
+	if r.Method == http.MethodPost {
+		// As the step-up's: the language switch keeps the method shown.
+		page.Query = url.Values{"method": {view.Method}}.Encode()
+	}
+	renderStatus(w, r, status, web.ChallengePage(page, view))
 }
 
 // keyOptions gives a challenge page that shows a key what the browser needs

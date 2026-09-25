@@ -28,7 +28,8 @@ type Page struct {
 	Path string
 	// Query is this page's own query string, as its address carried it, which
 	// the language switch posts back with Path: a page such as the step-up is
-	// only that page with its query (what it is for, where it returns to).
+	// only that page with its query (what it is for, where it returns to). A
+	// page shown in answer to a post is given the query that shows it again.
 	Query string
 
 	// Marketplace is the name shown to a visitor. Empty on the platform's own
