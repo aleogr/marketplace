@@ -208,8 +208,8 @@ func TestRegeneratingRecoveryCodesInvalidatesTheOldOnes(t *testing.T) {
 		t.Fatalf("RegenerateRecoveryCodes = %d codes, %v", len(fresh), err)
 	}
 	stored := storedRecoveryHashes(t, db, one, session.Account.ID)
-	oldHash, _ := recoveryHash(old[0])
-	freshHash, _ := recoveryHash(fresh[0])
+	oldHash := boundRecoveryHash(session.Account.ID, func() []byte { h, _ := recoveryHash(old[0]); return h }())
+	freshHash := boundRecoveryHash(session.Account.ID, func() []byte { h, _ := recoveryHash(fresh[0]); return h }())
 	if len(stored) != RecoveryCodeCount || slices.ContainsFunc(stored, func(h []byte) bool { return bytes.Equal(h, oldHash) }) ||
 		!slices.ContainsFunc(stored, func(h []byte) bool { return bytes.Equal(h, freshHash) }) {
 		t.Fatal("the stored codes are not exactly the new set")
