@@ -115,6 +115,13 @@ func useEmailCode(ctx context.Context, tx pgx.Tx, account, purpose, typed string
 	hash, ok := emailCodeHash(typed)
 	if ok && subtle.ConstantTimeCompare(hash, stored) == 1 {
 		_, err := tx.Exec(ctx, `UPDATE email_code SET used_at = $2 WHERE id = $1`, id, now)
+		if err == nil {
+			// A code spent is the e-mail factor used, when e-mail is one, as
+			// an app's code is (usedApp). The code's row is locked before the
+			// factor's, and nothing locks the two the other way round.
+			_, err = tx.Exec(ctx,
+				`UPDATE second_factor SET last_used_at = $2 WHERE account_id = $1 AND kind = 'email'`, account, now)
+		}
 		return err == nil, err
 	}
 	_, err = tx.Exec(ctx, `UPDATE email_code SET attempts = attempts + 1 WHERE id = $1`, id)

@@ -331,3 +331,29 @@ func TestCodesAskedForAtOnceAreLimitedPerAccount(t *testing.T) {
 		t.Fatalf("%d codes were mailed, want 1", after-mails)
 	}
 }
+
+// A sign-in with an e-mail code records when the e-mail factor was last used,
+// as an app's code does, so the security page can say it.
+func TestSigningInWithAnEmailCodeRecordsItsLastUse(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session := withEmail(t, s, db, one, "last-used@example.test")
+	token := challenged(t, s, one, "last-used@example.test")
+	later := time.Now().UTC().Add(emailCodeEvery)
+	s.now = func() time.Time { return later }
+	if err := s.SendChallengeCode(t.Context(), visit(one), token, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CompleteSignIn(t.Context(), visit(one), token,
+		Answer{Method: MethodEmail, Code: lastCode(t, db, one)}); err != nil {
+		t.Fatalf("CompleteSignIn with the e-mail code = %v", err)
+	}
+
+	security, err := s.Security(t.Context(), visit(one), session)
+	if err != nil || len(security.Factors) != 1 || security.Factors[0].Method != MethodEmail {
+		t.Fatalf("Security = %+v, %v; want the e-mail factor", security, err)
+	}
+	if used := security.Factors[0].LastUsedAt; used == nil || used.Sub(later).Abs() > time.Millisecond {
+		t.Fatalf("the e-mail factor was last used at %v, want %v", used, later)
+	}
+}
