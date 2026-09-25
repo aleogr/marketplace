@@ -71,15 +71,22 @@ func keysOf(ctx context.Context, tx pgx.Tx, account Account) (keyUser, []factor,
 	if err != nil {
 		return keyUser{}, nil, err
 	}
-	user := keyUser{account: account}
 	var keys []factor
 	for _, f := range factors {
 		if f.Method == MethodKey {
-			user.credentials = append(user.credentials, keyCredential(f))
 			keys = append(keys, f)
 		}
 	}
-	return user, keys, nil
+	return keyUserOf(account, keys), keys, nil
+}
+
+// keyUserOf is an account with the keys given, as WebAuthn wants it.
+func keyUserOf(account Account, keys []factor) keyUser {
+	user := keyUser{account: account}
+	for _, key := range keys {
+		user.credentials = append(user.credentials, keyCredential(key))
+	}
+	return user
 }
 
 // BeginKey starts adding a security key or the device's own authenticator,
@@ -237,7 +244,10 @@ func (s *Service) KeyOptions(ctx context.Context, v Visit, token, sessionID stri
 }
 
 // checkKey accepts a key's answer to a challenge. A signature counter that
-// did not move forward is refused and audited as a possible clone (D6).
+// did not move forward is refused and audited as a possible clone (D6). The
+// account's keys are locked before the counter is compared, so answers to two
+// challenges are checked one after the other, each against the counter the
+// other left.
 func (s *Service) checkKey(ctx context.Context, tx pgx.Tx, v Visit, account Account, ch challenge, response []byte, now time.Time) (bool, error) {
 	if len(ch.WebAuthnSession) == 0 {
 		return false, nil
@@ -255,11 +265,11 @@ func (s *Service) checkKey(ctx context.Context, tx pgx.Tx, v Visit, account Acco
 	if err != nil {
 		return false, err
 	}
-	user, keys, err := keysOf(ctx, tx, account)
+	keys, err := keysForUpdate(ctx, tx, account.ID)
 	if err != nil {
 		return false, err
 	}
-	credential, err := rp.ValidateLogin(user, ceremony, parsed)
+	credential, err := rp.ValidateLogin(keyUserOf(account, keys), ceremony, parsed)
 	if err != nil {
 		s.log.InfoContext(ctx, "a key's answer was refused", "error", err)
 		return false, nil
