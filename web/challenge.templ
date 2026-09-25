@@ -115,12 +115,14 @@ func keyAttributes(view Challenge) templ.Attributes {
 	return templ.Attributes{"data-webauthn": "get", "data-options": view.KeyOptions}
 }
 
-// keyScript is what a page that uses a key adds: the message the script
-// shows when the browser has no WebAuthn or does not complete the ceremony,
-// what a browser with no script reads instead, and the script itself, from
-// this origin under the page's nonce. The script also shows the key form's
-// button, which the page hides.
+// keyScript is what a page that uses a key adds: the messages the script
+// shows when the browser has no WebAuthn, and when it does not complete the
+// ceremony; what a browser with no script reads instead, which names no
+// other method, since which remain depends on the account and on the lock of
+// D8; and the script itself, from this origin under the page's nonce. The
+// script also shows the key form's button, which the page hides.
 templ keyScript(page Page) {
+	<p id="key-unsupported" role="alert" hidden>{ page.T("identity.key.unsupported") }</p>
 	<p id="key-failed" role="alert" hidden>{ page.T("identity.key.failed") }</p>
 	<noscript><p>{ page.T("identity.key.needs_script") }</p></noscript>
 	<script src="/assets/webauthn.js" nonce={ page.Nonce } defer></script>

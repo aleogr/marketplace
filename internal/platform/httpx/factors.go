@@ -339,12 +339,20 @@ func (s Site) keyForm(w http.ResponseWriter, r *http.Request) {
 }
 
 // addKey adds the key the browser registered. The first app or key shows the
-// recovery codes, once.
+// recovery codes, once. A form with no credential was posted without the
+// script — Enter in the label's field, where the button is hidden — and is
+// told so, rather than that a key's answer could not be verified.
 func (s Site) addKey(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
 	label := r.PostFormValue("label")
-	codes, err := s.identity.Service.ConfirmKey(r.Context(), visit(r), session, label, []byte(r.PostFormValue("credential")))
 	view := web.KeyEnrolment{Label: label}
+	credential := r.PostFormValue("credential")
+	if strings.TrimSpace(credential) == "" {
+		view.Form.Error = "identity.key.enrol_needs_script"
+		s.renderKey(w, r, http.StatusUnprocessableEntity, view)
+		return
+	}
+	codes, err := s.identity.Service.ConfirmKey(r.Context(), visit(r), session, label, []byte(credential))
 	switch {
 	case errors.Is(err, identity.ErrNoEnrolment):
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath+"/key", http.StatusSeeOther)

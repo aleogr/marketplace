@@ -5,6 +5,7 @@ package httpx_test
 import (
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -27,6 +28,15 @@ var (
 		"en-US": "This account has no security key and no recovery code left",
 	}
 )
+
+// noscriptOf finds what a page shows a browser with no script.
+var noscriptOf = regexp.MustCompile(`(?s)<noscript>(.*?)</noscript>`)
+
+// codeNames are how each language names the codes the lock refuses.
+var codeNames = map[string]struct{ app, email string }{
+	"pt-BR": {"aplicativo autenticador", "por e-mail"},
+	"en-US": {"authenticator app", "by e-mail"},
+}
 
 // lockCodes gives the fixture's account as many failed second factors in a
 // row as lock its codes, written as the database's owner: a hundred
@@ -75,6 +85,12 @@ func TestALockedSecondStepSaysSoAndOffersWhatStillWorks(t *testing.T) {
 		}
 		if strings.Contains(body, want.app) || strings.Contains(body, `inputmode="numeric"`) || strings.Contains(body, nothingLeft[language]) {
 			t.Fatalf("the locked second step in %s still offers a code, or says nothing is left: %s", language, body)
+		}
+		// Nor does what a browser with no script reads send the person to a
+		// code the lock refuses.
+		if noscript := noscriptOf.FindStringSubmatch(body); noscript == nil ||
+			strings.Contains(noscript[1], codeNames[language].app) || strings.Contains(noscript[1], codeNames[language].email) {
+			t.Fatalf("the locked second step's text without a script in %s suggests a code: %v", language, noscript)
 		}
 
 		refused := visitor.post("/"+language+"/signin/verify", url.Values{"method": {"totp"}, "code": {"000000"}})
