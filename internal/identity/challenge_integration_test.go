@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // nextAppCode is the code an app shows one step from now. Enrolment spent
@@ -177,5 +179,30 @@ func TestAChallengeIsInvisibleFromAnotherMarketplace(t *testing.T) {
 	}
 	if address := s.ChallengeAddress(t.Context(), visit(one), token); address != "r@example.test" {
 		t.Fatalf("ChallengeAddress = %q, want the account's", address)
+	}
+}
+
+// A wrong password on an account with a second factor is refused exactly as
+// on any other account, and opens no challenge: whether an account has a
+// second factor is not told to someone who does not know its password.
+func TestAWrongPasswordOnATwoFactorAccountOpensNoChallenge(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	withApp(t, s, db, one, "wrong-password@example.test")
+
+	token, err := s.SignIn(t.Context(), visit(one), "wrong-password@example.test", "not the password at all")
+	if !errors.Is(err, ErrCredentials) || errors.Is(err, ErrSecondStep) || token != "" {
+		t.Fatalf("SignIn with a wrong password = %q, %v; want ErrCredentials and no token", token, err)
+	}
+	var open int
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `
+			SELECT count(*) FROM sign_in_challenge c JOIN account a ON a.id = c.account_id
+			 WHERE a.email_normalised = 'wrong-password@example.test'`).Scan(&open)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if open != 0 {
+		t.Fatalf("a wrong password opened %d challenges", open)
 	}
 }
