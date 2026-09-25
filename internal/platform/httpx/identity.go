@@ -73,6 +73,7 @@ func (s Site) identityRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /account/password", inMarketplace(signedIn(http.HandlerFunc(s.passwordForm))))
 	mux.Handle("POST /account/password", inMarketplace(signedIn(
 		limit(id.Limits.Password, byAccount, http.HandlerFunc(s.changePassword)))))
+	s.factorRoutes(mux)
 }
 
 // signedIn serves next only to a signed-in request, and sends anybody else to

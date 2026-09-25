@@ -24,6 +24,7 @@ require (
 	golang.org/x/text v0.42.0
 	google.golang.org/api v0.298.0
 	google.golang.org/grpc v1.83.2
+	rsc.io/qr v0.2.0
 )
 
 require (

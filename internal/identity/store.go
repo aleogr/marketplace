@@ -12,9 +12,11 @@ import (
 type Account struct {
 	ID            string
 	MarketplaceID string
-	Email         string
-	Name          string
-	VerifiedAt    *time.Time
+	// Kind is what the account is: buyer or staff (account.kind).
+	Kind       UserKind
+	Email      string
+	Name       string
+	VerifiedAt *time.Time
 }
 
 var errTaken = errors.New("identity: address taken")
@@ -32,11 +34,11 @@ func insertAccount(ctx context.Context, tx pgx.Tx, marketplace, email, normalise
 	return id, err
 }
 
-const accountColumns = `id::text, marketplace_id::text, email, name, verified_at`
+const accountColumns = `id::text, marketplace_id::text, kind, email, name, verified_at`
 
 func scanAccount(row pgx.Row) (Account, error) {
 	var a Account
-	err := row.Scan(&a.ID, &a.MarketplaceID, &a.Email, &a.Name, &a.VerifiedAt)
+	err := row.Scan(&a.ID, &a.MarketplaceID, &a.Kind, &a.Email, &a.Name, &a.VerifiedAt)
 	return a, err
 }
 
