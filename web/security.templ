@@ -1,0 +1,127 @@
+package web
+
+import "strconv"
+
+// The security page and the pages that add a second factor
+// (docs/superpowers/specs/2026-09-25-f14-two-factor-design.md). Every visible
+// string goes through a key; a factor's own label is the person's words and is
+// shown as they typed it.
+
+// factorName is what a factor is called on the page: the person's label, or
+// the name of its kind when they gave none.
+func factorName(page Page, f Factor) string {
+	if f.Label != "" {
+		return f.Label
+	}
+	return page.T("identity.method." + f.Method)
+}
+
+templ SecurityPage(page Page, view Security) {
+	@Layout(page, page.T("identity.security.title")) {
+		<h1>{ page.T("identity.security.title") }</h1>
+		if view.Done != "" {
+			<p role="status">{ page.T(view.Done) }</p>
+		}
+		if view.Form.Error != "" {
+			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
+		}
+		<p>{ page.T("identity.security.intro") }</p>
+		<h2>{ page.T("identity.security.methods") }</h2>
+		if len(view.Factors) == 0 {
+			<p>{ page.T("identity.security.none") }</p>
+		} else {
+			<ul class="factors">
+				for _, f := range view.Factors {
+					<li>
+						<strong>{ factorName(page, f) }</strong>
+						<span class="method">{ page.T("identity.method." + f.Method) }</span>
+						<span>{ page.T("identity.security.added_on", f.Added) }</span>
+						if f.LastUsed != "" {
+							<span>{ page.T("identity.security.used_on", f.LastUsed) }</span>
+						} else {
+							<span>{ page.T("identity.security.never_used") }</span>
+						}
+						<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/security/remove") }>
+							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+							<input type="hidden" name="factor" value={ f.ID }/>
+							<button type="submit" class="secondary" aria-label={ page.T("identity.security.remove_named", factorName(page, f)) }>
+								{ page.T("identity.security.remove") }
+							</button>
+						</form>
+					</li>
+				}
+			</ul>
+		}
+		<h2>{ page.T("identity.security.add") }</h2>
+		<ul class="add">
+			<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/app") }>{ page.T("identity.security.add_app") }</a></li>
+		</ul>
+		if len(view.Factors) > 0 {
+			<h2>{ page.T("identity.security.recovery") }</h2>
+			if view.RecoveryIssued > 0 {
+				<p>{ page.T("identity.security.recovery_left", view.RecoveryLeft, view.RecoveryIssued) }</p>
+			} else {
+				<p>{ page.T("identity.security.recovery_none") }</p>
+			}
+			<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/security/recovery") }>
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<p>{ page.T("identity.security.recovery_replaces") }</p>
+				<button type="submit" class="secondary">{ page.T("identity.security.recovery_new") }</button>
+			</form>
+		}
+	}
+}
+
+templ EnrolApp(page Page, view AppEnrolment) {
+	@Layout(page, page.T("identity.app.title")) {
+		<h1>{ page.T("identity.app.title") }</h1>
+		if view.Form.Error != "" {
+			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
+		}
+		<p>{ page.T("identity.app.scan") }</p>
+		<img class="qr" src={ view.QR } alt={ page.T("identity.app.qr_alt") } width="200" height="200"/>
+		<p>{ page.T("identity.app.manual") }</p>
+		<p><code id="totp-key" class="key">{ view.Key }</code></p>
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/security/app") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<label>
+				{ page.T("identity.field.label") }
+				<input
+					name="label"
+					maxlength={ strconv.Itoa(view.LabelMax) }
+					value={ view.Label }
+					{ view.Form.Input("label", "label-hint")... }
+				/>
+			</label>
+			<p id="label-hint" class="hint">{ page.T("identity.field.label_hint") }</p>
+			<label>
+				{ page.T("identity.field.code") }
+				<input
+					name="code"
+					inputmode="numeric"
+					autocomplete="one-time-code"
+					required
+					{ view.Form.Input("code")... }
+				/>
+			</label>
+			<button type="submit">{ page.T("identity.app.submit") }</button>
+		</form>
+		<p><a href={ templ.SafeURL("/" + page.Language + "/account/security") }>{ page.T("identity.security.back") }</a></p>
+	}
+}
+
+templ RecoveryCodes(page Page, view Recovery) {
+	@Layout(page, page.T("identity.recovery.title")) {
+		<h1>{ page.T("identity.recovery.title") }</h1>
+		if view.Added {
+			<p role="status">{ page.T("identity.security.done.added") }</p>
+		}
+		<p>{ page.T("identity.recovery.keep") }</p>
+		<ol class="codes">
+			for _, code := range view.Codes {
+				<li><code>{ code }</code></li>
+			}
+		</ol>
+		<p><a href={ templ.SafeURL("/" + page.Language + "/account/security") }>{ page.T("identity.recovery.done") }</a></p>
+	}
+}

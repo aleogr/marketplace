@@ -149,8 +149,10 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	log.InfoContext(ctx, "audit keys", "keeper", keeper.Name())
 
 	// One audit log for the whole process: the work below and the identity
-	// flows append to the same chains.
-	trail := audit.NewLog(audit.NewKeys(keeper), log)
+	// flows append to the same chains. The per-person keys also seal second
+	// factors' secrets, so an erasure destroys both (F14 spec, D5).
+	personal := audit.NewKeys(keeper)
+	trail := audit.NewLog(personal, log)
 
 	var listenConfig net.ListenConfig
 	listener, err := listenConfig.Listen(ctx, "tcp", fmt.Sprintf(":%d", cfg.Port))
@@ -241,7 +243,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			checker = breached.NewPwned(&http.Client{Timeout: 3 * time.Second}, breached.RangeAPI)
 		}
 		identityService = identity.NewService(database,
-			identity.NewHasher(identity.Current, hashSlots(identity.Current)), checker, trail, log)
+			identity.NewHasher(identity.Current, hashSlots(identity.Current)), checker, trail, log).
+			WithSealer(personal)
 		site = site.WithIdentity(httpx.IdentityRoutes{
 			Service: identityService,
 			Pages:   pages,
