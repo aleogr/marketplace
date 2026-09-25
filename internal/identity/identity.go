@@ -514,7 +514,8 @@ func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (
 }
 
 // ChangePassword replaces the password of a session's account and ends every
-// session of that account (docs/requirements.md, section 18.1). The browser
+// session of that account (docs/requirements.md, section 18.1), and every
+// sign-in waiting for its second step (F14 spec, D3). The browser
 // that asked stays signed in on a new session, whose token it returns: OWASP's
 // session management guidance renews the session identifier after a password
 // change, so a stolen copy of the old cookie ends with the change too. A wrong
@@ -577,6 +578,17 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 				"account", account)
 			return ErrCredentials
 		}
+		// The second step of a sign-in the old password opened would still
+		// open a session, since it does not check the password again: its
+		// challenge ends here. Only once the credential is held, so that a
+		// sign-in that locked the old password first has written its
+		// challenge and this sees it, and one that comes later finds the
+		// password changed; and before the sessions, so that the order is
+		// the answer's, challenge before session. Step-ups, which name a
+		// session, are left to die with it.
+		if err := endSignIns(ctx, tx, account); err != nil {
+			return err
+		}
 		if err := setPassword(ctx, tx, v.Marketplace, account, fresh); err != nil {
 			return err
 		}
@@ -609,8 +621,8 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 		}
 		// A new password ends the run of failed second factors, and lifts
 		// the lock on codes (F14 spec, D8). Lock order: the credential,
-		// the account's sessions, the audit chain, and last the failure
-		// row, as every path takes it.
+		// the account's sign-in challenges, the account's sessions, the
+		// audit chain, and last the failure row, as every path takes it.
 		return clearFailures(ctx, tx, account)
 	})
 	if err != nil {
