@@ -16,7 +16,10 @@ type Challenge struct {
 	Next string
 	// Sent says an e-mail code was just sent.
 	Sent bool
-	Form Form
+	// KeyOptions are what the browser's navigator.credentials.get takes, as
+	// JSON, when the method shown is a key.
+	KeyOptions string
+	Form       Form
 }
 
 // Others are the methods the page offers besides the one shown.

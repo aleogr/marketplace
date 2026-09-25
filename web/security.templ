@@ -54,6 +54,7 @@ templ SecurityPage(page Page, view Security) {
 		}
 		<h2>{ page.T("identity.security.add") }</h2>
 		<ul class="add">
+			<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/key") }>{ page.T("identity.security.add_key") }</a></li>
 			<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/app") }>{ page.T("identity.security.add_app") }</a></li>
 			if !view.HasEmail() {
 				<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/email") }>{ page.T("identity.security.add_email") }</a></li>
@@ -153,6 +154,38 @@ templ EnrolEmail(page Page, view EmailEnrolment) {
 				<button type="submit">{ page.T("identity.email.submit") }</button>
 			</form>
 		}
+		<p><a href={ templ.SafeURL("/" + page.Language + "/account/security") }>{ page.T("identity.security.back") }</a></p>
+	}
+}
+
+templ EnrolKey(page Page, view KeyEnrolment) {
+	@Layout(page, page.T("identity.key.title")) {
+		<h1>{ page.T("identity.key.title") }</h1>
+		if view.Form.Error != "" {
+			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
+		}
+		<p>{ page.T("identity.key.intro") }</p>
+		<form
+			method="post"
+			action={ templ.SafeURL("/" + page.Language + "/account/security/key") }
+			data-webauthn="create"
+			data-options={ view.Options }
+		>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<input type="hidden" name="credential"/>
+			<label>
+				{ page.T("identity.field.label") }
+				<input
+					name="label"
+					maxlength={ strconv.Itoa(view.LabelMax) }
+					value={ view.Label }
+					{ view.Form.Input("label", "label-hint")... }
+				/>
+			</label>
+			<p id="label-hint" class="hint">{ page.T("identity.field.label_hint") }</p>
+			<button type="submit">{ page.T("identity.key.submit") }</button>
+		</form>
+		@keyScript(page)
 		<p><a href={ templ.SafeURL("/" + page.Language + "/account/security") }>{ page.T("identity.security.back") }</a></p>
 	}
 }

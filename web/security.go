@@ -63,3 +63,13 @@ type EmailEnrolment struct {
 	Sent    bool
 	Form    Form
 }
+
+// KeyEnrolment is the page that adds a security key or the device's own
+// authenticator: the options the browser's navigator.credentials.create
+// takes, as JSON, and the label the visitor typed with its bound.
+type KeyEnrolment struct {
+	Options  string
+	Label    string
+	LabelMax int
+	Form     Form
+}

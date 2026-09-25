@@ -36,10 +36,12 @@ var (
 )
 
 // Answer is what a person gives at the second step: the method, and the code
-// it produced.
+// it produced or, for a key, its answer as the browser's
+// navigator.credentials.get gave it, in JSON.
 type Answer struct {
 	Method Method
 	Code   string
+	Key    []byte
 }
 
 // Pending is a challenge waiting for its answer, as its page shows it.
@@ -125,7 +127,7 @@ func (s *Service) ChallengeAddress(ctx context.Context, v Visit, token string) s
 
 // check reports whether answer proves the account's second factor, spending
 // what it used: an app's step, a recovery code.
-func (s *Service) check(ctx context.Context, tx pgx.Tx, account Account, ch challenge, answer Answer, now time.Time) (bool, error) {
+func (s *Service) check(ctx context.Context, tx pgx.Tx, v Visit, account Account, ch challenge, answer Answer, now time.Time) (bool, error) {
 	methods, recovery, err := s.offers(ctx, tx, account, ch)
 	if err != nil {
 		return false, err
@@ -148,6 +150,8 @@ func (s *Service) check(ctx context.Context, tx pgx.Tx, account Account, ch chal
 		return s.checkApp(ctx, tx, account.ID, answer.Code, now)
 	case MethodEmail:
 		return useEmailCode(ctx, tx, account.ID, purposeOf(ch), answer.Code, now)
+	case MethodKey:
+		return s.checkKey(ctx, tx, v, account, ch, answer.Key, now)
 	}
 	return false, nil
 }
@@ -190,7 +194,7 @@ func (s *Service) answerChallenge(ctx context.Context, v Visit, token, sessionID
 		if err != nil {
 			return err
 		}
-		ok, err := s.check(ctx, tx, account, ch, answer, now)
+		ok, err := s.check(ctx, tx, v, account, ch, answer, now)
 		if err != nil {
 			return err
 		}

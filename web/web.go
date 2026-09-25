@@ -27,3 +27,11 @@ var Locales embed.FS
 //
 //go:embed mail/*.txt mail/*.html
 var Mail embed.FS
+
+// Assets holds the one script the site serves: the WebAuthn ceremony, which
+// needs navigator.credentials and so cannot be a form alone. It is embedded,
+// like everything else, and served from this origin under the page's nonce
+// (internal/platform/httpx).
+//
+//go:embed assets/*.js
+var Assets embed.FS

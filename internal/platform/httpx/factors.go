@@ -27,6 +27,8 @@ func (s Site) factorRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /account/security/app", changes(securityPath+"/app", s.addApp))
 	mux.Handle("POST /account/security/remove", changes(securityPath, s.removeFactor))
 	mux.Handle("POST /account/security/recovery", changes(securityPath, s.regenerateCodes))
+	mux.Handle("GET /account/security/key", changes(securityPath+"/key", s.keyForm))
+	mux.Handle("POST /account/security/key", changes(securityPath+"/key", s.addKey))
 	mux.Handle("GET /account/security/email", changes(securityPath+"/email", s.emailForm))
 	mux.Handle("POST /account/security/email/send", changes(securityPath+"/email", s.sendEmailCode))
 	mux.Handle("POST /account/security/email", changes(securityPath+"/email", s.addEmail))
@@ -303,4 +305,62 @@ func (s Site) addEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	toSecurity(w, r, "added")
+}
+
+// renderKey starts adding a key and shows the page that asks the browser for
+// it; after a refusal the ceremony starts again, since each is used once.
+func (s Site) renderKey(w http.ResponseWriter, r *http.Request, status int, view web.KeyEnrolment) {
+	session, _ := SessionFrom(r.Context())
+	options, err := s.identity.Service.BeginKey(r.Context(), visit(r), session)
+	switch {
+	case errors.Is(err, identity.ErrNotPermitted):
+		http.NotFound(w, r)
+		return
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/key")
+		return
+	case err != nil:
+		s.failed(w, r, "a key enrolment could not start", err)
+		return
+	}
+	view.Options, view.LabelMax = string(options), identity.MaxLabelLength
+	renderStatus(w, r, status, web.EnrolKey(s.page(r, securityPath+"/key"), view))
+}
+
+func (s Site) keyForm(w http.ResponseWriter, r *http.Request) {
+	s.renderKey(w, r, http.StatusOK, web.KeyEnrolment{})
+}
+
+// addKey adds the key the browser registered. The first app or key shows the
+// recovery codes, once.
+func (s Site) addKey(w http.ResponseWriter, r *http.Request) {
+	session, _ := SessionFrom(r.Context())
+	label := r.PostFormValue("label")
+	codes, err := s.identity.Service.ConfirmKey(r.Context(), visit(r), session, label, []byte(r.PostFormValue("credential")))
+	view := web.KeyEnrolment{Label: label}
+	switch {
+	case errors.Is(err, identity.ErrNoEnrolment):
+		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath+"/key", http.StatusSeeOther)
+		return
+	case errors.Is(err, identity.ErrNotPermitted):
+		http.NotFound(w, r)
+		return
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/key")
+		return
+	case errors.Is(err, identity.ErrKeyRefused):
+		view.Form.Error = "identity.key.refused"
+	case errors.Is(err, identity.ErrLabelInvalid):
+		view.Form.Error, view.Form.ErrorArgs, view.Form.Field = "identity.error.label_invalid", []any{identity.MaxLabelLength}, "label"
+	case err != nil:
+		s.failed(w, r, "a key could not be added", err)
+		return
+	case codes == nil:
+		toSecurity(w, r, "added")
+		return
+	default:
+		render(w, r, web.RecoveryCodes(s.page(r, securityPath), web.Recovery{Codes: codes, Added: true}))
+		return
+	}
+	s.renderKey(w, r, http.StatusUnprocessableEntity, view)
 }

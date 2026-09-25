@@ -112,6 +112,20 @@ func appsForUpdate(ctx context.Context, tx pgx.Tx, account string) ([]factor, er
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (factor, error) { return scanFactor(row) })
 }
 
+// keysForUpdate locks an account's keys, so two answers from one key cannot
+// both pass the counter check (D6), and a slower one cannot move the stored
+// counter backwards. The lock order is the app's: the challenge's row first,
+// then the factors'.
+func keysForUpdate(ctx context.Context, tx pgx.Tx, account string) ([]factor, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT `+factorColumns+` FROM second_factor
+		 WHERE account_id = $1 AND kind = 'webauthn' ORDER BY created_at, id FOR UPDATE`, account)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (factor, error) { return scanFactor(row) })
+}
+
 // usedApp records the step an app's code was accepted for.
 func usedApp(ctx context.Context, tx pgx.Tx, id string, step int64, now time.Time) error {
 	_, err := tx.Exec(ctx,
