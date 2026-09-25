@@ -139,5 +139,16 @@
   "identity.stepup.for.change_email": "Antes de alterar seu endereço de e-mail, confirme que é você.",
   "identity.stepup.for.store": "Antes desta alteração na sua loja, confirme que é você.",
   "identity.stepup.expired": "A confirmação expirou. Confirme de novo.",
-  "identity.stepup.exhausted": "Muitos códigos errados. Confirme de novo com um novo código."
+  "identity.stepup.exhausted": "Muitos códigos errados. Confirme de novo com um novo código.",
+  "identity.challenge.method.email": "Enviamos um código de seis dígitos para seu e-mail. Ele funciona uma vez, por dez minutos.",
+  "identity.challenge.send": "Enviar um código",
+  "identity.challenge.sent": "Enviamos um código para seu e-mail.",
+  "identity.challenge.use.email": "Receber um código por e-mail",
+  "identity.email.too_soon": "Enviamos um código há menos de um minuto. Espere um pouco antes de pedir outro.",
+  "identity.email.too_many": "Muitos códigos foram enviados para esta conta na última hora. Tente mais tarde.",
+  "identity.security.add_email": "Código por e-mail",
+  "identity.email.title": "Receber códigos por e-mail",
+  "identity.email.intro": "Quando você entrar, podemos enviar um código de seis dígitos para %[1]s. Para adicionar este método, peça um código e digite-o aqui.",
+  "identity.email.submit": "Adicionar o e-mail",
+  "identity.email.wrong": "Esse código não confere ou expirou. Peça um novo se precisar."
 }

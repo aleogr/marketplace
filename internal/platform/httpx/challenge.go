@@ -122,8 +122,45 @@ func (s Site) renderSecondStep(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	view := challengeView(pending, chosen, "/"+i18n.FromContext(r.Context())+secondStepPath+"?")
-	view.Form = form
+	view.Form, view.Sent = form, r.URL.Query().Get("sent") == "1"
 	renderStatus(w, r, status, web.ChallengePage(s.page(r, secondStepPath), view))
+}
+
+// codeRefusal names the message a refused request for an e-mail code is
+// shown as.
+func codeRefusal(err error) (string, bool) {
+	switch {
+	case errors.Is(err, identity.ErrCodeTooSoon):
+		return "identity.email.too_soon", true
+	case errors.Is(err, identity.ErrCodeTooMany):
+		return "identity.email.too_many", true
+	}
+	return "", false
+}
+
+// sendSecondStepCode mails a code for the sign-in's second step, and shows
+// the page again saying so.
+func (s Site) sendSecondStepCode(w http.ResponseWriter, r *http.Request) {
+	token := challengeToken(r)
+	if token == "" {
+		backToSignIn(w, r, "expired")
+		return
+	}
+	err := s.identity.Service.SendChallengeCode(r.Context(), visit(r), token, "")
+	if key, refused := codeRefusal(err); refused {
+		s.renderSecondStep(w, r, http.StatusTooManyRequests, string(identity.MethodEmail), web.Form{Error: key})
+		return
+	}
+	switch {
+	case errors.Is(err, identity.ErrChallengeInvalid):
+		backToSignIn(w, r, "expired")
+	case errors.Is(err, identity.ErrNotPermitted):
+		http.NotFound(w, r)
+	case err != nil:
+		s.failed(w, r, "a second step's code could not be sent", err)
+	default:
+		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+secondStepPath+"?method=email&sent=1", http.StatusSeeOther)
+	}
 }
 
 // answerSecondStep completes a sign-in. A right answer opens the session as a

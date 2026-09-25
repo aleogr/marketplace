@@ -14,6 +14,8 @@ type Challenge struct {
 	Base     string
 	// Next is where a step-up returns to, as a path below the language.
 	Next string
+	// Sent says an e-mail code was just sent.
+	Sent bool
 	Form Form
 }
 

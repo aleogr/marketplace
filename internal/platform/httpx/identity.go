@@ -76,6 +76,8 @@ func (s Site) identityRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+secondStepPath, inMarketplace(http.HandlerFunc(s.secondStep)))
 	mux.Handle("POST "+secondStepPath, inMarketplace(limit(id.Limits.SignIn, byIP,
 		limit(id.Limits.SignInAddress, s.byChallenge, http.HandlerFunc(s.answerSecondStep)))))
+	mux.Handle("POST "+secondStepPath+"/email", inMarketplace(limit(id.Limits.SignIn, byIP,
+		limit(id.Limits.SignInAddress, s.byChallenge, http.HandlerFunc(s.sendSecondStepCode)))))
 	mux.Handle("POST /signout", inMarketplace(http.HandlerFunc(s.signOut)))
 	mux.Handle("GET /account/password", inMarketplace(signedIn(
 		s.steppedUp(identity.ActionPassword, "/account/password", http.HandlerFunc(s.passwordForm)))))
@@ -85,6 +87,8 @@ func (s Site) identityRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+stepUpPath, inMarketplace(signedIn(http.HandlerFunc(s.stepUpPage))))
 	mux.Handle("POST "+stepUpPath, inMarketplace(signedIn(
 		limit(id.Limits.StepUp, byAccount, http.HandlerFunc(s.answerStepUp)))))
+	mux.Handle("POST "+stepUpPath+"/email", inMarketplace(signedIn(
+		limit(id.Limits.StepUp, byAccount, http.HandlerFunc(s.sendStepUpCode)))))
 	s.factorRoutes(mux)
 }
 

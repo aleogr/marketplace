@@ -66,18 +66,34 @@ func (s Site) stepUpPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session, _ := SessionFrom(r.Context())
-	token, err := s.identity.Service.BeginStepUp(r.Context(), visit(r), session, action)
-	if errors.Is(err, identity.ErrNoSecondFactor) {
-		http.NotFound(w, r)
-		return
+	// A step-up already open for this action is shown again rather than
+	// replaced, so a reload keeps its attempts and a code already sent.
+	token := challengeToken(r)
+	if !s.liveStepUp(r, token, session, action) {
+		var err error
+		token, err = s.identity.Service.BeginStepUp(r.Context(), visit(r), session, action)
+		if errors.Is(err, identity.ErrNoSecondFactor) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			s.failed(w, r, "a step-up could not start", err)
+			return
+		}
+		setChallenge(w, r, token)
 	}
-	if err != nil {
-		s.failed(w, r, "a step-up could not start", err)
-		return
-	}
-	setChallenge(w, r, token)
 	form := web.Form{Error: stepUpAgain[query.Get("again")]}
 	s.renderStepUp(w, r, http.StatusOK, token, action, next, query.Get("method"), form)
+}
+
+// liveStepUp reports whether token opened a step-up of session for action
+// that can still be answered.
+func (s Site) liveStepUp(r *http.Request, token string, session identity.Session, action identity.Action) bool {
+	if token == "" {
+		return false
+	}
+	pending, err := s.identity.Service.Pending(r.Context(), visit(r), token, session.ID)
+	return err == nil && pending.Action == action
 }
 
 func (s Site) renderStepUp(w http.ResponseWriter, r *http.Request, status int, token string,
@@ -89,7 +105,7 @@ func (s Site) renderStepUp(w http.ResponseWriter, r *http.Request, status int, t
 		return
 	}
 	view := challengeView(pending, chosen, stepUpBase(r, action, next))
-	view.Next, view.Form = next, form
+	view.Next, view.Form, view.Sent = next, form, r.URL.Query().Get("sent") == "1"
 	renderStatus(w, r, status, web.ChallengePage(s.page(r, stepUpPath), view))
 }
 
@@ -125,4 +141,36 @@ func (s Site) answerStepUp(w http.ResponseWriter, r *http.Request) {
 		// #nosec G710 -- stepUpTarget kept a path on this site and discarded any host (safePath).
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+next, http.StatusSeeOther)
 	}
+}
+
+// sendStepUpCode mails a code for the session's step-up, and shows the page
+// again saying so.
+func (s Site) sendStepUpCode(w http.ResponseWriter, r *http.Request) {
+	action, next, ok := stepUpTarget(r.PostFormValue("for"), r.PostFormValue("next"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	session, _ := SessionFrom(r.Context())
+	token := challengeToken(r)
+	err := s.identity.Service.SendChallengeCode(r.Context(), visit(r), token, session.ID)
+	if key, refused := codeRefusal(err); refused {
+		s.renderStepUp(w, r, http.StatusTooManyRequests, token, action, next, string(identity.MethodEmail), web.Form{Error: key})
+		return
+	}
+	query := url.Values{"for": {string(action)}, "next": {next}}
+	switch {
+	case errors.Is(err, identity.ErrChallengeInvalid):
+		query.Set("again", "expired")
+	case errors.Is(err, identity.ErrNotPermitted):
+		http.NotFound(w, r)
+		return
+	case err != nil:
+		s.failed(w, r, "a step-up's code could not be sent", err)
+		return
+	default:
+		query.Set("method", string(identity.MethodEmail))
+		query.Set("sent", "1")
+	}
+	http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+stepUpPath+"?"+query.Encode(), http.StatusSeeOther)
 }

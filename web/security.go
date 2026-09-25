@@ -44,3 +44,22 @@ type Recovery struct {
 	Codes []string
 	Added bool
 }
+
+// HasEmail reports whether the account already receives codes by e-mail,
+// which it can only do once.
+func (s Security) HasEmail() bool {
+	for _, f := range s.Factors {
+		if f.Method == "email" {
+			return true
+		}
+	}
+	return false
+}
+
+// EmailEnrolment is the page that adds e-mail as a second factor: the address
+// the codes go to, whether one was just sent, and a refusal.
+type EmailEnrolment struct {
+	Address string
+	Sent    bool
+	Form    Form
+}

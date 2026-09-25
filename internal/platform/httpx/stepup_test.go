@@ -123,10 +123,12 @@ func TestStepUpAnswersAreLimitedPerAccount(t *testing.T) {
 	handler := identityHandler(t,
 		identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
 		limitsRefusing("StepUp"))
-	post := formRequest(t, "/account/verify", url.Values{"for": {"factors"}, "next": {"/account/security"}, "code": {"123456"}})
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, withSession(post, buyer(true, nil)))
-	if recorder.Code != http.StatusTooManyRequests {
-		t.Fatalf("status %d, want %d", recorder.Code, http.StatusTooManyRequests)
+	for _, path := range []string{"/account/verify", "/account/verify/email"} {
+		post := formRequest(t, path, url.Values{"for": {"factors"}, "next": {"/account/security"}, "code": {"123456"}})
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, withSession(post, buyer(true, nil)))
+		if recorder.Code != http.StatusTooManyRequests {
+			t.Errorf("%s: status %d, want %d", path, recorder.Code, http.StatusTooManyRequests)
+		}
 	}
 }

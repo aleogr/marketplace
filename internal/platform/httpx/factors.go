@@ -27,6 +27,9 @@ func (s Site) factorRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /account/security/app", changes(securityPath+"/app", s.addApp))
 	mux.Handle("POST /account/security/remove", changes(securityPath, s.removeFactor))
 	mux.Handle("POST /account/security/recovery", changes(securityPath, s.regenerateCodes))
+	mux.Handle("GET /account/security/email", changes(securityPath+"/email", s.emailForm))
+	mux.Handle("POST /account/security/email/send", changes(securityPath+"/email", s.sendEmailCode))
+	mux.Handle("POST /account/security/email", changes(securityPath+"/email", s.addEmail))
 }
 
 // securityPath is where the security pages live, below the language.
@@ -233,4 +236,71 @@ func (s Site) regenerateCodes(w http.ResponseWriter, r *http.Request) {
 	default:
 		render(w, r, web.RecoveryCodes(s.page(r, securityPath), web.Recovery{Codes: codes}))
 	}
+}
+
+// renderEmail shows the page that adds e-mail as a second factor.
+func (s Site) renderEmail(w http.ResponseWriter, r *http.Request, status int, view web.EmailEnrolment) {
+	session, _ := SessionFrom(r.Context())
+	view.Address = session.Account.Email
+	renderStatus(w, r, status, web.EnrolEmail(s.page(r, securityPath+"/email"), view))
+}
+
+// emailForm explains the method and offers to send the code that adds it;
+// after one was sent it asks for it.
+func (s Site) emailForm(w http.ResponseWriter, r *http.Request) {
+	s.renderEmail(w, r, http.StatusOK, web.EmailEnrolment{Sent: r.URL.Query().Get("sent") == "1"})
+}
+
+// emailError answers what adding e-mail refused that is not the visitor's to
+// fix on this page, and reports whether it did.
+func (s Site) emailError(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case errors.Is(err, identity.ErrNotPermitted):
+		http.NotFound(w, r)
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/email")
+	case errors.Is(err, identity.ErrAlreadyEnrolled):
+		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath, http.StatusSeeOther)
+	default:
+		return false
+	}
+	return true
+}
+
+// sendEmailCode mails the code that adds e-mail, within the per-account
+// limits.
+func (s Site) sendEmailCode(w http.ResponseWriter, r *http.Request) {
+	session, _ := SessionFrom(r.Context())
+	err := s.identity.Service.BeginEmail(r.Context(), visit(r), session)
+	if key, refused := codeRefusal(err); refused {
+		s.renderEmail(w, r, http.StatusTooManyRequests, web.EmailEnrolment{Form: web.Form{Error: key}})
+		return
+	}
+	if s.emailError(w, r, err) {
+		return
+	}
+	if err != nil {
+		s.failed(w, r, "an e-mail code could not be sent", err)
+		return
+	}
+	http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath+"/email?sent=1", http.StatusSeeOther)
+}
+
+// addEmail adds e-mail once the code comes back.
+func (s Site) addEmail(w http.ResponseWriter, r *http.Request) {
+	session, _ := SessionFrom(r.Context())
+	err := s.identity.Service.ConfirmEmail(r.Context(), visit(r), session, r.PostFormValue("code"))
+	if errors.Is(err, identity.ErrCodeWrong) {
+		s.renderEmail(w, r, http.StatusUnprocessableEntity,
+			web.EmailEnrolment{Form: web.Form{Error: "identity.email.wrong", Field: "code"}})
+		return
+	}
+	if s.emailError(w, r, err) {
+		return
+	}
+	if err != nil {
+		s.failed(w, r, "e-mail could not be added", err)
+		return
+	}
+	toSecurity(w, r, "added")
 }

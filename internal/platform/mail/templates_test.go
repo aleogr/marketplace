@@ -28,6 +28,7 @@ var sampleVariables = map[string]string{
 	"Name":   "Reader",
 	"Link":   "https://marketplace1.example/en-US/verify?token=sample",
 	"SignIn": "https://marketplace1.example/en-US/signin",
+	"Code":   "123456",
 }
 
 // The definition of done: every user-facing text exists in both languages

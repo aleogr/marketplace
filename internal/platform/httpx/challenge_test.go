@@ -21,17 +21,19 @@ func TestTheSecondStepCountsAgainstTheSignInLimits(t *testing.T) {
 			handler := identityHandler(t,
 				identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
 				limitsRefusing(slot))
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, formRequest(t, "/signin/verify", url.Values{"method": {"totp"}, "code": {"123456"}}))
-			switch slot {
-			case "SignIn", "SignInAddress":
-				if recorder.Code != http.StatusTooManyRequests {
-					t.Errorf("status = %d, want %d", recorder.Code, http.StatusTooManyRequests)
-				}
-			default:
-				if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/pt-BR/signin?again=expired" {
-					t.Errorf("status %d, Location %q; want %d to /pt-BR/signin?again=expired",
-						recorder.Code, recorder.Header().Get("Location"), http.StatusSeeOther)
+			for _, path := range []string{"/signin/verify", "/signin/verify/email"} {
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, formRequest(t, path, url.Values{"method": {"totp"}, "code": {"123456"}}))
+				switch slot {
+				case "SignIn", "SignInAddress":
+					if recorder.Code != http.StatusTooManyRequests {
+						t.Errorf("%s: status = %d, want %d", path, recorder.Code, http.StatusTooManyRequests)
+					}
+				default:
+					if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/pt-BR/signin?again=expired" {
+						t.Errorf("%s: status %d, Location %q; want %d to /pt-BR/signin?again=expired",
+							path, recorder.Code, recorder.Header().Get("Location"), http.StatusSeeOther)
+					}
 				}
 			}
 		})

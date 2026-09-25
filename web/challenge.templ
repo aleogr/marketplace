@@ -14,6 +14,12 @@ templ ChallengePage(page Page, view Challenge) {
 			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
 		}
 		<p>{ page.T("identity.challenge.method." + view.Method) }</p>
+		if view.Method == "email" {
+			if view.Sent {
+				<p role="status">{ page.T("identity.challenge.sent") }</p>
+			}
+			@sendCodeForm(page, view)
+		}
 		@challengeForm(page, view) {
 			<label>
 				{ page.T("identity.field.code") }
@@ -55,6 +61,24 @@ templ challengeForm(page Page, view Challenge) {
 			<input type="hidden" name="for" value={ view.Action }/>
 			<input type="hidden" name="next" value={ view.Next }/>
 			{ children... }
+		</form>
+	}
+}
+
+// sendCodeForm asks for an e-mail code: for the sign-in's second step, or for
+// the step-up, which carries what it guards and where it returns.
+templ sendCodeForm(page Page, view Challenge) {
+	if view.Action == "" {
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/signin/verify/email") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<button type="submit" class="secondary">{ page.T("identity.challenge.send") }</button>
+		</form>
+	} else {
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/verify/email") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<input type="hidden" name="for" value={ view.Action }/>
+			<input type="hidden" name="next" value={ view.Next }/>
+			<button type="submit" class="secondary">{ page.T("identity.challenge.send") }</button>
 		</form>
 	}
 }

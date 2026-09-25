@@ -1,0 +1,6 @@
+Subject: Your code at {{.From}}: {{.Code}}
+Hello, {{.Name}}.
+
+Your code is {{.Code}}. It works once, for ten minutes.
+
+Nobody from {{.From}} will ever ask you for this code. If you did not ask for it, change your password.

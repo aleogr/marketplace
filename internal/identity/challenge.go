@@ -143,8 +143,11 @@ func (s *Service) check(ctx context.Context, tx pgx.Tx, account Account, ch chal
 	if !slices.Contains(methods, answer.Method) {
 		return false, nil
 	}
-	if answer.Method == MethodApp {
+	switch answer.Method {
+	case MethodApp:
 		return s.checkApp(ctx, tx, account.ID, answer.Code, now)
+	case MethodEmail:
+		return useEmailCode(ctx, tx, account.ID, purposeOf(ch), answer.Code, now)
 	}
 	return false, nil
 }

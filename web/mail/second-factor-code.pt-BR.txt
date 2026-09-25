@@ -1,0 +1,6 @@
+Subject: Seu código em {{.From}}: {{.Code}}
+Olá, {{.Name}}.
+
+Seu código é {{.Code}}. Ele funciona uma vez, por dez minutos.
+
+Ninguém de {{.From}} vai pedir este código a você. Se não foi você quem pediu, altere sua senha.
