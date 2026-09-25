@@ -1,0 +1,105 @@
+//go:build integration
+
+package identity
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// anAccount inserts an unconfirmed account in marketplace and returns its id.
+func anAccount(t *testing.T, db serving, marketplace, email string) string {
+	t.Helper()
+	var id string
+	if err := db.InTxFor(t.Context(), marketplace, func(tx pgx.Tx) error {
+		var err error
+		id, err = insertAccount(t.Context(), tx, marketplace, email, email, "Reader")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// A marketplace sees its own accounts' second factors and nothing of
+// another's, like every other tenant table.
+func TestSecondFactorsAreInvisibleFromAnotherMarketplace(t *testing.T) {
+	db, one, two := twoMarketplaces(t)
+	account := anAccount(t, db, one, "r@example.test")
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return insertApp(t.Context(), tx, one, account, "phone", []byte("sealed"), 1, time.Now())
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	count := func(marketplace string) int {
+		var n int
+		if err := db.InTxFor(t.Context(), marketplace, func(tx pgx.Tx) error {
+			found, err := factorsOf(t.Context(), tx, account)
+			n = len(found)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := count(one); n != 1 {
+		t.Fatalf("the marketplace sees %d factors of its own account, want 1", n)
+	}
+	if n := count(two); n != 0 {
+		t.Fatalf("another marketplace sees %d factors of the account, want 0", n)
+	}
+	// Nor can it write one for an account it cannot see.
+	if err := db.InTxFor(t.Context(), two, func(tx pgx.Tx) error {
+		return insertApp(t.Context(), tx, one, account, "phone", []byte("sealed"), 1, time.Now())
+	}); err == nil {
+		t.Fatal("another marketplace wrote a second factor into this one")
+	}
+}
+
+// An enrolment is the session's, one at a time, and only while it is live.
+func TestAnEnrolmentIsTheSessionsWhileItIsLive(t *testing.T) {
+	db, one, _ := twoMarketplaces(t)
+	account := anAccount(t, db, one, "r@example.test")
+	now := time.Now().UTC()
+	_, hash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedSession(t, db, one, account, hash, now, now, nil)
+	var session string
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT id::text FROM session WHERE token_hash = $1`, hash).Scan(&session)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	read := func(at time.Time) (enrolment, error) {
+		var e enrolment
+		err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+			var err error
+			e, err = enrolmentOf(t.Context(), tx, session, MethodApp, at)
+			return err
+		})
+		return e, err
+	}
+	put := func(secret string) {
+		if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+			return putEnrolment(t.Context(), tx, one, session, account, MethodApp, []byte(secret), nil, now.Add(EnrolmentLifetime))
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	put("first")
+	put("second")
+	if e, err := read(now); err != nil || string(e.Secret) != "second" {
+		t.Fatalf("the enrolment = %q, %v; want the second, which replaced the first", e.Secret, err)
+	}
+	if _, err := read(now.Add(EnrolmentLifetime + time.Second)); !errors.Is(err, ErrNoEnrolment) {
+		t.Fatalf("an expired enrolment = %v, want ErrNoEnrolment", err)
+	}
+}

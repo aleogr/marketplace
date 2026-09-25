@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"maps"
 	"net/url"
 	"strings"
 	"sync"
@@ -97,6 +98,10 @@ type Service struct {
 	audit    Auditor
 	log      *slog.Logger
 	now      func() time.Time
+	// sealer seals a second factor's secret with its person's key (D5 of
+	// the F14 spec); policy is section 18.2, which every path asks.
+	sealer Sealer
+	policy Policy
 
 	sweepMu   sync.Mutex
 	lastSweep time.Time // process-local; guarded by sweepMu
@@ -128,7 +133,15 @@ func (s *Service) checkNew(ctx context.Context, password string) error {
 
 // record audits what an account did itself.
 func (s *Service) record(ctx context.Context, tx pgx.Tx, v Visit, account, action string) error {
-	after, err := json.Marshal(map[string]string{"user_agent": v.UserAgent})
+	return s.recordWith(ctx, tx, v, account, action, nil)
+}
+
+// recordWith is record with what else the record should say: which method,
+// for one. It is sealed with the account's key, like the user agent.
+func (s *Service) recordWith(ctx context.Context, tx pgx.Tx, v Visit, account, action string, detail map[string]string) error {
+	state := map[string]string{"user_agent": v.UserAgent}
+	maps.Copy(state, detail)
+	after, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
