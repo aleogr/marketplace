@@ -7,7 +7,7 @@ import re
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
-from accounts import SUBMIT, confirmed_account, sign_in
+from accounts import SUBMIT, confirmed_account, sign_in, wait_for_mail
 from factors import next_totp, totp
 
 # identity.app.wrong_code and identity.security.done.removed, as
@@ -55,6 +55,8 @@ def test_adding_and_removing_an_app(run_marketplace, screenshots, language):
         codes = page.locator("ol.codes code").all_inner_texts()
         assert len(codes) == 10 and all(re.fullmatch(r"[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}", c) for c in codes), codes
         page.screenshot(path=screenshots / f"f14-recovery-codes-{language}.png", full_page=True)
+        added = wait_for_mail(marketplace.mailbox, "second-factor-added", email)
+        assert added["variables"]["Method"] == "totp" and added["language"] == language, added
 
         page.click("main a[href$='/account/security']")
         expect(page.locator("ul.factors li")).to_have_count(1)
@@ -73,4 +75,5 @@ def test_adding_and_removing_an_app(run_marketplace, screenshots, language):
         page.click("ul.factors button[type=submit]")
         expect(page.locator("[role=status]")).to_have_text(REMOVED[language])
         expect(page.locator("ul.factors")).to_have_count(0)
+        wait_for_mail(marketplace.mailbox, "second-factor-removed", email)
         browser.close()

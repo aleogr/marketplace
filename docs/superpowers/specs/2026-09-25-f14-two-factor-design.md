@@ -1,7 +1,9 @@
 # F14 — Two-factor authentication: design
 
 **Date:** 2026-09-25
-**Status:** agreed with the owner, not yet implemented
+**Status:** implemented on 2026-09-25, in aleogr/marketplace #81 (design and plan), #82 and #83
+(the app), #84 (the two-step sign-in, the step-up and e-mail codes), #85 and #86 (keys) and #PR4
+(the notices, the failure counter and the closing)
 **Delivers:** roadmap F14 (`docs/roadmap.md`), against `docs/requirements.md` §18.2 and
 `docs/design.md` §4 and item 5 of its decisions list.
 
