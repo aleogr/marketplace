@@ -65,7 +65,7 @@ templ Layout(page Page, title string) {
 					--done-text: #14532d; --done-bg: #e7f6ec; --done-edge: #1f8a4c;
 					--action-text: #ffffff; --action-bg: #1d4ed8;
 					--action-hover: #1e40af; --action-pressed: #1e3a8a;
-					--field-edge: #6b7280; --pressed-tint: rgb(0 0 0 / 0.1);
+					--field-edge: #6b7280; --pressed-tint: rgb(0 0 0 / 0.1); --pressed-tint-strong: rgb(0 0 0 / 0.22);
 				}
 				@media (prefers-color-scheme: dark) {
 					:root {
@@ -73,7 +73,7 @@ templ Layout(page Page, title string) {
 						--done-text: #a7f3c1; --done-bg: #0f2a1a; --done-edge: #3fbf73;
 						--action-text: #0b1633; --action-bg: #8fb0ff;
 						--action-hover: #a9c2ff; --action-pressed: #c7d7ff;
-						--field-edge: #9ca3af; --pressed-tint: rgb(255 255 255 / 0.15);
+						--field-edge: #9ca3af; --pressed-tint: rgb(255 255 255 / 0.15); --pressed-tint-strong: rgb(255 255 255 / 0.32);
 					}
 				}
 				/* A refusal must not read as one more hint: a colour, a bar
@@ -162,7 +162,7 @@ templ Layout(page Page, title string) {
 					margin-top: 0;
 				}
 				main form button[type="submit"].secondary:hover { background: var(--pressed-tint); }
-				main form button[type="submit"].secondary:active { background: var(--pressed-tint); }
+				main form button[type="submit"].secondary:active { background: var(--pressed-tint-strong); }
 				img.qr { background: #ffffff; display: block; image-rendering: pixelated; margin: 1rem 0; padding: 0.5rem; }
 				code.key, ol.codes { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 				code.key { font-size: 1.125rem; word-spacing: 0.25rem; }

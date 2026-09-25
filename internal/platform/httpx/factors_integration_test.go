@@ -169,3 +169,19 @@ func TestAddingAndRemovingAnAppThroughThePages(t *testing.T) {
 		t.Fatalf("the security page after the removal: %s", after.Body.String())
 	}
 }
+
+// A tampered or empty factor field is a factor the account does not have,
+// not a database error: it must answer 404, not 500.
+func TestRemovingAFactorByAMalformedIDIsNotFound(t *testing.T) {
+	handler, service, marketplace := securityHandler(t)
+	b := signedInBrowser(t, handler, service, marketplace)
+
+	for name, id := range map[string]string{"malformed": "nope", "empty": ""} {
+		t.Run(name, func(t *testing.T) {
+			removed := b.post("/account/security/remove", url.Values{"factor": {id}})
+			if removed.Code != http.StatusNotFound {
+				t.Fatalf("factor=%q: status %d, want %d", id, removed.Code, http.StatusNotFound)
+			}
+		})
+	}
+}

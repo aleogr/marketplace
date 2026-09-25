@@ -103,3 +103,23 @@ func TestAnEnrolmentIsTheSessionsWhileItIsLive(t *testing.T) {
 		t.Fatalf("an expired enrolment = %v, want ErrNoEnrolment", err)
 	}
 }
+
+// An id that is not a well-formed UUID is one the account does not have,
+// like any other unknown id: PostgreSQL refuses to compare a uuid column
+// against text that is not one, so deleteFactor must not hand it one.
+func TestDeletingAFactorByAMalformedIDIsNoRows(t *testing.T) {
+	db, one, _ := twoMarketplaces(t)
+	account := anAccount(t, db, one, "r@example.test")
+
+	for name, id := range map[string]string{"malformed": "not-a-uuid", "empty": ""} {
+		t.Run(name, func(t *testing.T) {
+			err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+				_, err := deleteFactor(t.Context(), tx, account, id)
+				return err
+			})
+			if !errors.Is(err, pgx.ErrNoRows) {
+				t.Fatalf("deleteFactor(%q) = %v, want pgx.ErrNoRows", id, err)
+			}
+		})
+	}
+}

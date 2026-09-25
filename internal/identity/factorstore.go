@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // EnrolmentLifetime is how long an app or a key being added waits for the
@@ -56,10 +57,16 @@ func insertApp(ctx context.Context, tx pgx.Tx, marketplace, account, label strin
 }
 
 // deleteFactor removes one of an account's factors and returns what it was,
-// or pgx.ErrNoRows for one the account does not have.
+// or pgx.ErrNoRows for one the account does not have. An id that is not a
+// well-formed UUID is that too, rather than a database error: id's column is
+// a uuid, and PostgreSQL refuses to compare it against text that is not one.
 func deleteFactor(ctx context.Context, tx pgx.Tx, account, id string) (factor, error) {
+	var parsed pgtype.UUID
+	if err := parsed.Scan(id); err != nil {
+		return factor{}, pgx.ErrNoRows
+	}
 	return scanFactor(tx.QueryRow(ctx,
-		`DELETE FROM second_factor WHERE account_id = $1 AND id = $2 RETURNING `+factorColumns, account, id))
+		`DELETE FROM second_factor WHERE account_id = $1 AND id = $2 RETURNING `+factorColumns, account, parsed))
 }
 
 func countFactors(ctx context.Context, tx pgx.Tx, account string) (int, error) {
