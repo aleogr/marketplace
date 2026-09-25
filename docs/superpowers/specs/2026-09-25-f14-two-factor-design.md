@@ -99,10 +99,11 @@ and deletes the recovery codes.
 **Known limit, stated:** a 6-digit code stored as its SHA-256 can be brute-forced by someone holding
 the database; the exposure is bounded by the code's ten-minute life, and online guessing by the five
 attempts. This is the market's standard for short one-time codes. Recovery codes are long and random,
-but a plain SHA-256 of sixty random bits is still a multi-target search across a stolen database: with
-many stored codes the expected work per account falls, roughly 2^60/10 per account at ten accounts.
-Binding the stored hash to the account (of the account id and the code) forces a search per account
-instead, decided with the owner on 2026-09-25.
+but a plain SHA-256 of sixty random bits is still a multi-target search across a stolen database:
+with N accounts of ten codes each, finding some account's code takes about 2^60/(10·N) hashes, which
+falls as the marketplace grows. Binding the stored hash to the account (of the account id and the
+code) forces a search per account instead, about 2^60/10 hashes each whatever N is; decided with the
+owner on 2026-09-25.
 
 ## Flows
 
