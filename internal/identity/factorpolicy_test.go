@@ -41,9 +41,11 @@ func TestOnlyStaffAreRequiredToHaveASecondFactor(t *testing.T) {
 
 // Every combination of user kind, action and whether the account has a
 // second factor. Changing the password or the factors asks again only whoever
-// has one (D2), and staff always have one; adding a card, changing the address
-// and a store's sensitive actions always ask, with a code to the account's
-// own address accepted where the policy permits e-mail (§18.2).
+// has one (D2), whatever the kind: staff must end up with a factor (F15
+// enforces that at sign-in), but is not asked before enrolling the first one,
+// or could never enrol one at all. Adding a card, changing the address and a
+// store's sensitive actions always ask, with a code to the account's own
+// address accepted where the policy permits e-mail (§18.2).
 func TestThePolicyAsksForAStepUpAsSection18Point2Says(t *testing.T) {
 	var p Policy
 	for _, kind := range everyKind {
@@ -51,7 +53,7 @@ func TestThePolicyAsksForAStepUpAsSection18Point2Says(t *testing.T) {
 			for _, has := range []bool{false, true} {
 				want := StepUp{Asked: true, Email: kind != KindStaff}
 				if action == ActionPassword || action == ActionFactors {
-					want = StepUp{Asked: has || kind == KindStaff}
+					want = StepUp{Asked: has}
 				}
 				if got := p.StepUpFor(kind, action, has); got != want {
 					t.Errorf("StepUpFor(%s, %s, has factor %v) = %+v, want %+v", kind, action, has, got, want)

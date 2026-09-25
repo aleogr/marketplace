@@ -185,3 +185,27 @@ func TestTheStepUpEntryPointsForACardAndAnAddress(t *testing.T) {
 		t.Fatalf("staff with no factor stepping up = %v, want ErrNoSecondFactor", err)
 	}
 }
+
+// Staff must end up with a second factor (F15 enforces that at sign-in), but
+// a step-up is only asked of whoever already has one (D2): a staff account
+// with none yet is not asked before enrolling its first, or it could never
+// enrol one at all. It still has nothing to step up with for anything else.
+func TestStaffWithNoFactorMayEnrolTheirFirst(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session := signedIn(t, s, db, one, "r@example.test")
+	v := visit(one)
+
+	staff := session
+	staff.Account.Kind = KindStaff
+	if s.NeedsStepUp(staff, ActionFactors) {
+		t.Error("staff with no factor is asked to step up before adding their first one")
+	}
+	if _, err := s.BeginApp(t.Context(), v, staff); errors.Is(err, ErrStepUpNeeded) {
+		t.Errorf("BeginApp for staff with no factor = %v, want no ErrStepUpNeeded", err)
+	}
+
+	if _, err := s.BeginStepUp(t.Context(), v, staff, ActionAddCard); !errors.Is(err, ErrNoSecondFactor) {
+		t.Fatalf("staff with no factor stepping up for %s = %v, want ErrNoSecondFactor", ActionAddCard, err)
+	}
+}
