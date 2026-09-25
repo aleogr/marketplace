@@ -69,8 +69,9 @@ decision, 2026-09-25).
   clock drift) and never for a step at or before the last one accepted, which is stored.
 - WebAuthn: the relying-party identifier is the marketplace's host, so a credential enrolled on one
   marketplace does not work on another, which matches accounts belonging to a marketplace (F13 D2).
-  The sign counter is checked; a counter that goes backwards refuses the assertion and is audited as
-  a possible clone.
+  The sign counter is checked; a counter that does not move forward, other than both being zero (an
+  authenticator that keeps no counter), refuses the assertion and is audited as a possible clone
+  (WebAuthn §7.2).
 - E-mail codes: 6 digits, 10 minutes, at most 5 attempts, one purpose each (sign-in, step-up,
   enrolment), at most 1 sent per minute and 5 per hour per account.
 - Recovery codes: 10 codes of the form `xxxx-xxxx-xxxx` (about 60 bits each), shown once, used once;
@@ -156,7 +157,8 @@ The code travels through the outbox, whose variables are cleared once dispatched
 so it does not stay in the database after delivery.
 
 **Audit:** enrolment, removal, sign-in with a second factor (naming the method), step-up, recovery
-code used, recovery codes regenerated, a failed second factor, a WebAuthn counter that went backwards.
+code used, recovery codes regenerated, a failed second factor, a WebAuthn counter that did not move
+forward.
 
 Every page, message and e-mail exists in en-US and pt-BR.
 
