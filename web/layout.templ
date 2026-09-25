@@ -203,6 +203,9 @@ templ LanguageSwitch(page Page) {
 				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 				<input type="hidden" name="language" value={ tag }/>
 				<input type="hidden" name="path" value={ page.Path }/>
+				if page.Query != "" {
+					<input type="hidden" name="query" value={ page.Query }/>
+				}
 				<button
 					type="submit"
 					lang={ tag }
