@@ -29,6 +29,8 @@ var sampleVariables = map[string]string{
 	"Link":   "https://marketplace1.example/en-US/verify?token=sample",
 	"SignIn": "https://marketplace1.example/en-US/signin",
 	"Code":   "123456",
+	"Method": "totp",
+	"Left":   "9",
 }
 
 // The definition of done: every user-facing text exists in both languages
@@ -113,6 +115,28 @@ func TestAnAddressIsComparedInOneForm(t *testing.T) {
 	for _, given := range []string{"Reader@Example.Test", "  reader@example.test  ", "READER@EXAMPLE.TEST"} {
 		if got := mail.Address(given); got != "reader@example.test" {
 			t.Errorf("Address(%q) = %q", given, got)
+		}
+	}
+}
+
+// The second-factor notices name the method in the reader's language: the
+// service passes its kind, and each template words it.
+func TestTheSecondFactorNoticesNameTheMethodInTheReadersLanguage(t *testing.T) {
+	for _, tc := range []struct{ template, language, method, want string }{
+		{"second-factor-added", "pt-BR", "webauthn", "uma chave de segurança ou dispositivo"},
+		{"second-factor-added", "en-US", "totp", "an authenticator app"},
+		{"second-factor-removed", "en-US", "email", "codes by e-mail"},
+		{"second-factor-removed", "pt-BR", "totp", "um aplicativo autenticador"},
+	} {
+		rendered, err := templates(t).Render(mail.Message{
+			Template: tc.template, Language: tc.language, To: "reader@example.test", From: "Loja Um",
+			Variables: map[string]string{"Name": "Leitora", "Method": tc.method},
+		}, i18n.Default)
+		if err != nil {
+			t.Fatalf("%s in %s: %v", tc.template, tc.language, err)
+		}
+		if !strings.Contains(rendered.Text, tc.want) || !strings.Contains(rendered.HTML, tc.want) {
+			t.Errorf("%s in %s with %s does not say %q: %s", tc.template, tc.language, tc.method, tc.want, rendered.Text)
 		}
 	}
 }

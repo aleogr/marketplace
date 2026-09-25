@@ -1,0 +1,6 @@
+Subject: A recovery code was used to sign in at {{.From}}
+Hello, {{.Name}}.
+
+Someone just signed in to your account at {{.From}} with one of your recovery codes. Recovery codes left: {{.Left}}.
+
+If it was you, add a second factor again if you lost yours, and make new recovery codes on your account's security page. If it was not you, someone has your password and one of your codes: change your password and make new recovery codes now.

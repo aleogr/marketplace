@@ -201,7 +201,10 @@ func (s *Service) ConfirmKey(ctx context.Context, v Visit, session Session, labe
 		if issued, err = s.firstRecoverySet(ctx, tx, v, account, hashes); err != nil {
 			return err
 		}
-		return s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodKey)})
+		if err := s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodKey)}); err != nil {
+			return err
+		}
+		return notify(ctx, tx, v, session.Account, "second-factor-added", map[string]string{"Method": string(MethodKey)})
 	})
 	switch {
 	case err != nil:

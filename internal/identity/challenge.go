@@ -229,14 +229,18 @@ func (s *Service) answerChallenge(ctx context.Context, v Visit, token, sessionID
 	return nil
 }
 
-// recoveryUsed audits a recovery code spent, with how many are left.
+// recoveryUsed audits a recovery code spent, with how many are left, and
+// tells the owner by e-mail.
 func (s *Service) recoveryUsed(ctx context.Context, tx pgx.Tx, v Visit, account Account) error {
 	_, left, err := recoveryCodes(ctx, tx, account.ID)
 	if err != nil {
 		return err
 	}
-	return s.recordWith(ctx, tx, v, account.ID, "identity.recovery_code_used",
-		map[string]string{"left": strconv.Itoa(left)})
+	if err := s.recordWith(ctx, tx, v, account.ID, "identity.recovery_code_used",
+		map[string]string{"left": strconv.Itoa(left)}); err != nil {
+		return err
+	}
+	return notify(ctx, tx, v, account, "recovery-code-used", map[string]string{"Left": strconv.Itoa(left)})
 }
 
 // SignedIn is what a completed second step opened: the session's token, and,

@@ -1,0 +1,3 @@
+<p>Olá, {{.Name}}.</p>
+<p>Um segundo fator acabou de ser removido da sua conta em {{.From}}: {{if eq .Method "totp"}}um aplicativo autenticador{{else if eq .Method "webauthn"}}uma chave de segurança ou dispositivo{{else}}códigos por e-mail{{end}}.</p>
+<p>Se não foi você, outra pessoa está usando sua conta: altere sua senha e confira os segundos fatores na página de segurança da conta.</p>

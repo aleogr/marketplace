@@ -1,0 +1,6 @@
+Subject: Um código de recuperação foi usado para entrar em {{.From}}
+Olá, {{.Name}}.
+
+Alguém acabou de entrar na sua conta em {{.From}} com um dos seus códigos de recuperação. Códigos de recuperação restantes: {{.Left}}.
+
+Se foi você, adicione de novo um segundo fator se perdeu o seu e gere novos códigos de recuperação na página de segurança da conta. Se não foi você, alguém tem sua senha e um dos seus códigos: altere sua senha e gere novos códigos de recuperação agora.

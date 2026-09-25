@@ -1,0 +1,3 @@
+<p>Hello, {{.Name}}.</p>
+<p>A new second factor was just added to your account at {{.From}}: {{if eq .Method "totp"}}an authenticator app{{else if eq .Method "webauthn"}}a security key or device{{else}}codes by e-mail{{end}}. From now on, signing in asks for a second factor after the password.</p>
+<p>If it was not you, someone else is using your account: change your password, and remove the second factor you do not recognise on your account's security page.</p>

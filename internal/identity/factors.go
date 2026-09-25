@@ -218,7 +218,10 @@ func (s *Service) ConfirmApp(ctx context.Context, v Visit, session Session, labe
 		if issued, err = s.firstRecoverySet(ctx, tx, v, account, hashes); err != nil {
 			return err
 		}
-		return s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodApp)})
+		if err := s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodApp)}); err != nil {
+			return err
+		}
+		return notify(ctx, tx, v, session.Account, "second-factor-added", map[string]string{"Method": string(MethodApp)})
 	})
 	switch {
 	case err != nil:
@@ -284,8 +287,11 @@ func (s *Service) RemoveFactor(ctx context.Context, v Visit, session Session, id
 				return err
 			}
 		}
-		return s.recordWith(ctx, tx, v, account, "identity.second_factor_removed",
-			map[string]string{"method": string(removed.Method)})
+		if err := s.recordWith(ctx, tx, v, account, "identity.second_factor_removed",
+			map[string]string{"method": string(removed.Method)}); err != nil {
+			return err
+		}
+		return notify(ctx, tx, v, session.Account, "second-factor-removed", map[string]string{"Method": string(removed.Method)})
 	})
 }
 

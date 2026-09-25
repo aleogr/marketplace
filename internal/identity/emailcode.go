@@ -267,7 +267,10 @@ func (s *Service) ConfirmEmail(ctx context.Context, v Visit, session Session, co
 			VALUES ($1, $2, 'email', '', $3)`, account, v.Marketplace, now); err != nil {
 			return err
 		}
-		return s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodEmail)})
+		if err := s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodEmail)}); err != nil {
+			return err
+		}
+		return notify(ctx, tx, v, session.Account, "second-factor-added", map[string]string{"Method": string(MethodEmail)})
 	})
 	if err == nil && wrong {
 		return ErrCodeWrong
