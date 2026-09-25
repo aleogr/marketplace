@@ -41,10 +41,11 @@ the step-up they will call is delivered here. `docs/requirements.md` §18.2 reco
 a half-authenticated session and over a signed cookie on 2026-09-25. A correct password on an
 account with a second factor creates a `sign_in_challenge`: a random token in its own cookie, stored
 as its SHA-256, valid for 5 minutes, at most 5 attempts, used once. The session is created only when
-the second factor is accepted. The `session` table keeps holding complete sessions only, so the F13
-middleware and everything that reads a session stay as they are; there is no half-session to forget
-to check. A signed stateless cookie was rejected because it can neither count attempts nor be
-revoked.
+the second factor is accepted, and a password change ends the account's open sign-in challenges,
+since the second step does not check the password again. The `session` table keeps holding complete
+sessions only, so the F13 middleware and everything that reads a session stay as they are; there is
+no half-session to forget to check. A signed stateless cookie was rejected because it can neither
+count attempts nor be revoked.
 
 **D4. A step-up lasts ten minutes.** The session gains `stepped_up_at`, set when a second factor is
 accepted at sign-in or at a step-up. A sensitive action requires it to be less than ten minutes old,
@@ -189,8 +190,9 @@ sign-in sends an e-mail and shows, on the next page, how many remain.
 file served by the site, loaded with the page's nonce under the existing CSP (`script-src 'self'
 'nonce-…'`), no inline script. Without JavaScript, the app and the e-mail code still work.
 
-**Mail** (en-US and pt-BR, text and HTML): the code, method added, method removed, recovery code used,
-repeated failures of the second step and codes locked (D8).
+**Mail** (en-US and pt-BR, text and HTML): the code (saying what it is for, and kept out of the
+subject), method added, method removed, recovery code used, repeated failures of the second step
+and codes locked (D8).
 The code travels through the outbox, whose variables are cleared once dispatched (migration 00010),
 so it does not stay in the database after delivery.
 
