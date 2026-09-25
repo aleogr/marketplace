@@ -278,8 +278,11 @@ func TestABuyerStepsUpBeforeACardWithAnEmailCode(t *testing.T) {
 	if err := s.StepUp(t.Context(), visit(one), buyer, token, Answer{Method: MethodEmail, Code: lastCode(t, db, one)}); err != nil {
 		t.Fatalf("StepUp with the e-mail code = %v", err)
 	}
-	if stepped := trail.entry(t, "identity.stepped_up"); string(stepped.After) != `{"action":"add_card","method":"email","user_agent":"test"}` {
-		t.Fatalf("stepped_up recorded as %s", stepped.After)
+	if proved := trail.entry(t, "identity.email_confirmed"); string(proved.After) != `{"action":"add_card","method":"email","user_agent":"test"}` {
+		t.Fatalf("email_confirmed recorded as %s", proved.After)
+	}
+	if n := trail.audited("identity.stepped_up"); n != 0 {
+		t.Fatalf("a code to the address was audited as %d step-ups", n)
 	}
 }
 

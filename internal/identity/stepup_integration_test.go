@@ -234,8 +234,11 @@ func TestAnEmailCodeForACardIsNotASecondFactor(t *testing.T) {
 	if err := s.StepUp(t.Context(), v, session, challenge, Answer{Method: MethodEmail, Code: lastCode(t, db, one)}); err != nil {
 		t.Fatalf("StepUp with the e-mail code = %v", err)
 	}
-	if stepped := trail.entry(t, "identity.stepped_up"); string(stepped.After) != `{"action":"add_card","method":"email","user_agent":"test"}` {
-		t.Fatalf("stepped_up recorded as %s", stepped.After)
+	if proved := trail.entry(t, "identity.email_confirmed"); string(proved.After) != `{"action":"add_card","method":"email","user_agent":"test"}` {
+		t.Fatalf("email_confirmed recorded as %s", proved.After)
+	}
+	if n := trail.audited("identity.stepped_up"); n != 0 {
+		t.Fatalf("the address proved was audited as %d step-ups", n)
 	}
 	confirmed, err := s.Authenticate(t.Context(), one, token)
 	if err != nil || confirmed.SteppedUpAt != nil || confirmed.EmailConfirmedAt == nil {
@@ -274,7 +277,7 @@ func TestAnEmailCodeForACardIsNotASecondFactor(t *testing.T) {
 // An account whose second factor is e-mail steps up with an e-mail code for
 // anything, its factors included: there the code is the factor.
 func TestAnEmailFactorStepsUpForTheFactors(t *testing.T) {
-	s, db, one, _, _ := service(t)
+	s, db, one, _, trail := service(t)
 	sealed(t, s)
 	confirmed(t, s, db, one, "r@example.test")
 	token := signIn(t, s, one, "r@example.test", "correct horse battery staple")
@@ -308,6 +311,12 @@ func TestAnEmailFactorStepsUpForTheFactors(t *testing.T) {
 	stepped, err := s.Authenticate(t.Context(), one, token)
 	if err != nil || stepped.SteppedUpAt == nil {
 		t.Fatalf("the session after the step-up = %+v, %v; want it stepped up", stepped, err)
+	}
+	if entry := trail.entry(t, "identity.stepped_up"); string(entry.After) != `{"action":"factors","method":"email","user_agent":"test"}` {
+		t.Fatalf("stepped_up recorded as %s", entry.After)
+	}
+	if n := trail.audited("identity.email_confirmed"); n != 0 {
+		t.Fatalf("a step-up with the e-mail factor was audited as %d addresses proved", n)
 	}
 	for _, action := range []Action{ActionFactors, ActionPassword} {
 		if s.NeedsStepUp(stepped, action) {

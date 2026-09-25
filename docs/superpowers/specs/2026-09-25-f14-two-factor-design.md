@@ -194,9 +194,10 @@ repeated failures of the second step and codes locked (D8).
 The code travels through the outbox, whose variables are cleared once dispatched (migration 00010),
 so it does not stay in the database after delivery.
 
-**Audit:** enrolment, removal, sign-in with a second factor (naming the method), step-up, recovery
-code used, recovery codes regenerated, a failed second factor, a WebAuthn counter that did not move
-forward, the failures notice and the codes locked (D8).
+**Audit:** enrolment, removal, sign-in with a second factor (naming the method), step-up, an address
+proved by a code sent to it that is not a second factor (`identity.email_confirmed`, apart from the
+step-up's `identity.stepped_up`, D4), recovery code used, recovery codes regenerated, a failed second
+factor, a WebAuthn counter that did not move forward, the failures notice and the codes locked (D8).
 
 Every page, message and e-mail exists in en-US and pt-BR.
 
