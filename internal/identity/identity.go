@@ -265,6 +265,10 @@ func (s *Service) Resend(ctx context.Context, v Visit, email string) error {
 type Session struct {
 	ID      string
 	Account Account
+	// SecondFactor is whether the account has one, so it has 2FA; and
+	// SteppedUpAt is when this session last proved it (F14 spec, D4).
+	SecondFactor bool
+	SteppedUpAt  *time.Time
 }
 
 // refusal audits an attempt against an account by somebody not known to be
@@ -273,7 +277,14 @@ type Session struct {
 // sealed under the platform's key, so the owner's erasure request cannot
 // erase the evidence about somebody else (internal/platform/audit).
 func (s *Service) refusal(ctx context.Context, tx pgx.Tx, v Visit, account, action string) error {
-	after, err := json.Marshal(map[string]string{"user_agent": v.UserAgent})
+	return s.refusalWith(ctx, tx, v, account, action, nil)
+}
+
+// refusalWith is refusal with what else the record should say.
+func (s *Service) refusalWith(ctx context.Context, tx pgx.Tx, v Visit, account, action string, detail map[string]string) error {
+	state := map[string]string{"user_agent": v.UserAgent}
+	maps.Copy(state, detail)
+	after, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
@@ -306,7 +317,10 @@ func (s *Service) credentials(ctx context.Context, marketplace, normalised strin
 }
 
 // SignIn checks a password and opens a new session, returning its token. A
-// session is never reused: each sign-in opens its own.
+// session is never reused: each sign-in opens its own. On an account with a
+// second factor it opens a challenge instead, and returns the challenge's
+// token with ErrSecondStep: the session is opened by CompleteSignIn, once the
+// second factor is proved (F14 spec, D3).
 //
 // Three steps, and argon2 runs in none of the transactions: the account is
 // read in one, the password verified with none open, and the session written
@@ -364,6 +378,7 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 	if err != nil {
 		return "", err
 	}
+	var second bool
 	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		still, err := passwordStill(ctx, tx, account.ID, secret)
 		if err != nil {
@@ -383,6 +398,14 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 				return err
 			}
 		}
+		factors, err := countFactors(ctx, tx, account.ID)
+		if err != nil {
+			return err
+		}
+		if factors > 0 {
+			second = true
+			return insertChallenge(ctx, tx, v.Marketplace, account.ID, hash, "", "", s.now())
+		}
 		if err := insertSession(ctx, tx, v.Marketplace, account.ID, hash, v.IP, v.UserAgent, s.now()); err != nil {
 			return err
 		}
@@ -390,6 +413,9 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 	})
 	if err != nil {
 		return "", err
+	}
+	if second {
+		return token, ErrSecondStep
 	}
 	s.sweep(ctx, v.Marketplace)
 	return token, nil
@@ -475,7 +501,7 @@ func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (
 		if err != nil {
 			return err
 		}
-		session = Session{ID: row.id, Account: account}
+		session = Session{ID: row.id, Account: account, SecondFactor: row.secondFactor, SteppedUpAt: row.steppedUp}
 		return nil
 	})
 	return session, err

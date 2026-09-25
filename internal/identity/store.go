@@ -117,13 +117,18 @@ func insertSession(ctx context.Context, tx pgx.Tx, marketplace, account string, 
 type sessionRow struct {
 	id, account   string
 	created, seen time.Time
+	steppedUp     *time.Time
+	secondFactor  bool
 }
 
 func liveSession(ctx context.Context, tx pgx.Tx, hash []byte) (sessionRow, error) {
 	var r sessionRow
 	err := tx.QueryRow(ctx, `
-		SELECT id::text, account_id::text, created_at, last_seen_at FROM session
-		 WHERE token_hash = $1 AND revoked_at IS NULL`, hash).Scan(&r.id, &r.account, &r.created, &r.seen)
+		SELECT s.id::text, s.account_id::text, s.created_at, s.last_seen_at, s.stepped_up_at,
+		       EXISTS (SELECT 1 FROM second_factor f WHERE f.account_id = s.account_id)
+		  FROM session s
+		 WHERE s.token_hash = $1 AND s.revoked_at IS NULL`, hash).
+		Scan(&r.id, &r.account, &r.created, &r.seen, &r.steppedUp, &r.secondFactor)
 	return r, err
 }
 
