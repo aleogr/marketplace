@@ -25,6 +25,10 @@ CREATE TABLE sign_in_challenge (
     CONSTRAINT sign_in_challenge_step_up_names_its_action CHECK ((session_id IS NULL) = (action IS NULL))
 );
 CREATE INDEX sign_in_challenge_by_account ON sign_in_challenge (account_id);
+-- The sweep's deletion of a session cascades to the step-ups it opened, and
+-- finds them by session_id; a sign-in's challenge has none (migration 00012
+-- indexes the session's side of the same sweep).
+CREATE INDEX sign_in_challenge_by_session ON sign_in_challenge (session_id) WHERE session_id IS NOT NULL;
 
 -- A six-digit code sent to the account's address, for one purpose, stored
 -- as its SHA-256 (D5, D6). Rows are kept an hour after they are sent, which
