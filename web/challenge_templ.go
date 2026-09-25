@@ -180,14 +180,14 @@ func ChallengePage(page Page, view Challenge) templ.Component {
 				}
 				ctx = templ.InitializeContext(ctx)
 				if view.Method == "webauthn" {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<input type=\"hidden\" name=\"key\"> <button type=\"submit\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<input type=\"hidden\" name=\"key\">  <button type=\"submit\" hidden>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var10 string
 					templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.challenge.use_key"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 26, Col: 64}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 28, Col: 71}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 					if templ_7745c5c3_Err != nil {
@@ -205,7 +205,7 @@ func ChallengePage(page Page, view Challenge) templ.Component {
 					var templ_7745c5c3_Var11 string
 					templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.field.code"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 29, Col: 36}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 31, Col: 36}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 					if templ_7745c5c3_Err != nil {
@@ -249,7 +249,7 @@ func ChallengePage(page Page, view Challenge) templ.Component {
 					var templ_7745c5c3_Var12 string
 					templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.challenge.submit"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 36, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 38, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 					if templ_7745c5c3_Err != nil {
@@ -288,7 +288,7 @@ func ChallengePage(page Page, view Challenge) templ.Component {
 				var templ_7745c5c3_Var13 string
 				templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.challenge.other"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 43, Col: 42}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 45, Col: 42}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 				if templ_7745c5c3_Err != nil {
@@ -306,7 +306,7 @@ func ChallengePage(page Page, view Challenge) templ.Component {
 					var templ_7745c5c3_Var14 templ.SafeURL
 					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(view.Base + "method=" + method))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 46, Col: 64}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 48, Col: 64}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 					if templ_7745c5c3_Err != nil {
@@ -319,7 +319,7 @@ func ChallengePage(page Page, view Challenge) templ.Component {
 					var templ_7745c5c3_Var15 string
 					templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.challenge.use." + method))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 46, Col: 111}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 48, Col: 111}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 					if templ_7745c5c3_Err != nil {
@@ -338,7 +338,7 @@ func ChallengePage(page Page, view Challenge) templ.Component {
 					var templ_7745c5c3_Var16 templ.SafeURL
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(view.Base + "method=recovery"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 49, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 51, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
@@ -351,7 +351,7 @@ func ChallengePage(page Page, view Challenge) templ.Component {
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.challenge.use.recovery"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 49, Col: 109}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 51, Col: 109}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
@@ -408,7 +408,7 @@ func challengeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var19 templ.SafeURL
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/signin/verify"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 60, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 62, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -429,7 +429,7 @@ func challengeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 61, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 63, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
@@ -442,7 +442,7 @@ func challengeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(view.Method)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 62, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 64, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 			if templ_7745c5c3_Err != nil {
@@ -468,7 +468,7 @@ func challengeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var22 templ.SafeURL
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/account/verify"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 66, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 68, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -489,7 +489,7 @@ func challengeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 67, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 69, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 			if templ_7745c5c3_Err != nil {
@@ -502,7 +502,7 @@ func challengeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(view.Method)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 68, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 70, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 			if templ_7745c5c3_Err != nil {
@@ -515,7 +515,7 @@ func challengeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(view.Action)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 69, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 71, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 			if templ_7745c5c3_Err != nil {
@@ -528,7 +528,7 @@ func challengeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(view.Next)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 70, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 72, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 			if templ_7745c5c3_Err != nil {
@@ -582,7 +582,7 @@ func sendCodeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var28 templ.SafeURL
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/signin/verify/email"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 80, Col: 90}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 82, Col: 90}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -595,7 +595,7 @@ func sendCodeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 81, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 83, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 			if templ_7745c5c3_Err != nil {
@@ -608,7 +608,7 @@ func sendCodeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.challenge.send"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 82, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 84, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 			if templ_7745c5c3_Err != nil {
@@ -626,7 +626,7 @@ func sendCodeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var31 templ.SafeURL
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/account/verify/email"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 85, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 87, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -639,7 +639,7 @@ func sendCodeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 86, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 88, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var32)
 			if templ_7745c5c3_Err != nil {
@@ -652,7 +652,7 @@ func sendCodeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(view.Action)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 87, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 89, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 			if templ_7745c5c3_Err != nil {
@@ -665,7 +665,7 @@ func sendCodeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.ResolveAttributeValue(view.Next)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 88, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 90, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var34)
 			if templ_7745c5c3_Err != nil {
@@ -678,7 +678,7 @@ func sendCodeForm(page Page, view Challenge) templ.Component {
 			var templ_7745c5c3_Var35 string
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.challenge.send"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 89, Col: 78}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 91, Col: 78}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -703,9 +703,10 @@ func keyAttributes(view Challenge) templ.Attributes {
 }
 
 // keyScript is what a page that uses a key adds: the message the script
-// shows when the browser does not complete the ceremony, what a browser with
-// no script reads instead, and the script itself, from this origin under the
-// page's nonce.
+// shows when the browser has no WebAuthn or does not complete the ceremony,
+// what a browser with no script reads instead, and the script itself, from
+// this origin under the page's nonce. The script also shows the key form's
+// button, which the page hides.
 func keyScript(page Page) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -734,7 +735,7 @@ func keyScript(page Page) templ.Component {
 		var templ_7745c5c3_Var37 string
 		templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.key.failed"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 108, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 111, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 		if templ_7745c5c3_Err != nil {
@@ -747,7 +748,7 @@ func keyScript(page Page) templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.key.needs_script"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 109, Col: 51}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 112, Col: 51}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
@@ -760,7 +761,7 @@ func keyScript(page Page) templ.Component {
 		var templ_7745c5c3_Var39 string
 		templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.Nonce)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 110, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/challenge.templ`, Line: 113, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 		if templ_7745c5c3_Err != nil {

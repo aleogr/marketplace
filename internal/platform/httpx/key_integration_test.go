@@ -101,3 +101,32 @@ func TestTheStepUpPageAsksForTheKey(t *testing.T) {
 		}
 	}
 }
+
+// keyButton is the submit button of the form that answers with a key, or
+// adds one.
+var keyButton = regexp.MustCompile(`(?s)<form[^>]*data-webauthn=.*?(<button type="submit"[^>]*>)`)
+
+// Without the script a key cannot answer, so the button that would post an
+// empty answer, and spend one of the challenge's attempts, is hidden until
+// the script shows it; the page's other methods stay one link away.
+func TestTheKeyButtonWaitsForTheScript(t *testing.T) {
+	handler, service, marketplace := bilingualSite(t)
+	b := signedInBrowser(t, handler, service, marketplace)
+	button := func(path string) string {
+		t.Helper()
+		page := b.get(path)
+		found := keyButton.FindStringSubmatch(page.Body.String())
+		if page.Code != http.StatusOK || found == nil {
+			t.Fatalf("%s: status %d, no key form: %s", path, page.Code, page.Body.String())
+		}
+		return found[1]
+	}
+
+	if adding := button("/pt-BR/account/security/key"); !strings.Contains(adding, " hidden") {
+		t.Errorf("the button that adds a key, %s, is shown before the script runs", adding)
+	}
+	storedKey(t, marketplace)
+	if answering := button("/pt-BR/account/verify?for=factors&next=%2Faccount%2Fsecurity"); !strings.Contains(answering, " hidden") {
+		t.Errorf("the button that answers with the key, %s, is shown before the script runs", answering)
+	}
+}
