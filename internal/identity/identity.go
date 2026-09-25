@@ -269,6 +269,11 @@ type Session struct {
 	// SteppedUpAt is when this session last proved it (F14 spec, D4).
 	SecondFactor bool
 	SteppedUpAt  *time.Time
+	// EmailConfirmedAt is when this session last answered a code sent to the
+	// account's address that is not one of its second factors: it proves the
+	// address, for the actions whose step-up accepts that (§18.2), and never
+	// a second factor.
+	EmailConfirmedAt *time.Time
 }
 
 // refusal audits an attempt against an account by somebody not known to be
@@ -501,7 +506,8 @@ func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (
 		if err != nil {
 			return err
 		}
-		session = Session{ID: row.id, Account: account, SecondFactor: row.secondFactor, SteppedUpAt: row.steppedUp}
+		session = Session{ID: row.id, Account: account, SecondFactor: row.secondFactor, SteppedUpAt: row.steppedUp,
+			EmailConfirmedAt: row.emailProved}
 		return nil
 	})
 	return session, err

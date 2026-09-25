@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -96,5 +97,36 @@ func TestAddingEmailAndSigningInWithItThroughThePages(t *testing.T) {
 	signed := visitor.post("/signin/verify", url.Values{"method": {"email"}, "code": {mailedCode(t, pool, marketplace)}})
 	if signed.Code != http.StatusSeeOther || signed.Header().Get("Location") != "/pt-BR/" || visitor.cookies["session"] == "" {
 		t.Fatalf("the e-mail code: status %d, Location %q", signed.Code, signed.Header().Get("Location"))
+	}
+}
+
+// An e-mail code answered for a card, on an account whose factor is an app,
+// does not let the app be removed: the removal still asks for the app.
+func TestAnEmailCodeForACardDoesNotRemoveTheApp(t *testing.T) {
+	handler, service, marketplace := securityHandler(t)
+	pool := poolOf(t)
+	b := signedInBrowser(t, handler, service, marketplace)
+	enrolThroughPages(t, b)
+
+	if page := b.get("/account/verify?for=add_card&next=%2Faccount%2Fsecurity"); page.Code != http.StatusOK {
+		t.Fatalf("the step-up page for a card: status %d", page.Code)
+	}
+	sent := b.post("/account/verify/email", url.Values{"for": {"add_card"}, "next": {"/account/security"}})
+	if sent.Code != http.StatusSeeOther {
+		t.Fatalf("sending the step-up code: status %d", sent.Code)
+	}
+	confirmed := b.post("/account/verify", url.Values{"for": {"add_card"}, "next": {"/account/security"}, "method": {"email"},
+		"code": {mailedCode(t, pool, marketplace)}})
+	if confirmed.Code != http.StatusSeeOther || confirmed.Header().Get("Location") != "/pt-BR/account/security" {
+		t.Fatalf("the e-mail code for a card: status %d, Location %q", confirmed.Code, confirmed.Header().Get("Location"))
+	}
+
+	factor := regexp.MustCompile(`name="factor" value="([0-9a-f-]+)"`).FindStringSubmatch(b.get("/account/security").Body.String())
+	if factor == nil {
+		t.Fatal("the security page has no removal form")
+	}
+	asked := b.post("/account/security/remove", url.Values{"factor": {factor[1]}})
+	if asked.Code != http.StatusSeeOther || asked.Header().Get("Location") != "/pt-BR/account/verify?for=factors&next=%2Faccount%2Fsecurity" {
+		t.Fatalf("removal after an e-mail code for a card: status %d, Location %q", asked.Code, asked.Header().Get("Location"))
 	}
 }

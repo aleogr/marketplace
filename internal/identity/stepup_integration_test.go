@@ -209,3 +209,109 @@ func TestStaffWithNoFactorMayEnrolTheirFirst(t *testing.T) {
 		t.Fatalf("staff with no factor stepping up for %s = %v, want ErrNoSecondFactor", ActionAddCard, err)
 	}
 }
+
+// An e-mail code that is not one of the account's factors proves the address,
+// for adding a card or changing it, and never a second factor: a stolen
+// session that has the mailbox but not the app cannot step up "for a card"
+// and then remove the app or change the password (D2, D4).
+func TestAnEmailCodeForACardIsNotASecondFactor(t *testing.T) {
+	s, db, one, _, trail := service(t)
+	sealed(t, s)
+	session, token, _ := withAppSignedIn(t, s, db, one, "r@example.test")
+	v := visit(one)
+
+	challenge, err := s.BeginStepUp(t.Context(), v, session, ActionAddCard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.Pending(t.Context(), v, challenge, session.ID)
+	if err != nil || !slices.Equal(pending.Methods, []Method{MethodApp, MethodEmail}) {
+		t.Fatalf("Pending before a card = %+v, %v; want the app and the e-mail code", pending, err)
+	}
+	if err := s.SendChallengeCode(t.Context(), v, challenge, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StepUp(t.Context(), v, session, challenge, Answer{Method: MethodEmail, Code: lastCode(t, db, one)}); err != nil {
+		t.Fatalf("StepUp with the e-mail code = %v", err)
+	}
+	if stepped := trail.entry(t, "identity.stepped_up"); string(stepped.After) != `{"action":"add_card","method":"email","user_agent":"test"}` {
+		t.Fatalf("stepped_up recorded as %s", stepped.After)
+	}
+	confirmed, err := s.Authenticate(t.Context(), one, token)
+	if err != nil || confirmed.SteppedUpAt != nil || confirmed.EmailConfirmedAt == nil {
+		t.Fatalf("the session after the e-mail code = %+v, %v; want the address proved and no step-up", confirmed, err)
+	}
+
+	for _, action := range []Action{ActionAddCard, ActionChangeEmail} {
+		if s.NeedsStepUp(confirmed, action) {
+			t.Errorf("the e-mail code does not let %s through", action)
+		}
+	}
+	for _, action := range []Action{ActionFactors, ActionPassword} {
+		if !s.NeedsStepUp(confirmed, action) {
+			t.Errorf("an e-mail code for a card lets %s through", action)
+		}
+	}
+	security, err := s.Security(t.Context(), v, confirmed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveFactor(t.Context(), v, confirmed, security.Factors[0].ID); !errors.Is(err, ErrStepUpNeeded) {
+		t.Fatalf("removing the app after an e-mail code for a card = %v, want ErrStepUpNeeded", err)
+	}
+	if _, err := s.ChangePassword(t.Context(), v, confirmed, "correct horse battery staple", "a brand new passphrase"); !errors.Is(err, ErrStepUpNeeded) {
+		t.Fatalf("changing the password after an e-mail code for a card = %v, want ErrStepUpNeeded", err)
+	}
+
+	// The address it proves lasts as long as a step-up does.
+	later := time.Now().UTC().Add(StepUpLifetime)
+	s.now = func() time.Time { return later }
+	if !s.NeedsStepUp(confirmed, ActionAddCard) {
+		t.Error("an e-mail code ten minutes old still lets a card through")
+	}
+}
+
+// An account whose second factor is e-mail steps up with an e-mail code for
+// anything, its factors included: there the code is the factor.
+func TestAnEmailFactorStepsUpForTheFactors(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	confirmed(t, s, db, one, "r@example.test")
+	token := signIn(t, s, one, "r@example.test", "correct horse battery staple")
+	session, err := s.Authenticate(t.Context(), one, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := visit(one)
+	if err := s.BeginEmail(t.Context(), v, session); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmEmail(t.Context(), v, session, lastCode(t, db, one)); err != nil {
+		t.Fatal(err)
+	}
+	if session, err = s.Authenticate(t.Context(), one, token); err != nil || !session.SecondFactor || !s.NeedsStepUp(session, ActionFactors) {
+		t.Fatalf("the session after e-mail was added = %+v, %v; want 2FA and a step-up asked", session, err)
+	}
+
+	later := time.Now().UTC().Add(emailCodeEvery)
+	s.now = func() time.Time { return later }
+	challenge, err := s.BeginStepUp(t.Context(), v, session, ActionFactors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SendChallengeCode(t.Context(), v, challenge, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StepUp(t.Context(), v, session, challenge, Answer{Method: MethodEmail, Code: lastCode(t, db, one)}); err != nil {
+		t.Fatalf("StepUp with the e-mail factor = %v", err)
+	}
+	stepped, err := s.Authenticate(t.Context(), one, token)
+	if err != nil || stepped.SteppedUpAt == nil {
+		t.Fatalf("the session after the step-up = %+v, %v; want it stepped up", stepped, err)
+	}
+	for _, action := range []Action{ActionFactors, ActionPassword} {
+		if s.NeedsStepUp(stepped, action) {
+			t.Errorf("the e-mail factor does not let %s through", action)
+		}
+	}
+}

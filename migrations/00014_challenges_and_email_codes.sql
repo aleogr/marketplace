@@ -49,6 +49,13 @@ CREATE INDEX email_code_by_account ON email_code (account_id, created_at);
 -- (D4).
 ALTER TABLE session ADD COLUMN stepped_up_at timestamptz;
 
+-- When the session last answered a code sent to the account's address that
+-- is not one of its second factors, at a step-up whose action accepts one
+-- (adding a card, changing the address, §18.2). It proves the address, not a
+-- second factor: it never stands in for stepped_up_at before changing the
+-- password or the factors (D4).
+ALTER TABLE session ADD COLUMN email_confirmed_at timestamptz;
+
 ALTER TABLE sign_in_challenge ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_code ENABLE ROW LEVEL SECURITY;
 
@@ -60,6 +67,7 @@ CREATE POLICY email_code_belongs_to_the_marketplace ON email_code
     WITH CHECK (marketplace_id = current_marketplace_id());
 
 -- +goose Down
+ALTER TABLE session DROP COLUMN IF EXISTS email_confirmed_at;
 ALTER TABLE session DROP COLUMN IF EXISTS stepped_up_at;
 DROP TABLE IF EXISTS email_code;
 DROP TABLE IF EXISTS sign_in_challenge;

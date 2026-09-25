@@ -30,12 +30,19 @@ func ParseAction(name string) (Action, bool) {
 
 // NeedsStepUp reports whether action on session needs a step-up first: the
 // policy asks for one (§18.2, D2) and the session has not proved a second
-// factor in the last StepUpLifetime.
+// factor in the last StepUpLifetime, nor, for an action whose step-up
+// accepts a code to the account's address, answered one.
 func (s *Service) NeedsStepUp(session Session, action Action) bool {
-	if !s.policy.StepUpFor(session.Account.Kind, action, session.SecondFactor).Asked {
+	asks := s.policy.StepUpFor(session.Account.Kind, action, session.SecondFactor)
+	if !asks.Asked || s.recent(session.SteppedUpAt) {
 		return false
 	}
-	return session.SteppedUpAt == nil || s.now().Sub(*session.SteppedUpAt) >= StepUpLifetime
+	return !asks.Email || !s.recent(session.EmailConfirmedAt)
+}
+
+// recent reports whether at is less than StepUpLifetime ago.
+func (s *Service) recent(at *time.Time) bool {
+	return at != nil && s.now().Sub(*at) < StepUpLifetime
 }
 
 // BeginStepUp opens a challenge for session to prove a second factor before
@@ -63,11 +70,24 @@ func (s *Service) BeginStepUp(ctx context.Context, v Visit, session Session, act
 	return token, nil
 }
 
-// StepUp answers session's step-up challenge. A right answer marks the
-// session stepped up now, and audits the method and the action it was for.
+// StepUp answers session's step-up challenge. A right answer with one of the
+// account's second factors marks the session stepped up now; a code to the
+// account's address that is not one of them proves only the address, for the
+// actions that accept it (§18.2), and never lets the password or the factors
+// change (D2, D4). Either way it audits the method and the action it was for.
 func (s *Service) StepUp(ctx context.Context, v Visit, session Session, token string, answer Answer) error {
 	return s.answerChallenge(ctx, v, token, session.ID, answer, func(tx pgx.Tx, ch challenge, account Account, now time.Time) error {
-		if err := markSteppedUp(ctx, tx, session.ID, now); err != nil {
+		mark := markSteppedUp
+		if answer.Method == MethodEmail {
+			factor, err := hasEmailFactor(ctx, tx, account.ID)
+			if err != nil {
+				return err
+			}
+			if !factor {
+				mark = markEmailConfirmed
+			}
+		}
+		if err := mark(ctx, tx, session.ID, now); err != nil {
 			return err
 		}
 		return s.recordWith(ctx, tx, v, account.ID, "identity.stepped_up",

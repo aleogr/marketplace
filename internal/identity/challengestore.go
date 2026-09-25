@@ -86,6 +86,13 @@ func markSteppedUp(ctx context.Context, tx pgx.Tx, session string, at time.Time)
 	return err
 }
 
+// markEmailConfirmed records that a session answered a code sent to its
+// account's address, which is not one of the account's factors, at at.
+func markEmailConfirmed(ctx context.Context, tx pgx.Tx, session string, at time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE session SET email_confirmed_at = $2 WHERE id = $1`, session, at)
+	return err
+}
+
 // sessionID is the id of the session a token hash opened.
 func sessionID(ctx context.Context, tx pgx.Tx, hash []byte) (string, error) {
 	var id string

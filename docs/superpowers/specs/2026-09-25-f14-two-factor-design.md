@@ -49,7 +49,10 @@ revoked.
 **D4. A step-up lasts ten minutes.** The session gains `stepped_up_at`, set when a second factor is
 accepted at sign-in or at a step-up. A sensitive action requires it to be less than ten minutes old,
 as GitHub's "sudo mode" does, so that one change does not ask twice. A sensitive action on a session
-without a recent step-up goes to the same challenge page and comes back.
+without a recent step-up goes to the same challenge page and comes back. An e-mail code that is not one
+of the account's enrolled factors proves the address, for adding a card or changing the address, and
+never a step-up before changing the password or the factors: it sets `email_confirmed_at`, not
+`stepped_up_at`.
 
 **D5. Secrets are sealed with the person's own key.** The TOTP secret is encrypted with the per-person
 key of the audit log (F12, `internal/platform/audit`), which is wrapped by Cloud KMS. Destroying the
@@ -91,7 +94,7 @@ Under row-level security like every tenant table (`current_marketplace_id()`); e
 | `email_code` | `account_id`, `purpose`, `code_hash`, `expires_at`, `attempts`, `used_at` |
 | `sign_in_challenge` | `token_hash`, `account_id`, `session_id` and `action` (set when the challenge is a step-up, so only that session can answer it), `expires_at`, `attempts`, `used_at`, `webauthn_session` (the WebAuthn challenge) |
 | `factor_enrolment` | the pending enrolment between showing the page and the proving answer: an app's sealed secret or a key's registration ceremony, so the server, not the browser, chooses the secret; short-lived, one per session |
-| `session` (F13) | gains `stepped_up_at` |
+| `session` (F13) | gains `stepped_up_at`, and `email_confirmed_at` (D4) |
 
 An account "has 2FA" when it has at least one `second_factor`. Removing the last one turns 2FA off
 and deletes the recovery codes.

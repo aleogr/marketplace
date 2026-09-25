@@ -118,17 +118,18 @@ type sessionRow struct {
 	id, account   string
 	created, seen time.Time
 	steppedUp     *time.Time
+	emailProved   *time.Time
 	secondFactor  bool
 }
 
 func liveSession(ctx context.Context, tx pgx.Tx, hash []byte) (sessionRow, error) {
 	var r sessionRow
 	err := tx.QueryRow(ctx, `
-		SELECT s.id::text, s.account_id::text, s.created_at, s.last_seen_at, s.stepped_up_at,
+		SELECT s.id::text, s.account_id::text, s.created_at, s.last_seen_at, s.stepped_up_at, s.email_confirmed_at,
 		       EXISTS (SELECT 1 FROM second_factor f WHERE f.account_id = s.account_id)
 		  FROM session s
 		 WHERE s.token_hash = $1 AND s.revoked_at IS NULL`, hash).
-		Scan(&r.id, &r.account, &r.created, &r.seen, &r.steppedUp, &r.secondFactor)
+		Scan(&r.id, &r.account, &r.created, &r.seen, &r.steppedUp, &r.emailProved, &r.secondFactor)
 	return r, err
 }
 
