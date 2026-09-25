@@ -127,11 +127,18 @@ func (s Site) renderApp(w http.ResponseWriter, r *http.Request, status int, enro
 	renderStatus(w, r, status, web.EnrolApp(s.page(r, securityPath+"/app"), view))
 }
 
-// appForm starts adding an app: each visit draws a new secret, so a page
-// left open elsewhere is not the one that is confirmed.
+// appForm shows the app the session is adding, or starts adding one when
+// there is none live. A reload — a phone reloads a tab it discarded, and the
+// page is kept out of the back-forward cache — must not replace the secret
+// the person may already have typed into their app, which would make their
+// code "wrong"; the enrolment's lifetime still bounds how long one secret
+// is offered.
 func (s Site) appForm(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
-	enrolment, err := s.identity.Service.BeginApp(r.Context(), visit(r), session)
+	enrolment, err := s.identity.Service.PendingApp(r.Context(), visit(r), session)
+	if errors.Is(err, identity.ErrNoEnrolment) {
+		enrolment, err = s.identity.Service.BeginApp(r.Context(), visit(r), session)
+	}
 	if errors.Is(err, identity.ErrNotPermitted) {
 		http.NotFound(w, r)
 		return

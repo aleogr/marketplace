@@ -187,6 +187,44 @@ func TestAddingAndRemovingAnAppThroughThePages(t *testing.T) {
 	}
 }
 
+// A reload of the app page — a phone reloads a tab it discarded, and the
+// page is not kept in the back-forward cache — shows the key the person may
+// already have typed into their app, while its enrolment lives; once the
+// enrolment expired, a new key, which is the one that confirms.
+func TestReloadingTheAppPageKeepsItsKey(t *testing.T) {
+	handler, service, marketplace := securityHandler(t)
+	b := signedInBrowser(t, handler, service, marketplace)
+	keyOf := func(page *httptest.ResponseRecorder) string {
+		t.Helper()
+		found := keyOnPage.FindStringSubmatch(page.Body.String())
+		if page.Code != http.StatusOK || found == nil {
+			t.Fatalf("the app page: status %d, body %s", page.Code, page.Body.String())
+		}
+		return found[1]
+	}
+
+	first := keyOf(b.get("/account/security/app"))
+	if again := keyOf(b.get("/account/security/app")); again != first {
+		t.Fatalf("a reload shows the key %q, want the one already shown, %q", again, first)
+	}
+
+	// The enrolment's lifetime passes: its expiry is moved back rather than
+	// waited for.
+	if _, err := poolOf(t).Exec(t.Context(), `
+		UPDATE factor_enrolment SET expires_at = now() - interval '1 second' WHERE marketplace_id = $1`,
+		marketplace.ID); err != nil {
+		t.Fatal(err)
+	}
+	fresh := keyOf(b.get("/account/security/app"))
+	if fresh == first {
+		t.Fatalf("after the enrolment expired the page shows its key %q again", first)
+	}
+	added := b.post("/account/security/app", url.Values{"label": {"Celular"}, "code": {appCodeFor(t, fresh, time.Now())}})
+	if added.Code != http.StatusOK || !strings.Contains(added.Body.String(), "O segundo fator foi adicionado.") {
+		t.Fatalf("the new key's code: status %d, body %s", added.Code, added.Body.String())
+	}
+}
+
 // A tampered or empty factor field is a factor the account does not have,
 // not a database error: it must answer 404, not 500.
 func TestRemovingAFactorByAMalformedIDIsNotFound(t *testing.T) {
