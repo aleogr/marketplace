@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import re
-import time
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
 from accounts import SUBMIT, confirmed_account, sign_in
-from factors import totp
+from factors import next_totp, totp
 
 # identity.app.wrong_code and identity.security.done.removed, as
 # web/locales words them.
@@ -62,15 +61,14 @@ def test_adding_and_removing_an_app(run_marketplace, screenshots, language):
         expect(page.locator("ul.factors li strong")).to_have_text("Celular")
         page.screenshot(path=screenshots / f"f14-security-app-{language}.png", full_page=True)
 
-        # The account has 2FA now: removing it asks for the second factor
-        # again first (D2), on the same challenge page as a sign-in's second
-        # step; stepping up returns to the security page, where the removal
-        # is asked again, and this time goes through (D4).
+        # The account has 2FA now: removing the app asks for it again first,
+        # and comes back (spec, D2).
         page.click("ul.factors button[type=submit]")
-        expect(page.locator("h1")).to_have_text("Confirme que é você" if language == "pt-BR" else "Confirm it is you")
-        page.fill("main form:has(input[name=code]) input[name=code]", totp(key, time.time() + 30))
-        page.click("main form:has(input[name=code]) button[type=submit]")
-        expect(page.locator("ul.factors li")).to_have_count(1)
+        expect(page).to_have_url(re.compile(r"/account/verify\?for=factors&next=%2Faccount%2Fsecurity$"))
+        page.screenshot(path=screenshots / f"f14-step-up-factors-{language}.png", full_page=True)
+        page.fill("main form input[name=code]", next_totp(key))
+        page.click(SUBMIT)
+        expect(page).to_have_url(re.compile(r"/account/security$"))
 
         page.click("ul.factors button[type=submit]")
         expect(page.locator("[role=status]")).to_have_text(REMOVED[language])
