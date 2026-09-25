@@ -3,7 +3,9 @@
 package identity
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -262,5 +264,70 @@ func TestABuyerStepsUpBeforeACardWithAnEmailCode(t *testing.T) {
 	}
 	if stepped := trail.entry(t, "identity.stepped_up"); string(stepped.After) != `{"action":"add_card","method":"email","user_agent":"test"}` {
 		t.Fatalf("stepped_up recorded as %s", stepped.After)
+	}
+}
+
+// waitBlocked returns once n transactions of this database wait on a lock,
+// read from tx, which holds the lock they wait for; it fails the test after
+// ten seconds.
+func waitBlocked(t *testing.T, tx pgx.Tx, n int) error {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		// The activity view is a snapshot taken once per transaction: it is
+		// cleared so each look sees the backends that connected since.
+		if _, err := tx.Exec(t.Context(), `SELECT pg_stat_clear_snapshot()`); err != nil {
+			return err
+		}
+		var blocked int
+		if err := tx.QueryRow(t.Context(), `
+			SELECT count(*) FROM pg_stat_activity
+			 WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0`).Scan(&blocked); err != nil {
+			return err
+		}
+		if blocked >= n {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%d transactions waited on a lock after ten seconds, want %d", blocked, n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// Two codes asked for one account at the same moment: the account is locked
+// before the limits are counted, so the second waits for the first to
+// commit, counts its code, and is refused (D6). Without the lock both would
+// count none and both would be mailed.
+func TestCodesAskedForAtOnceAreLimitedPerAccount(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session := signedIn(t, s, db, one, "r@example.test")
+	mails := len(outbox(t, db, one))
+
+	results := make(chan error, 2)
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		// Holding the account's row stops both sends where they first touch
+		// it: taking its lock, or, with none taken, the foreign-key check of
+		// the code they insert after counting. Once both wait, it lets go.
+		if _, err := tx.Exec(t.Context(), `SELECT 1 FROM account WHERE id = $1 FOR UPDATE`, session.Account.ID); err != nil {
+			return err
+		}
+		for range 2 {
+			go func() { results <- s.BeginEmail(context.Background(), visit(one), session) }()
+		}
+		return waitBlocked(t, tx, 2)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	errs := []error{<-results, <-results}
+	sent := slices.IndexFunc(errs, func(err error) bool { return err == nil })
+	refused := slices.IndexFunc(errs, func(err error) bool { return errors.Is(err, ErrCodeTooSoon) })
+	if sent < 0 || refused < 0 {
+		t.Fatalf("two codes asked for at once = %v, want one sent and one ErrCodeTooSoon", errs)
+	}
+	if after := len(outbox(t, db, one)); after != mails+1 {
+		t.Fatalf("%d codes were mailed, want 1", after-mails)
 	}
 }

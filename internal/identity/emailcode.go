@@ -123,8 +123,16 @@ func useEmailCode(ctx context.Context, tx pgx.Tx, account, purpose, typed string
 
 // sendCode mails a fresh code for purpose to the account's address, within
 // the per-account limits, through the outbox: its variables are cleared once
-// it is dispatched (migrations/00010), so the code does not stay behind.
+// it is dispatched (migrations/00010), so the code does not stay behind. The
+// account is locked before the limits are counted, so two codes asked for at
+// once, whatever their purpose or challenge, are counted one after the other
+// rather than both against the same count. A challenge, when there is one,
+// is locked before it (SendChallengeCode), and nothing locks the two the
+// other way round.
 func (s *Service) sendCode(ctx context.Context, tx pgx.Tx, v Visit, account Account, purpose string, now time.Time) error {
+	if err := lockAccount(ctx, tx, account.ID); err != nil {
+		return err
+	}
 	if n, err := emailCodesSince(ctx, tx, account.ID, now.Add(-emailCodeEvery)); err != nil || n > 0 {
 		if err != nil {
 			return err
