@@ -3,6 +3,7 @@
 package identity
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 	"time"
@@ -121,5 +122,48 @@ func TestDeletingAFactorByAMalformedIDIsNoRows(t *testing.T) {
 				t.Fatalf("deleteFactor(%q) = %v, want pgx.ErrNoRows", id, err)
 			}
 		})
+	}
+}
+
+// replaceRecoveryCodes stores each code bound to the account, not the plain
+// hash recoveryHash gives it, so a stolen database must be searched one
+// account at a time (owner's decision, 2026-09-25).
+func TestReplaceRecoveryCodesStoresTheBoundHash(t *testing.T) {
+	db, one, _ := twoMarketplaces(t)
+	account := anAccount(t, db, one, "bound@example.test")
+	codes, err := NewRecoveryCodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, ok := recoveryHash(codes[0])
+	if !ok {
+		t.Fatal("a well-formed code was refused")
+	}
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		hashes := make([][]byte, len(codes))
+		for i, code := range codes {
+			hash, _ := recoveryHash(code)
+			hashes[i] = hash
+		}
+		return replaceRecoveryCodes(t.Context(), tx, one, account, hashes)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stored := storedRecoveryHashes(t, db, one, account)
+	if len(stored) != RecoveryCodeCount {
+		t.Fatalf("%d codes stored, want %d", len(stored), RecoveryCodeCount)
+	}
+	want := boundRecoveryHash(account, plain)
+	found := false
+	for _, h := range stored {
+		if bytes.Equal(h, plain) {
+			t.Fatal("the plain, unbound hash was stored")
+		}
+		if bytes.Equal(h, want) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the hash bound to this account was not among the stored codes")
 	}
 }

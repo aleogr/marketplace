@@ -49,3 +49,22 @@ func TestARecoveryCodeIsReadAsPeopleCopyIt(t *testing.T) {
 		}
 	}
 }
+
+// boundRecoveryHash ties the same code's hash to its account, so a stolen
+// database of hashes must be searched one account at a time (owner's
+// decision, 2026-09-25): the same hash bound to two accounts gives two
+// different values, and binding one account's hash twice is stable.
+func TestBoundRecoveryHashIsPerAccount(t *testing.T) {
+	hash, ok := recoveryHash("0a1b-2c3d-4e5f")
+	if !ok {
+		t.Fatal("a well-formed code was refused")
+	}
+	first := boundRecoveryHash("11111111-1111-1111-1111-111111111111", hash)
+	second := boundRecoveryHash("22222222-2222-2222-2222-222222222222", hash)
+	if bytes.Equal(first, second) {
+		t.Fatal("the same code bound to two different accounts gave the same hash")
+	}
+	if again := boundRecoveryHash("11111111-1111-1111-1111-111111111111", hash); !bytes.Equal(first, again) {
+		t.Fatal("binding the same code to the same account twice gave different hashes")
+	}
+}

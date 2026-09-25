@@ -90,7 +90,9 @@ func countFactors(ctx context.Context, tx pgx.Tx, account string) (int, error) {
 }
 
 // replaceRecoveryCodes stores a fresh set in place of whatever the account
-// had: generating new codes invalidates the old (spec, D6).
+// had: generating new codes invalidates the old (spec, D6). Each hash is
+// bound to the account (boundRecoveryHash) before it is stored: this is the
+// only place that binds, so callers keep passing the plain recoveryHash(code).
 func replaceRecoveryCodes(ctx context.Context, tx pgx.Tx, marketplace, account string, hashes [][]byte) error {
 	if err := deleteRecoveryCodes(ctx, tx, account); err != nil {
 		return err
@@ -98,7 +100,7 @@ func replaceRecoveryCodes(ctx context.Context, tx pgx.Tx, marketplace, account s
 	for _, hash := range hashes {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO recovery_code (account_id, marketplace_id, code_hash) VALUES ($1, $2, $3)`,
-			account, marketplace, hash); err != nil {
+			account, marketplace, boundRecoveryHash(account, hash)); err != nil {
 			return err
 		}
 	}
