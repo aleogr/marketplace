@@ -24,8 +24,9 @@ const (
 )
 
 // ErrCodesLocked is an answer with a code — an app's or an e-mail's — to an
-// account whose codes are locked (D8): refused without being checked. It is
-// an ErrCodeWrong too, for a caller that makes no difference.
+// account whose codes are locked (D8): refused without being checked; and a
+// code asked for by e-mail for such an account, which is not sent. It is an
+// ErrCodeWrong too, for a caller that makes no difference.
 var ErrCodesLocked = fmt.Errorf("%w: codes are locked", ErrCodeWrong)
 
 // locks reports whether the account's lock refuses method: while its codes

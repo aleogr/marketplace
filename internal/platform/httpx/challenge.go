@@ -127,7 +127,7 @@ func (s Site) renderSecondStep(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	view := challengeView(pending, chosen, "/"+i18n.FromContext(r.Context())+secondStepPath+"?")
-	view.Form, view.Sent = form, r.URL.Query().Get("sent") == "1"
+	view.Form, view.Sent, view.LockRefused = form, r.URL.Query().Get("sent") == "1", status == lockRefused
 	if err := s.keyOptions(r, &view, token, ""); err != nil {
 		s.failed(w, r, "a key's options could not be prepared", err)
 		return
@@ -166,6 +166,10 @@ func wrongAnswer(method string) web.Form {
 	return web.Form{Error: "identity.challenge.wrong", Field: "code"}
 }
 
+// lockRefused is the status a challenge page answers what the lock of D8
+// refused with, and only that: the page then shows the lock as an alert.
+const lockRefused = http.StatusForbidden
+
 // codeRefusal names the message a refused request for an e-mail code is
 // shown as.
 func codeRefusal(err error) (string, bool) {
@@ -194,6 +198,10 @@ func (s Site) sendSecondStepCode(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, identity.ErrChallengeInvalid):
 		backToSignIn(w, r, "expired")
+	case errors.Is(err, identity.ErrCodesLocked):
+		// Asked for from a page opened before the lock: the page again,
+		// saying why, and what still works.
+		s.renderSecondStep(w, r, lockRefused, string(identity.MethodEmail), web.Form{})
 	case errors.Is(err, identity.ErrNotPermitted):
 		http.NotFound(w, r)
 	case err != nil:
@@ -218,7 +226,7 @@ func (s Site) answerSecondStep(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, identity.ErrCodesLocked):
 		// The page says the codes are locked, and shows what still works.
-		s.renderSecondStep(w, r, http.StatusForbidden, string(answer.Method), web.Form{})
+		s.renderSecondStep(w, r, lockRefused, string(answer.Method), web.Form{})
 		return
 	case errors.Is(err, identity.ErrCodeWrong):
 		s.renderSecondStep(w, r, http.StatusUnauthorized, string(answer.Method), wrongAnswer(string(answer.Method)))

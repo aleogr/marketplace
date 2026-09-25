@@ -15,6 +15,10 @@ type Challenge struct {
 	// CodesLocked says the account's codes are refused after too many
 	// failed second factors in a row, until its password is changed.
 	CodesLocked bool
+	// LockRefused says the page answers what the lock refused — a code
+	// posted, or a code asked for by e-mail — so the lock's message is an
+	// alert rather than a status.
+	LockRefused bool
 	Base        string
 	// Next is where a step-up returns to, as a path below the language.
 	Next string

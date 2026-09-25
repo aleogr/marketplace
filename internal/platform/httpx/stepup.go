@@ -106,6 +106,7 @@ func (s Site) renderStepUp(w http.ResponseWriter, r *http.Request, status int, t
 	}
 	view := challengeView(pending, chosen, stepUpBase(r, action, next))
 	view.Next, view.Form, view.Sent = next, form, r.URL.Query().Get("sent") == "1"
+	view.LockRefused = status == lockRefused
 	if err := s.keyOptions(r, &view, token, session.ID); err != nil {
 		s.failed(w, r, "a key's options could not be prepared", err)
 		return
@@ -140,7 +141,7 @@ func (s Site) answerStepUp(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, identity.ErrCodesLocked):
 		// As at the second step: the page says why, and what still works.
-		s.renderStepUp(w, r, http.StatusForbidden, token, action, next, string(answer.Method), web.Form{})
+		s.renderStepUp(w, r, lockRefused, token, action, next, string(answer.Method), web.Form{})
 	case errors.Is(err, identity.ErrCodeWrong):
 		s.renderStepUp(w, r, http.StatusUnauthorized, token, action, next, string(answer.Method),
 			wrongAnswer(string(answer.Method)))
@@ -170,6 +171,12 @@ func (s Site) sendStepUpCode(w http.ResponseWriter, r *http.Request) {
 	err := s.identity.Service.SendChallengeCode(r.Context(), visit(r), token, session.ID)
 	if key, refused := codeRefusal(err); refused {
 		s.renderStepUp(w, r, http.StatusTooManyRequests, token, action, next, string(identity.MethodEmail), web.Form{Error: key})
+		return
+	}
+	if errors.Is(err, identity.ErrCodesLocked) {
+		// Asked for from a page opened before the lock, as at the second
+		// step.
+		s.renderStepUp(w, r, lockRefused, token, action, next, string(identity.MethodEmail), web.Form{})
 		return
 	}
 	query := url.Values{"for": {string(action)}, "next": {next}}

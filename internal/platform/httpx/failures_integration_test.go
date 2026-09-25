@@ -3,11 +3,15 @@
 package httpx_test
 
 import (
+	"html"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/aleogr/marketplace/internal/identity"
 	"github.com/aleogr/marketplace/internal/tenancy"
@@ -147,5 +151,67 @@ func TestALockedStepUpSaysSo(t *testing.T) {
 	if refused.Code != http.StatusForbidden || !strings.Contains(refused.Body.String(), codesLocked["pt-BR"]) ||
 		strings.Contains(refused.Body.String(), wrongCode["pt-BR"]) {
 		t.Fatalf("an app code on the locked step-up: status %d, body %s", refused.Code, refused.Body.String())
+	}
+}
+
+// storedEmailFactor gives the fixture's account e-mail as a second factor,
+// written as the application role: what these tests read is the page, and
+// adding e-mail is internal/identity's to test.
+func storedEmailFactor(t *testing.T, marketplace *tenancy.Marketplace) {
+	t.Helper()
+	if err := (serving{t, poolOf(t)}).InTxFor(t.Context(), marketplace.ID, func(tx pgx.Tx) error {
+		_, err := tx.Exec(t.Context(), `
+			INSERT INTO second_factor (account_id, marketplace_id, kind, label)
+			SELECT id, marketplace_id, 'email', '' FROM account WHERE email = 'leitora@example.test'`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The lock's message is a status when the page is only shown, and an alert
+// when the page answers what the lock refused: an app code posted, or a code
+// asked for by e-mail from a page opened before the lock, which is answered
+// with the page and a 403 rather than a 404. At the second step and at a
+// step-up, in each language.
+func TestTheLockIsAnAlertWhenItRefuses(t *testing.T) {
+	handler, service, marketplace := bilingualSite(t)
+	// Signed in before the account had a second factor, as a session that
+	// is asked for a step-up is.
+	b := signedInBrowser(t, handler, service, marketplace)
+	enrolledApp(t, service, marketplace)
+	storedEmailFactor(t, marketplace)
+	lockCodes(t, marketplace)
+	shown := func(language string) string { return `<p role="status">` + html.EscapeString(codesLocked[language]) + `</p>` }
+	alert := func(language string) string { return `<p role="alert">` + html.EscapeString(codesLocked[language]) + `</p>` }
+	refusal := func(what, language string, page *httptest.ResponseRecorder) {
+		t.Helper()
+		body := page.Body.String()
+		if page.Code != http.StatusForbidden || !strings.Contains(body, alert(language)) || strings.Contains(body, shown(language)) {
+			t.Fatalf("%s in %s: status %d, want %d and the lock as an alert: %s", what, language, page.Code, http.StatusForbidden, body)
+		}
+	}
+
+	for _, language := range []string{"pt-BR", "en-US"} {
+		visitor := passwordDone(t, handler, marketplace, language)
+		page := visitor.get("/" + language + "/signin/verify")
+		if body := page.Body.String(); page.Code != http.StatusOK || !strings.Contains(body, shown(language)) || strings.Contains(body, alert(language)) {
+			t.Fatalf("the locked second step in %s: status %d, want the lock as a status: %s", language, page.Code, body)
+		}
+		refusal("an app code at the second step", language,
+			visitor.post("/"+language+"/signin/verify", url.Values{"method": {"totp"}, "code": {"000000"}}))
+		refusal("a code asked for by e-mail at the second step", language,
+			visitor.post("/"+language+"/signin/verify/email", url.Values{}))
+	}
+
+	for _, language := range []string{"pt-BR", "en-US"} {
+		page := b.get("/" + language + "/account/verify?for=add_card&next=%2Faccount%2Fsecurity")
+		if body := page.Body.String(); page.Code != http.StatusOK || !strings.Contains(body, shown(language)) {
+			t.Fatalf("the locked step-up in %s: status %d, want the lock as a status: %s", language, page.Code, body)
+		}
+		refusal("an app code at a step-up", language, b.post("/"+language+"/account/verify",
+			url.Values{"method": {"totp"}, "code": {"000000"}, "for": {"add_card"}, "next": {"/account/security"}}))
+		refusal("a code asked for by e-mail at a step-up", language, b.post("/"+language+"/account/verify/email",
+			url.Values{"for": {"add_card"}, "next": {"/account/security"}}))
 	}
 }

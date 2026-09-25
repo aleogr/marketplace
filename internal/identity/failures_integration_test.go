@@ -281,8 +281,8 @@ func TestAKeyLiftsTheLock(t *testing.T) {
 	}
 	later := time.Now().UTC().Add(emailCodeEvery)
 	s.now = func() time.Time { return later }
-	if err := s.SendChallengeCode(t.Context(), v, token, ""); !errors.Is(err, ErrNotPermitted) {
-		t.Fatalf("a code for a locked account = %v, want ErrNotPermitted", err)
+	if err := s.SendChallengeCode(t.Context(), v, token, ""); !errors.Is(err, ErrCodesLocked) {
+		t.Fatalf("a code for a locked account = %v, want ErrCodesLocked", err)
 	}
 
 	options, err := s.KeyOptions(t.Context(), v, token, "")
@@ -327,8 +327,8 @@ func TestTheStepUpIsLockedToo(t *testing.T) {
 	if err := s.StepUp(t.Context(), v, session, challenge, Answer{Method: MethodApp, Code: nextAppCode(t, s, enrolment)}); !errors.Is(err, ErrCodesLocked) {
 		t.Fatalf("the right app code at a locked step-up = %v, want ErrCodesLocked", err)
 	}
-	if err := s.SendChallengeCode(t.Context(), v, challenge, session.ID); !errors.Is(err, ErrNotPermitted) {
-		t.Fatalf("a code to the address at a locked step-up = %v, want ErrNotPermitted", err)
+	if err := s.SendChallengeCode(t.Context(), v, challenge, session.ID); !errors.Is(err, ErrCodesLocked) {
+		t.Fatalf("a code to the address at a locked step-up = %v, want ErrCodesLocked", err)
 	}
 	if err := s.StepUp(t.Context(), v, session, challenge, Answer{Method: MethodRecovery, Code: codes[0]}); err != nil {
 		t.Fatalf("a recovery code at a locked step-up = %v", err)

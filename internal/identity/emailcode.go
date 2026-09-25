@@ -180,7 +180,9 @@ func purposeOf(ch challenge) string {
 
 // SendChallengeCode mails a code that answers the challenge a token opened,
 // for the session sessionID steps up, or for none at sign-in, when the
-// challenge accepts one.
+// challenge accepts one. While the account's codes are locked it accepts
+// none, and the refusal is ErrCodesLocked, so that a page opened before the
+// lock can say why (D8); otherwise ErrNotPermitted.
 func (s *Service) SendChallengeCode(ctx context.Context, v Visit, token, sessionID string) error {
 	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		ch, account, err := s.challenge(ctx, tx, token, sessionID)
@@ -192,6 +194,9 @@ func (s *Service) SendChallengeCode(ctx context.Context, v Visit, token, session
 			return err
 		}
 		if !slices.Contains(o.Methods, MethodEmail) {
+			if o.CodesLocked {
+				return ErrCodesLocked
+			}
 			return ErrNotPermitted
 		}
 		return s.sendCode(ctx, tx, v, account, purposeOf(ch), s.now())

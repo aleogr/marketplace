@@ -14,7 +14,13 @@ templ ChallengePage(page Page, view Challenge) {
 			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
 		}
 		if view.CodesLocked {
-			<p role="status">{ page.T("identity.challenge.codes_locked") }</p>
+			// A refusal when it answers one; otherwise what the page is
+			// like now.
+			if view.LockRefused {
+				<p role="alert">{ page.T("identity.challenge.codes_locked") }</p>
+			} else {
+				<p role="status">{ page.T("identity.challenge.codes_locked") }</p>
+			}
 			if view.Method == "" {
 				<p>{ page.T("identity.challenge.codes_locked_none") }</p>
 			}
