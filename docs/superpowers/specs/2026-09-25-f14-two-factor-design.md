@@ -84,10 +84,11 @@ Under row-level security like every tenant table (`current_marketplace_id()`); e
 
 | table | columns that matter |
 |---|---|
-| `second_factor` | `id`, `account_id`, `kind` (`totp`, `webauthn`, `email`), `label` (given by the person), `secret` (TOTP, sealed per D5), `totp_last_step`, `credential_id` (unique), `public_key`, `sign_count`, `created_at`, `last_used_at` |
+| `second_factor` | `id`, `account_id`, `kind` (`totp`, `webauthn`, `email`), `label` (given by the person), `secret` (TOTP, sealed per D5), `totp_last_step`, `credential_id` (unique), `public_key`, `sign_count`, `credential_flags` (the authenticator's backup flags at registration, which go-webauthn checks at every assertion), `created_at`, `last_used_at` |
 | `recovery_code` | `account_id`, `code_hash`, `used_at` |
 | `email_code` | `account_id`, `purpose`, `code_hash`, `expires_at`, `attempts`, `used_at` |
-| `sign_in_challenge` | `token_hash`, `account_id`, `expires_at`, `attempts`, `used_at`, `webauthn_session` (the WebAuthn challenge) |
+| `sign_in_challenge` | `token_hash`, `account_id`, `session_id` and `action` (set when the challenge is a step-up, so only that session can answer it), `expires_at`, `attempts`, `used_at`, `webauthn_session` (the WebAuthn challenge) |
+| `factor_enrolment` | the pending enrolment between showing the page and the proving answer: an app's sealed secret or a key's registration ceremony, so the server, not the browser, chooses the secret; short-lived, one per session |
 | `session` (F13) | gains `stepped_up_at` |
 
 An account "has 2FA" when it has at least one `second_factor`. Removing the last one turns 2FA off
@@ -121,7 +122,9 @@ the password and the second step together.
 
 **Step-up.** Changing the password (D2), adding or removing a method and regenerating recovery codes
 go through the same challenge page when the session has no recent step-up, then return to where the
-person was.
+person was. The step-up's challenge is bound to the session that asked for it, and a named rate
+limiter (`step-up`, 10 answers per account per 15 minutes) stops a stolen session from opening
+challenge after challenge.
 
 **Removal and recovery codes.** Removing a method sends an e-mail saying so. A recovery code used at
 sign-in sends an e-mail and shows, on the next page, how many remain.
