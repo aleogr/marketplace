@@ -138,6 +138,9 @@ func (s Site) answerStepUp(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+stepUpPath+"?"+query.Encode(), http.StatusSeeOther)
 	}
 	switch {
+	case errors.Is(err, identity.ErrCodesLocked):
+		// As at the second step: the page says why, and what still works.
+		s.renderStepUp(w, r, http.StatusForbidden, token, action, next, string(answer.Method), web.Form{})
 	case errors.Is(err, identity.ErrCodeWrong):
 		s.renderStepUp(w, r, http.StatusUnauthorized, token, action, next, string(answer.Method),
 			wrongAnswer(string(answer.Method)))

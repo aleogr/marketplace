@@ -600,11 +600,18 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 		if err := s.record(ctx, tx, v, account, "identity.password_changed"); err != nil {
 			return err
 		}
-		return mail.Request(ctx, tx, mail.Message{
+		if err := mail.Request(ctx, tx, mail.Message{
 			Template: "password-changed", Language: v.Language, To: session.Account.Email,
 			From: v.MarketplaceName, Marketplace: v.Marketplace,
 			Variables: map[string]string{"Name": session.Account.Name},
-		})
+		}); err != nil {
+			return err
+		}
+		// A new password ends the run of failed second factors, and lifts
+		// the lock on codes (F14 spec, D8). Lock order: the credential,
+		// the account's sessions, the audit chain, and last the failure
+		// row, as every path takes it.
+		return clearFailures(ctx, tx, account)
 	})
 	if err != nil {
 		return "", err

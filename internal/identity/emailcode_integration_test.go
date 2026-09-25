@@ -110,19 +110,19 @@ func TestAnEmailFactorIsNotOfferedToStaff(t *testing.T) {
 	staff := session.Account
 	staff.Kind = KindStaff
 	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
-		methods, _, err := s.offers(t.Context(), tx, staff, challenge{Account: staff.ID})
+		offered, err := s.offers(t.Context(), tx, staff, challenge{Account: staff.ID})
 		if err != nil {
 			return err
 		}
-		if slices.Contains(methods, MethodEmail) {
-			t.Errorf("staff are offered %v", methods)
+		if slices.Contains(offered.Methods, MethodEmail) {
+			t.Errorf("staff are offered %v", offered.Methods)
 		}
-		buyer, _, err := s.offers(t.Context(), tx, session.Account, challenge{Account: staff.ID})
+		buyer, err := s.offers(t.Context(), tx, session.Account, challenge{Account: staff.ID})
 		if err != nil {
 			return err
 		}
-		if !slices.Equal(buyer, []Method{MethodEmail}) {
-			t.Errorf("the buyer is offered %v, want the e-mail code", buyer)
+		if !slices.Equal(buyer.Methods, []Method{MethodEmail}) {
+			t.Errorf("the buyer is offered %v, want the e-mail code", buyer.Methods)
 		}
 		return nil
 	}); err != nil {

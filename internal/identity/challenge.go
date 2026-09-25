@@ -53,28 +53,54 @@ type Pending struct {
 	Recovery bool
 	// Action is what a step-up guards; empty at sign-in.
 	Action Action
+	// CodesLocked is whether the account failed so many second factors in a
+	// row that codes from an app or by e-mail are refused until its password
+	// is changed (D8): Methods then holds neither.
+	CodesLocked bool
 }
 
-// offers returns the methods a challenge accepts, strongest first: the
-// account's own second factors that the policy permits it to verify with,
-// and, for a step-up whose action accepts it (§18.2), a code to the account's
-// address even with no e-mail factor enrolled.
-func (s *Service) offers(ctx context.Context, tx pgx.Tx, account Account, ch challenge) ([]Method, bool, error) {
+// offer is what a challenge accepts.
+type offer struct {
+	// Methods are strongest first.
+	Methods []Method
+	// Recovery is whether the account has unused recovery codes.
+	Recovery bool
+	// EmailFactor is whether e-mail is one of the account's factors, rather
+	// than an address a step-up may send a code to.
+	EmailFactor bool
+	// CodesLocked is the lock of D8.
+	CodesLocked bool
+}
+
+// offers returns what a challenge accepts: the account's own second factors
+// that the policy permits it to verify with, and, for a step-up whose action
+// accepts it (§18.2), a code to the account's address even with no e-mail
+// factor enrolled; neither an app nor an e-mail code while the account's
+// codes are locked (D8); and whether a recovery code may answer.
+func (s *Service) offers(ctx context.Context, tx pgx.Tx, account Account, ch challenge) (offer, error) {
 	factors, err := factorsOf(ctx, tx, account.ID)
 	if err != nil {
-		return nil, false, err
+		return offer{}, err
 	}
+	failures, err := secondFactorFailures(ctx, tx, account.ID)
+	if err != nil {
+		return offer{}, err
+	}
+	o := offer{CodesLocked: failures >= FailuresLocked}
 	var methods []Method
 	for _, f := range factors {
-		if s.policy.Permits(account.Kind, f.Method, Verify) {
+		o.EmailFactor = o.EmailFactor || f.Method == MethodEmail
+		if s.policy.Permits(account.Kind, f.Method, Verify) && !o.locks(f.Method) {
 			methods = append(methods, f.Method)
 		}
 	}
-	if ch.Action != "" && s.policy.StepUpFor(account.Kind, ch.Action, len(factors) > 0).Email {
+	if ch.Action != "" && s.policy.StepUpFor(account.Kind, ch.Action, len(factors) > 0).Email && !o.CodesLocked {
 		methods = append(methods, MethodEmail)
 	}
+	o.Methods = Strongest(methods)
 	_, left, err := recoveryCodes(ctx, tx, account.ID)
-	return Strongest(methods), left > 0, err
+	o.Recovery = left > 0
+	return o, err
 }
 
 // Pending reads the challenge a token opened, for the session sessionID steps
@@ -87,8 +113,8 @@ func (s *Service) Pending(ctx context.Context, v Visit, token, sessionID string)
 		if err != nil {
 			return err
 		}
-		pending.Action = ch.Action
-		pending.Methods, pending.Recovery, err = s.offers(ctx, tx, account, ch)
+		o, err := s.offers(ctx, tx, account, ch)
+		pending = Pending{Methods: o.Methods, Recovery: o.Recovery, Action: ch.Action, CodesLocked: o.CodesLocked}
 		return err
 	})
 	return pending, err
@@ -126,14 +152,24 @@ func (s *Service) ChallengeAddress(ctx context.Context, v Visit, token string) s
 }
 
 // check reports whether answer proves the account's second factor, spending
-// what it used: an app's step, a recovery code.
-func (s *Service) check(ctx context.Context, tx pgx.Tx, v Visit, account Account, ch challenge, answer Answer, now time.Time) (bool, error) {
-	methods, recovery, err := s.offers(ctx, tx, account, ch)
+// what it used: an app's step, a recovery code. It returns what the challenge
+// offered, which says how the answer counts (D8). A method the challenge does
+// not offer — a code while the account's codes are locked, for one — is
+// refused without being checked.
+func (s *Service) check(ctx context.Context, tx pgx.Tx, v Visit, account Account, ch challenge, answer Answer, now time.Time) (bool, offer, error) {
+	o, err := s.offers(ctx, tx, account, ch)
 	if err != nil {
-		return false, err
+		return false, o, err
 	}
+	ok, err := s.checkOffered(ctx, tx, v, account, ch, o, answer, now)
+	return ok, o, err
+}
+
+// checkOffered is check's answer, against what the challenge offered.
+func (s *Service) checkOffered(ctx context.Context, tx pgx.Tx, v Visit, account Account, ch challenge, o offer,
+	answer Answer, now time.Time) (bool, error) {
 	if answer.Method == MethodRecovery {
-		if !recovery {
+		if !o.Recovery {
 			return false, nil
 		}
 		hash, ok := recoveryHash(answer.Code)
@@ -142,7 +178,7 @@ func (s *Service) check(ctx context.Context, tx pgx.Tx, v Visit, account Account
 		}
 		return useRecoveryCode(ctx, tx, account.ID, hash, now)
 	}
-	if !slices.Contains(methods, answer.Method) {
+	if !slices.Contains(o.Methods, answer.Method) {
 		return false, nil
 	}
 	switch answer.Method {
@@ -182,31 +218,45 @@ func (s *Service) checkApp(ctx context.Context, tx pgx.Tx, account, code string,
 }
 
 // answerChallenge runs one answer against the challenge a token opened, for
-// sessionID ("" at sign-in). A wrong answer counts an attempt, is audited, and
-// is ErrCodeWrong, or ErrChallengeExhausted when it was the last; a right one
-// spends the challenge and runs done in the same transaction.
+// sessionID ("" at sign-in). A wrong answer counts an attempt, is audited,
+// counts against the account's run of failed second factors (D8), and is
+// ErrCodeWrong — ErrCodesLocked for a code the lock refused — or
+// ErrChallengeExhausted when it was the last; a right one spends the
+// challenge, runs done in the same transaction, and, when it proved a second
+// factor, ends the run.
+//
+// Lock order: the challenge's row, then the factor rows the check takes (an
+// app's or a key's, an e-mail code's), then, in done and in the audit, the
+// session's row and the audit chain, and last the account's failure row
+// (countFailure, clearFailures).
 func (s *Service) answerChallenge(ctx context.Context, v Visit, token, sessionID string, answer Answer,
 	done func(tx pgx.Tx, ch challenge, account Account, now time.Time) error) error {
-	var wrong, exhausted bool
+	var wrong, locked, exhausted bool
 	err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		now := s.now()
 		ch, account, err := s.challenge(ctx, tx, token, sessionID)
 		if err != nil {
 			return err
 		}
-		ok, err := s.check(ctx, tx, v, account, ch, answer, now)
+		ok, o, err := s.check(ctx, tx, v, account, ch, answer, now)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			wrong = true
+			wrong, locked = true, o.locks(answer.Method)
 			attempts, err := challengeAttempt(ctx, tx, HashToken(token), now)
 			if err != nil {
 				return err
 			}
 			exhausted = attempts >= ChallengeAttempts
-			return s.refusalWith(ctx, tx, v, account.ID, "identity.second_factor_failed",
-				map[string]string{"method": string(answer.Method)})
+			if err := s.refusalWith(ctx, tx, v, account.ID, "identity.second_factor_failed",
+				map[string]string{"method": string(answer.Method)}); err != nil {
+				return err
+			}
+			if !o.secondFactor(answer.Method) {
+				return nil
+			}
+			return s.failed(ctx, tx, v, account, now)
 		}
 		if err := spendChallenge(ctx, tx, HashToken(token), now); err != nil {
 			return err
@@ -216,13 +266,21 @@ func (s *Service) answerChallenge(ctx context.Context, v Visit, token, sessionID
 				return err
 			}
 		}
-		return done(tx, ch, account, now)
+		if err := done(tx, ch, account, now); err != nil {
+			return err
+		}
+		if !o.secondFactor(answer.Method) {
+			return nil
+		}
+		return clearFailures(ctx, tx, account.ID)
 	})
 	switch {
 	case err != nil:
 		return err
 	case exhausted:
 		return ErrChallengeExhausted
+	case locked:
+		return ErrCodesLocked
 	case wrong:
 		return ErrCodeWrong
 	}

@@ -55,11 +55,13 @@ func (s *Service) BeginStepUp(ctx context.Context, v Visit, session Session, act
 	}
 	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		ch := challenge{Account: session.Account.ID, Session: session.ID, Action: action}
-		methods, recovery, err := s.offers(ctx, tx, session.Account, ch)
+		o, err := s.offers(ctx, tx, session.Account, ch)
 		if err != nil {
 			return err
 		}
-		if len(methods) == 0 && !recovery {
+		// A locked account with nothing else to answer with still opens
+		// one, so that its page can say why (D8).
+		if len(o.Methods) == 0 && !o.Recovery && !o.CodesLocked {
 			return ErrNoSecondFactor
 		}
 		return insertChallenge(ctx, tx, v.Marketplace, session.Account.ID, hash, session.ID, action, s.now())

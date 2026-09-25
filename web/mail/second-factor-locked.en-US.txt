@@ -1,0 +1,6 @@
+Subject: Codes no longer work for your account at {{.From}}
+Hello, {{.Name}}.
+
+Someone who knows your password has failed the second step of signing in to your account at {{.From}} so many times in a row that, to stop the guessing, codes from an authenticator app or by e-mail no longer work for your account.
+
+Change your password now: someone else knows it, and a new password makes the codes work again. Until then, confirm it is you with a security key or a recovery code.

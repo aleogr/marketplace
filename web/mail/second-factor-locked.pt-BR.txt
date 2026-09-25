@@ -1,0 +1,6 @@
+Subject: Os códigos não funcionam mais na sua conta em {{.From}}
+Olá, {{.Name}}.
+
+Alguém que sabe sua senha errou a segunda etapa da entrada na sua conta em {{.From}} tantas vezes seguidas que, para impedir as tentativas, códigos de aplicativo autenticador ou por e-mail não funcionam mais na sua conta.
+
+Altere sua senha agora: outra pessoa a conhece, e uma nova senha faz os códigos voltarem a funcionar. Até lá, confirme que é você com uma chave de segurança ou um código de recuperação.

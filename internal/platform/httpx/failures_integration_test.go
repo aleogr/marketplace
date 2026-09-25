@@ -1,0 +1,135 @@
+//go:build integration
+
+package httpx_test
+
+import (
+	"net/http"
+	"net/url"
+	"strings"
+	"testing"
+
+	"github.com/aleogr/marketplace/internal/identity"
+	"github.com/aleogr/marketplace/internal/tenancy"
+)
+
+// The lock's messages, as each language words them.
+var (
+	codesLocked = map[string]string{
+		"pt-BR": "Houve respostas erradas demais nesta conta, então códigos de aplicativo autenticador ou por e-mail não funcionam mais até que a senha seja alterada.",
+		"en-US": "Too many wrong answers were given for this account, so codes from an authenticator app or by e-mail no longer work until its password is changed.",
+	}
+	wrongCode = map[string]string{
+		"pt-BR": "Esse código não confere.",
+		"en-US": "That code is not right.",
+	}
+	nothingLeft = map[string]string{
+		"pt-BR": "Esta conta não tem chave de segurança nem código de recuperação restante",
+		"en-US": "This account has no security key and no recovery code left",
+	}
+)
+
+// lockCodes gives the fixture's account as many failed second factors in a
+// row as lock its codes, written as the database's owner: a hundred
+// challenges are internal/identity's to test.
+func lockCodes(t *testing.T, marketplace *tenancy.Marketplace) {
+	t.Helper()
+	if _, err := poolOf(t).Exec(t.Context(), `
+		INSERT INTO second_factor_failure (account_id, marketplace_id, failures, updated_at)
+		SELECT id, marketplace_id, $2, now() FROM account WHERE marketplace_id = $1 AND email = 'leitora@example.test'`,
+		marketplace.ID, identity.FailuresLocked); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// passwordDone is a visitor who typed the fixture's password in language and
+// holds the challenge it opened.
+func passwordDone(t *testing.T, handler http.Handler, marketplace *tenancy.Marketplace, language string) browser {
+	t.Helper()
+	visitor := browser{t: t, handler: handler, marketplace: marketplace, cookies: map[string]string{}}
+	visitor.post("/"+language+"/signin", url.Values{"email": {"leitora@example.test"}, "password": {"correct horse battery staple"}})
+	if visitor.cookies["challenge"] == "" {
+		t.Fatal("the password opened no challenge")
+	}
+	return visitor
+}
+
+// A locked account's second step says why the codes are gone, in each
+// language, and offers what still works: the key first, and a recovery code.
+// An app code posted anyway is refused as locked, not as wrong.
+func TestALockedSecondStepSaysSoAndOffersWhatStillWorks(t *testing.T) {
+	handler, service, marketplace := bilingualSite(t)
+	enrolledApp(t, service, marketplace)
+	storedKey(t, marketplace)
+	lockCodes(t, marketplace)
+
+	for language, want := range map[string]struct{ key, recovery, app string }{
+		"pt-BR": {"Use sua chave de segurança", "Usar um código de recuperação", "Usar o aplicativo autenticador"},
+		"en-US": {"Use your security key", "Use a recovery code", "Use your authenticator app"},
+	} {
+		visitor := passwordDone(t, handler, marketplace, language)
+		page := visitor.get("/" + language + "/signin/verify")
+		body := page.Body.String()
+		if page.Code != http.StatusOK || !strings.Contains(body, codesLocked[language]) ||
+			!strings.Contains(body, want.key) || !strings.Contains(body, want.recovery) {
+			t.Fatalf("the locked second step in %s: status %d, body %s", language, page.Code, body)
+		}
+		if strings.Contains(body, want.app) || strings.Contains(body, `inputmode="numeric"`) || strings.Contains(body, nothingLeft[language]) {
+			t.Fatalf("the locked second step in %s still offers a code, or says nothing is left: %s", language, body)
+		}
+
+		refused := visitor.post("/"+language+"/signin/verify", url.Values{"method": {"totp"}, "code": {"000000"}})
+		body = refused.Body.String()
+		if refused.Code != http.StatusForbidden || !strings.Contains(body, codesLocked[language]) || strings.Contains(body, wrongCode[language]) {
+			t.Fatalf("an app code on the locked second step in %s: status %d, body %s", language, refused.Code, body)
+		}
+	}
+}
+
+// With no key and no recovery code left, the locked second step says that
+// nothing is left to confirm with, and shows no form to answer.
+func TestALockedSecondStepWithNothingLeftSaysSo(t *testing.T) {
+	handler, service, marketplace := bilingualSite(t)
+	enrolledApp(t, service, marketplace)
+	if _, err := poolOf(t).Exec(t.Context(), `
+		UPDATE recovery_code SET used_at = now()
+		 WHERE account_id = (SELECT id FROM account WHERE marketplace_id = $1 AND email = 'leitora@example.test')`,
+		marketplace.ID); err != nil {
+		t.Fatal(err)
+	}
+	lockCodes(t, marketplace)
+
+	for _, language := range []string{"pt-BR", "en-US"} {
+		visitor := passwordDone(t, handler, marketplace, language)
+		page := visitor.get("/" + language + "/signin/verify")
+		body := page.Body.String()
+		if page.Code != http.StatusOK || !strings.Contains(body, codesLocked[language]) || !strings.Contains(body, nothingLeft[language]) {
+			t.Fatalf("the locked second step with nothing left in %s: status %d, body %s", language, page.Code, body)
+		}
+		if strings.Contains(body, `action="/`+language+`/signin/verify"`) || strings.Contains(body, `name="code"`) {
+			t.Fatalf("the locked second step with nothing left in %s shows a form to answer: %s", language, body)
+		}
+	}
+}
+
+// The step-up is the same page, and is locked the same way: with neither an
+// app code nor a code to the address, the recovery code is what it asks for.
+func TestALockedStepUpSaysSo(t *testing.T) {
+	handler, service, marketplace := bilingualSite(t)
+	b := signedInBrowser(t, handler, service, marketplace)
+	enrolledApp(t, service, marketplace)
+	lockCodes(t, marketplace)
+
+	page := b.get("/pt-BR/account/verify?for=add_card&next=%2Faccount%2Fsecurity")
+	body := page.Body.String()
+	if page.Code != http.StatusOK || !strings.Contains(body, codesLocked["pt-BR"]) ||
+		!strings.Contains(body, "Digite um dos seus códigos de recuperação.") ||
+		strings.Contains(body, "Usar o aplicativo autenticador") || strings.Contains(body, "Receber um código por e-mail") {
+		t.Fatalf("the locked step-up: status %d, body %s", page.Code, body)
+	}
+	refused := b.post("/pt-BR/account/verify", url.Values{"method": {"totp"}, "code": {"000000"},
+		"for": {"add_card"}, "next": {"/account/security"}})
+	if refused.Code != http.StatusForbidden || !strings.Contains(refused.Body.String(), codesLocked["pt-BR"]) ||
+		strings.Contains(refused.Body.String(), wrongCode["pt-BR"]) {
+		t.Fatalf("an app code on the locked step-up: status %d, body %s", refused.Code, refused.Body.String())
+	}
+}

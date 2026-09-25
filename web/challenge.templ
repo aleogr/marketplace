@@ -13,33 +13,14 @@ templ ChallengePage(page Page, view Challenge) {
 		if view.Form.Error != "" {
 			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
 		}
-		<p>{ page.T("identity.challenge.method." + view.Method) }</p>
-		if view.Method == "email" {
-			if view.Sent {
-				<p role="status">{ page.T("identity.challenge.sent") }</p>
-			}
-			@sendCodeForm(page, view)
-		}
-		@challengeForm(page, view) {
-			if view.Method == "webauthn" {
-				<input type="hidden" name="key"/>
-				// Hidden until the script shows it: without the script the
-				// button would post an empty answer and spend an attempt.
-				<button type="submit" hidden>{ page.T("identity.challenge.use_key") }</button>
-			} else {
-				<label>
-					{ page.T("identity.field.code") }
-					if view.Method == "recovery" {
-						<input name="code" autocomplete="off" autocapitalize="none" spellcheck="false" required { view.Form.Input("code")... }/>
-					} else {
-						<input name="code" inputmode="numeric" autocomplete="one-time-code" required { view.Form.Input("code")... }/>
-					}
-				</label>
-				<button type="submit">{ page.T("identity.challenge.submit") }</button>
+		if view.CodesLocked {
+			<p role="status">{ page.T("identity.challenge.codes_locked") }</p>
+			if view.Method == "" {
+				<p>{ page.T("identity.challenge.codes_locked_none") }</p>
 			}
 		}
-		if view.Method == "webauthn" {
-			@keyScript(page)
+		if view.Method != "" {
+			@challengeMethod(page, view)
 		}
 		if len(view.Others()) > 0 || (view.Recovery && view.Method != "recovery") {
 			<p>{ page.T("identity.challenge.other") }</p>
@@ -52,6 +33,38 @@ templ ChallengePage(page Page, view Challenge) {
 				}
 			</ul>
 		}
+	}
+}
+
+// challengeMethod asks for the method the page shows.
+templ challengeMethod(page Page, view Challenge) {
+	<p>{ page.T("identity.challenge.method." + view.Method) }</p>
+	if view.Method == "email" {
+		if view.Sent {
+			<p role="status">{ page.T("identity.challenge.sent") }</p>
+		}
+		@sendCodeForm(page, view)
+	}
+	@challengeForm(page, view) {
+		if view.Method == "webauthn" {
+			<input type="hidden" name="key"/>
+			// Hidden until the script shows it: without the script the
+			// button would post an empty answer and spend an attempt.
+			<button type="submit" hidden>{ page.T("identity.challenge.use_key") }</button>
+		} else {
+			<label>
+				{ page.T("identity.field.code") }
+				if view.Method == "recovery" {
+					<input name="code" autocomplete="off" autocapitalize="none" spellcheck="false" required { view.Form.Input("code")... }/>
+				} else {
+					<input name="code" inputmode="numeric" autocomplete="one-time-code" required { view.Form.Input("code")... }/>
+				}
+			</label>
+			<button type="submit">{ page.T("identity.challenge.submit") }</button>
+		}
+	}
+	if view.Method == "webauthn" {
+		@keyScript(page)
 	}
 }
 

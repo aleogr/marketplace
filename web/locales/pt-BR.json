@@ -160,5 +160,7 @@
   "identity.key.submit": "Adicionar",
   "identity.key.failed": "O navegador não concluiu. Tente de novo ou escolha outro jeito.",
   "identity.key.needs_script": "A chave de segurança precisa de JavaScript, que está desligado neste navegador. Um aplicativo autenticador ou um código por e-mail funcionam sem ele.",
-  "identity.key.refused": "Não foi possível verificar a resposta da chave. Tente de novo."
+  "identity.key.refused": "Não foi possível verificar a resposta da chave. Tente de novo.",
+  "identity.challenge.codes_locked": "Houve respostas erradas demais nesta conta, então códigos de aplicativo autenticador ou por e-mail não funcionam mais até que a senha seja alterada.",
+  "identity.challenge.codes_locked_none": "Esta conta não tem chave de segurança nem código de recuperação restante para usar no lugar, então não é possível confirmar por enquanto."
 }

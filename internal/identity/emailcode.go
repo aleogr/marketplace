@@ -183,11 +183,11 @@ func (s *Service) SendChallengeCode(ctx context.Context, v Visit, token, session
 		if err != nil {
 			return err
 		}
-		methods, _, err := s.offers(ctx, tx, account, ch)
+		o, err := s.offers(ctx, tx, account, ch)
 		if err != nil {
 			return err
 		}
-		if !slices.Contains(methods, MethodEmail) {
+		if !slices.Contains(o.Methods, MethodEmail) {
 			return ErrNotPermitted
 		}
 		return s.sendCode(ctx, tx, v, account, purposeOf(ch), s.now())

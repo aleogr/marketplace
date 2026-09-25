@@ -140,3 +140,31 @@ func TestTheSecondFactorNoticesNameTheMethodInTheReadersLanguage(t *testing.T) {
 		}
 	}
 }
+
+// The notices of a run of failed second factors exist in both languages and
+// both parts, name the reader and the marketplace, and tell the reader to
+// change the password (F14 spec, D8).
+func TestTheFailureNoticesExistInBothLanguages(t *testing.T) {
+	for _, tc := range []struct{ template, language, want string }{
+		{"second-factor-failures", "en-US", "change your password now"},
+		{"second-factor-failures", "pt-BR", "altere sua senha agora"},
+		{"second-factor-locked", "en-US", "Change your password now"},
+		{"second-factor-locked", "pt-BR", "Altere sua senha agora"},
+	} {
+		rendered, err := templates(t).Render(mail.Message{
+			Template: tc.template, Language: tc.language, To: "reader@example.test", From: "Loja Um",
+			Variables: map[string]string{"Name": "Leitora"},
+		}, i18n.Default)
+		if err != nil {
+			t.Fatalf("%s in %s: %v", tc.template, tc.language, err)
+		}
+		if rendered.Language != tc.language || !strings.Contains(rendered.Subject, "Loja Um") {
+			t.Errorf("%s in %s: language %s, subject %q", tc.template, tc.language, rendered.Language, rendered.Subject)
+		}
+		for _, part := range []string{rendered.Text, rendered.HTML} {
+			if !strings.Contains(part, "Leitora") || !strings.Contains(part, "Loja Um") || !strings.Contains(part, tc.want) {
+				t.Errorf("%s in %s does not name the reader and the marketplace and say %q: %s", tc.template, tc.language, tc.want, part)
+			}
+		}
+	}
+}
