@@ -106,6 +106,10 @@ func (s Site) renderStepUp(w http.ResponseWriter, r *http.Request, status int, t
 	}
 	view := challengeView(pending, chosen, stepUpBase(r, action, next))
 	view.Next, view.Form, view.Sent = next, form, r.URL.Query().Get("sent") == "1"
+	if err := s.keyOptions(r, &view, token, session.ID); err != nil {
+		s.failed(w, r, "a key's options could not be prepared", err)
+		return
+	}
 	renderStatus(w, r, status, web.ChallengePage(s.page(r, stepUpPath), view))
 }
 
@@ -119,17 +123,16 @@ func (s Site) answerStepUp(w http.ResponseWriter, r *http.Request) {
 	}
 	session, _ := SessionFrom(r.Context())
 	token := challengeToken(r)
-	method := r.PostFormValue("method")
-	err := s.identity.Service.StepUp(r.Context(), visit(r), session, token,
-		identity.Answer{Method: identity.Method(method), Code: r.PostFormValue("code")})
+	answer := answerOf(r)
+	err := s.identity.Service.StepUp(r.Context(), visit(r), session, token, answer)
 	restart := func(why string) {
 		query := url.Values{"for": {string(action)}, "next": {next}, "again": {why}}
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+stepUpPath+"?"+query.Encode(), http.StatusSeeOther)
 	}
 	switch {
 	case errors.Is(err, identity.ErrCodeWrong):
-		s.renderStepUp(w, r, http.StatusUnauthorized, token, action, next, method,
-			web.Form{Error: "identity.challenge.wrong", Field: "code"})
+		s.renderStepUp(w, r, http.StatusUnauthorized, token, action, next, string(answer.Method),
+			wrongAnswer(string(answer.Method)))
 	case errors.Is(err, identity.ErrChallengeExhausted):
 		restart("exhausted")
 	case errors.Is(err, identity.ErrChallengeInvalid):

@@ -149,5 +149,15 @@
   "identity.email.title": "Receive codes by e-mail",
   "identity.email.intro": "When you sign in, we can send a six-digit code to %[1]s. To add this method, ask for a code and type it here.",
   "identity.email.submit": "Add e-mail codes",
-  "identity.email.wrong": "That code is not right, or it has expired. Ask for a new one if you need to."
+  "identity.email.wrong": "That code is not right, or it has expired. Ask for a new one if you need to.",
+  "identity.challenge.method.webauthn": "Use your security key, or this device's fingerprint, face or PIN.",
+  "identity.challenge.use.webauthn": "Use your security key or this device",
+  "identity.challenge.use_key": "Use the key",
+  "identity.security.add_key": "Security key or this device",
+  "identity.key.title": "Add a security key or this device",
+  "identity.key.intro": "Use a security key, or this device's fingerprint, face or PIN. The browser will ask you to touch the key or to confirm on the device.",
+  "identity.key.submit": "Add it",
+  "identity.key.failed": "The browser did not finish. Try again, or choose another way.",
+  "identity.key.needs_script": "A security key needs JavaScript, which is off in this browser. An authenticator app or a code by e-mail works without it.",
+  "identity.key.refused": "The key's answer could not be verified. Try again."
 }

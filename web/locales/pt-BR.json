@@ -150,5 +150,15 @@
   "identity.email.title": "Receber códigos por e-mail",
   "identity.email.intro": "Quando você entrar, podemos enviar um código de seis dígitos para %[1]s. Para adicionar este método, peça um código e digite-o aqui.",
   "identity.email.submit": "Adicionar códigos por e-mail",
-  "identity.email.wrong": "Esse código não confere ou expirou. Peça um novo se precisar."
+  "identity.email.wrong": "Esse código não confere ou expirou. Peça um novo se precisar.",
+  "identity.challenge.method.webauthn": "Use sua chave de segurança, ou a digital, o rosto ou o PIN deste dispositivo.",
+  "identity.challenge.use.webauthn": "Usar a chave de segurança ou este dispositivo",
+  "identity.challenge.use_key": "Usar a chave",
+  "identity.security.add_key": "Chave de segurança ou este dispositivo",
+  "identity.key.title": "Adicionar uma chave de segurança ou este dispositivo",
+  "identity.key.intro": "Use uma chave de segurança, ou a digital, o rosto ou o PIN deste dispositivo. O navegador vai pedir que você toque na chave ou confirme no dispositivo.",
+  "identity.key.submit": "Adicionar",
+  "identity.key.failed": "O navegador não concluiu. Tente de novo ou escolha outro jeito.",
+  "identity.key.needs_script": "A chave de segurança precisa de JavaScript, que está desligado neste navegador. Um aplicativo autenticador ou um código por e-mail funcionam sem ele.",
+  "identity.key.refused": "Não foi possível verificar a resposta da chave. Tente de novo."
 }

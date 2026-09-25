@@ -123,7 +123,37 @@ func (s Site) renderSecondStep(w http.ResponseWriter, r *http.Request, status in
 	}
 	view := challengeView(pending, chosen, "/"+i18n.FromContext(r.Context())+secondStepPath+"?")
 	view.Form, view.Sent = form, r.URL.Query().Get("sent") == "1"
+	if err := s.keyOptions(r, &view, token, ""); err != nil {
+		s.failed(w, r, "a key's options could not be prepared", err)
+		return
+	}
 	renderStatus(w, r, status, web.ChallengePage(s.page(r, secondStepPath), view))
+}
+
+// keyOptions gives a challenge page that shows a key what the browser needs
+// to answer with it: each showing starts a new ceremony.
+func (s Site) keyOptions(r *http.Request, view *web.Challenge, token, sessionID string) error {
+	if view.Method != string(identity.MethodKey) {
+		return nil
+	}
+	options, err := s.identity.Service.KeyOptions(r.Context(), visit(r), token, sessionID)
+	view.KeyOptions = string(options)
+	return err
+}
+
+// answerOf is the answer a challenge's form posted: a code, or a key's.
+func answerOf(r *http.Request) identity.Answer {
+	return identity.Answer{Method: identity.Method(r.PostFormValue("method")), Code: r.PostFormValue("code"),
+		Key: []byte(r.PostFormValue("key"))}
+}
+
+// wrongAnswer is what a refused answer is shown as: a code that is not
+// right, or a key whose answer did not verify.
+func wrongAnswer(method string) web.Form {
+	if method == string(identity.MethodKey) {
+		return web.Form{Error: "identity.key.refused"}
+	}
+	return web.Form{Error: "identity.challenge.wrong", Field: "code"}
 }
 
 // codeRefusal names the message a refused request for an e-mail code is
@@ -173,13 +203,11 @@ func (s Site) answerSecondStep(w http.ResponseWriter, r *http.Request) {
 		backToSignIn(w, r, "expired")
 		return
 	}
-	method := r.PostFormValue("method")
-	answer := identity.Answer{Method: identity.Method(method), Code: r.PostFormValue("code")}
+	answer := answerOf(r)
 	signed, err := s.identity.Service.CompleteSignIn(r.Context(), visit(r), token, answer)
 	switch {
 	case errors.Is(err, identity.ErrCodeWrong):
-		s.renderSecondStep(w, r, http.StatusUnauthorized, method,
-			web.Form{Error: "identity.challenge.wrong", Field: "code"})
+		s.renderSecondStep(w, r, http.StatusUnauthorized, string(answer.Method), wrongAnswer(string(answer.Method)))
 		return
 	case errors.Is(err, identity.ErrChallengeExhausted):
 		backToSignIn(w, r, "exhausted")

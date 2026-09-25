@@ -62,6 +62,7 @@ func (s Site) Handler() http.Handler {
 	mux.HandleFunc("GET "+HealthPath, health(s.database))
 	mux.HandleFunc("GET "+RobotsPath, robots(s.indexable, s.sitemap()))
 	mux.HandleFunc("GET "+PreviewPath, s.previewImage)
+	mux.HandleFunc("GET "+ScriptPath, script)
 	mux.HandleFunc("POST "+LanguagePath, s.switchLanguage)
 	if s.tasks != nil {
 		mux.HandleFunc("POST "+TasksPath, s.tasks.Handle)

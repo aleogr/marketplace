@@ -14,6 +14,8 @@ var securityRoutes = []struct{ method, path string }{
 	{http.MethodPost, "/account/security/app"},
 	{http.MethodPost, "/account/security/remove"},
 	{http.MethodPost, "/account/security/recovery"},
+	{http.MethodGet, "/account/security/key"},
+	{http.MethodPost, "/account/security/key"},
 	{http.MethodGet, "/account/security/email"},
 	{http.MethodPost, "/account/security/email/send"},
 	{http.MethodPost, "/account/security/email"},
