@@ -17,11 +17,19 @@ import (
 // (docs/superpowers/specs/2026-09-25-f14-two-factor-design.md). Every one is
 // served only signed in, and only on a marketplace's host.
 func (s Site) factorRoutes(mux *http.ServeMux) {
+	// Every change needs a recent step-up once the account has 2FA (D2, D4);
+	// reading the page does not.
+	changes := func(back string, h http.HandlerFunc) http.Handler {
+		return inMarketplace(signedIn(s.steppedUp(identity.ActionFactors, back, h)))
+	}
 	mux.Handle("GET /account/security", inMarketplace(signedIn(http.HandlerFunc(s.securityPage))))
-	mux.Handle("GET /account/security/app", inMarketplace(signedIn(http.HandlerFunc(s.appForm))))
-	mux.Handle("POST /account/security/app", inMarketplace(signedIn(http.HandlerFunc(s.addApp))))
-	mux.Handle("POST /account/security/remove", inMarketplace(signedIn(http.HandlerFunc(s.removeFactor))))
-	mux.Handle("POST /account/security/recovery", inMarketplace(signedIn(http.HandlerFunc(s.regenerateCodes))))
+	mux.Handle("GET /account/security/app", changes(securityPath+"/app", s.appForm))
+	mux.Handle("POST /account/security/app", changes(securityPath+"/app", s.addApp))
+	mux.Handle("POST /account/security/remove", changes(securityPath, s.removeFactor))
+	mux.Handle("POST /account/security/recovery", changes(securityPath, s.regenerateCodes))
+	mux.Handle("GET /account/security/email", changes(securityPath+"/email", s.emailForm))
+	mux.Handle("POST /account/security/email/send", changes(securityPath+"/email", s.sendEmailCode))
+	mux.Handle("POST /account/security/email", changes(securityPath+"/email", s.addEmail))
 }
 
 // securityPath is where the security pages live, below the language.
@@ -72,7 +80,13 @@ func (s Site) securityPage(w http.ResponseWriter, r *http.Request) {
 		s.failed(w, r, "the security page could not be read", err)
 		return
 	}
-	view.Done = securityDone[r.URL.Query().Get("done")]
+	done := r.URL.Query().Get("done")
+	view.Done = securityDone[done]
+	if done == "recovery_used" {
+		// Signed in with a recovery code: say how many are left, which is
+		// the moment to make new ones.
+		view.Done, view.DoneArgs = "identity.security.done.recovery_used", []any{view.RecoveryLeft}
+	}
 	render(w, r, web.SecurityPage(s.page(r, securityPath), view))
 }
 
@@ -120,6 +134,10 @@ func (s Site) appForm(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if errors.Is(err, identity.ErrStepUpNeeded) {
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/app")
+		return
+	}
 	if err != nil {
 		s.failed(w, r, "an app enrolment could not start", err)
 		return
@@ -148,6 +166,9 @@ func (s Site) addApp(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, identity.ErrNotPermitted):
 		http.NotFound(w, r)
+		return
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/app")
 		return
 	case errors.Is(err, identity.ErrCodeWrong):
 		view.Form.Error = "identity.app.wrong_code"
@@ -182,6 +203,8 @@ func (s Site) removeFactor(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
 	err := s.identity.Service.RemoveFactor(r.Context(), visit(r), session, r.PostFormValue("factor"))
 	switch {
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath)
 	case errors.Is(err, identity.ErrFactorUnknown):
 		http.NotFound(w, r)
 	case errors.Is(err, identity.ErrFactorRequired):
@@ -204,6 +227,8 @@ func (s Site) regenerateCodes(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
 	codes, err := s.identity.Service.RegenerateRecoveryCodes(r.Context(), visit(r), session)
 	switch {
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath)
 	case errors.Is(err, identity.ErrNoSecondFactor):
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath, http.StatusSeeOther)
 	case err != nil:
@@ -211,4 +236,71 @@ func (s Site) regenerateCodes(w http.ResponseWriter, r *http.Request) {
 	default:
 		render(w, r, web.RecoveryCodes(s.page(r, securityPath), web.Recovery{Codes: codes}))
 	}
+}
+
+// renderEmail shows the page that adds e-mail as a second factor.
+func (s Site) renderEmail(w http.ResponseWriter, r *http.Request, status int, view web.EmailEnrolment) {
+	session, _ := SessionFrom(r.Context())
+	view.Address = session.Account.Email
+	renderStatus(w, r, status, web.EnrolEmail(s.page(r, securityPath+"/email"), view))
+}
+
+// emailForm explains the method and offers to send the code that adds it;
+// after one was sent it asks for it.
+func (s Site) emailForm(w http.ResponseWriter, r *http.Request) {
+	s.renderEmail(w, r, http.StatusOK, web.EmailEnrolment{Sent: r.URL.Query().Get("sent") == "1"})
+}
+
+// emailError answers what adding e-mail refused that is not the visitor's to
+// fix on this page, and reports whether it did.
+func (s Site) emailError(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case errors.Is(err, identity.ErrNotPermitted):
+		http.NotFound(w, r)
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/email")
+	case errors.Is(err, identity.ErrAlreadyEnrolled):
+		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath, http.StatusSeeOther)
+	default:
+		return false
+	}
+	return true
+}
+
+// sendEmailCode mails the code that adds e-mail, within the per-account
+// limits.
+func (s Site) sendEmailCode(w http.ResponseWriter, r *http.Request) {
+	session, _ := SessionFrom(r.Context())
+	err := s.identity.Service.BeginEmail(r.Context(), visit(r), session)
+	if key, refused := codeRefusal(err); refused {
+		s.renderEmail(w, r, http.StatusTooManyRequests, web.EmailEnrolment{Form: web.Form{Error: key}})
+		return
+	}
+	if s.emailError(w, r, err) {
+		return
+	}
+	if err != nil {
+		s.failed(w, r, "an e-mail code could not be sent", err)
+		return
+	}
+	http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath+"/email?sent=1", http.StatusSeeOther)
+}
+
+// addEmail adds e-mail once the code comes back.
+func (s Site) addEmail(w http.ResponseWriter, r *http.Request) {
+	session, _ := SessionFrom(r.Context())
+	err := s.identity.Service.ConfirmEmail(r.Context(), visit(r), session, r.PostFormValue("code"))
+	if errors.Is(err, identity.ErrCodeWrong) {
+		s.renderEmail(w, r, http.StatusUnprocessableEntity,
+			web.EmailEnrolment{Form: web.Form{Error: "identity.email.wrong", Field: "code"}})
+		return
+	}
+	if s.emailError(w, r, err) {
+		return
+	}
+	if err != nil {
+		s.failed(w, r, "e-mail could not be added", err)
+		return
+	}
+	toSecurity(w, r, "added")
 }

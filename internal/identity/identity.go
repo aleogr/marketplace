@@ -265,6 +265,15 @@ func (s *Service) Resend(ctx context.Context, v Visit, email string) error {
 type Session struct {
 	ID      string
 	Account Account
+	// SecondFactor is whether the account has one, so it has 2FA; and
+	// SteppedUpAt is when this session last proved it (F14 spec, D4).
+	SecondFactor bool
+	SteppedUpAt  *time.Time
+	// EmailConfirmedAt is when this session last answered a code sent to the
+	// account's address that is not one of its second factors: it proves the
+	// address, for the actions whose step-up accepts that (§18.2), and never
+	// a second factor.
+	EmailConfirmedAt *time.Time
 }
 
 // refusal audits an attempt against an account by somebody not known to be
@@ -273,7 +282,14 @@ type Session struct {
 // sealed under the platform's key, so the owner's erasure request cannot
 // erase the evidence about somebody else (internal/platform/audit).
 func (s *Service) refusal(ctx context.Context, tx pgx.Tx, v Visit, account, action string) error {
-	after, err := json.Marshal(map[string]string{"user_agent": v.UserAgent})
+	return s.refusalWith(ctx, tx, v, account, action, nil)
+}
+
+// refusalWith is refusal with what else the record should say.
+func (s *Service) refusalWith(ctx context.Context, tx pgx.Tx, v Visit, account, action string, detail map[string]string) error {
+	state := map[string]string{"user_agent": v.UserAgent}
+	maps.Copy(state, detail)
+	after, err := json.Marshal(state)
 	if err != nil {
 		return err
 	}
@@ -306,7 +322,10 @@ func (s *Service) credentials(ctx context.Context, marketplace, normalised strin
 }
 
 // SignIn checks a password and opens a new session, returning its token. A
-// session is never reused: each sign-in opens its own.
+// session is never reused: each sign-in opens its own. On an account with a
+// second factor it opens a challenge instead, and returns the challenge's
+// token with ErrSecondStep: the session is opened by CompleteSignIn, once the
+// second factor is proved (F14 spec, D3).
 //
 // Three steps, and argon2 runs in none of the transactions: the account is
 // read in one, the password verified with none open, and the session written
@@ -364,6 +383,7 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 	if err != nil {
 		return "", err
 	}
+	var second bool
 	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		still, err := passwordStill(ctx, tx, account.ID, secret)
 		if err != nil {
@@ -383,6 +403,14 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 				return err
 			}
 		}
+		factors, err := countFactors(ctx, tx, account.ID)
+		if err != nil {
+			return err
+		}
+		if factors > 0 {
+			second = true
+			return insertChallenge(ctx, tx, v.Marketplace, account.ID, hash, "", "", s.now())
+		}
 		if err := insertSession(ctx, tx, v.Marketplace, account.ID, hash, v.IP, v.UserAgent, s.now()); err != nil {
 			return err
 		}
@@ -390,6 +418,9 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 	})
 	if err != nil {
 		return "", err
+	}
+	if second {
+		return token, ErrSecondStep
 	}
 	s.sweep(ctx, v.Marketplace)
 	return token, nil
@@ -475,7 +506,8 @@ func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (
 		if err != nil {
 			return err
 		}
-		session = Session{ID: row.id, Account: account}
+		session = Session{ID: row.id, Account: account, SecondFactor: row.secondFactor, SteppedUpAt: row.steppedUp,
+			EmailConfirmedAt: row.emailProved}
 		return nil
 	})
 	return session, err
@@ -498,6 +530,11 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 		// No password that can be set is this long: refused as a wrong one,
 		// before it costs a normalisation, a hash or a transaction.
 		return "", ErrCredentials
+	}
+	// Whoever has a second factor proves it again first, so a stolen session
+	// cannot take the account by changing its password (F14 spec, D2).
+	if s.NeedsStepUp(session, ActionPassword) {
+		return "", ErrStepUpNeeded
 	}
 	if err := s.checkNew(ctx, next); err != nil {
 		return "", err
@@ -549,6 +586,16 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 		}
 		if err := insertSession(ctx, tx, v.Marketplace, account, hash, v.IP, v.UserAgent, now); err != nil {
 			return err
+		}
+		// The new session keeps the step-up the old one proved.
+		if session.SteppedUpAt != nil {
+			id, err := sessionID(ctx, tx, hash)
+			if err != nil {
+				return err
+			}
+			if err := markSteppedUp(ctx, tx, id, *session.SteppedUpAt); err != nil {
+				return err
+			}
 		}
 		if err := s.record(ctx, tx, v, account, "identity.password_changed"); err != nil {
 			return err

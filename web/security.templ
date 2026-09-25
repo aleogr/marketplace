@@ -20,7 +20,7 @@ templ SecurityPage(page Page, view Security) {
 	@Layout(page, page.T("identity.security.title")) {
 		<h1>{ page.T("identity.security.title") }</h1>
 		if view.Done != "" {
-			<p role="status">{ page.T(view.Done) }</p>
+			<p role="status">{ page.T(view.Done, view.DoneArgs...) }</p>
 		}
 		if view.Form.Error != "" {
 			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
@@ -55,6 +55,9 @@ templ SecurityPage(page Page, view Security) {
 		<h2>{ page.T("identity.security.add") }</h2>
 		<ul class="add">
 			<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/app") }>{ page.T("identity.security.add_app") }</a></li>
+			if !view.HasEmail() {
+				<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/email") }>{ page.T("identity.security.add_email") }</a></li>
+			}
 		</ul>
 		if len(view.Factors) > 0 {
 			<h2>{ page.T("identity.security.recovery") }</h2>
@@ -123,5 +126,33 @@ templ RecoveryCodes(page Page, view Recovery) {
 			}
 		</ol>
 		<p><a href={ templ.SafeURL("/" + page.Language + "/account/security") }>{ page.T("identity.recovery.done") }</a></p>
+	}
+}
+
+templ EnrolEmail(page Page, view EmailEnrolment) {
+	@Layout(page, page.T("identity.email.title")) {
+		<h1>{ page.T("identity.email.title") }</h1>
+		if view.Form.Error != "" {
+			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
+		}
+		if view.Sent {
+			<p role="status">{ page.T("identity.challenge.sent") }</p>
+		}
+		<p>{ page.T("identity.email.intro", view.Address) }</p>
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/security/email/send") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<button type="submit" class="secondary">{ page.T("identity.challenge.send") }</button>
+		</form>
+		if view.Sent || view.Form.Error != "" {
+			<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/security/email") }>
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<label>
+					{ page.T("identity.field.code") }
+					<input name="code" inputmode="numeric" autocomplete="one-time-code" required { view.Form.Input("code")... }/>
+				</label>
+				<button type="submit">{ page.T("identity.email.submit") }</button>
+			</form>
+		}
+		<p><a href={ templ.SafeURL("/" + page.Language + "/account/security") }>{ page.T("identity.security.back") }</a></p>
 	}
 }

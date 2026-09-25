@@ -167,3 +167,82 @@ func TestReplaceRecoveryCodesStoresTheBoundHash(t *testing.T) {
 		t.Fatal("the hash bound to this account was not among the stored codes")
 	}
 }
+
+// A recovery code works exactly once, and a new set invalidates the old
+// (spec, D6).
+func TestARecoveryCodeIsUsableExactlyOnce(t *testing.T) {
+	db, one, _ := twoMarketplaces(t)
+	account := anAccount(t, db, one, "r@example.test")
+	codes, err := NewRecoveryCodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hashes [][]byte
+	for _, code := range codes {
+		hash, _ := recoveryHash(code)
+		hashes = append(hashes, hash)
+	}
+	use := func(code string) bool {
+		t.Helper()
+		hash, ok := recoveryHash(code)
+		if !ok {
+			t.Fatalf("%q is not a code", code)
+		}
+		var used bool
+		if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+			var err error
+			used, err = useRecoveryCode(t.Context(), tx, account, hash, time.Now())
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return used
+	}
+	left := func() (int, int) {
+		var issued, remaining int
+		if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+			var err error
+			issued, remaining, err = recoveryCodes(t.Context(), tx, account)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return issued, remaining
+	}
+
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return replaceRecoveryCodes(t.Context(), tx, one, account, hashes)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !use(codes[0]) {
+		t.Fatal("a fresh code was refused")
+	}
+	if use(codes[0]) {
+		t.Fatal("a code was accepted twice")
+	}
+	if issued, remaining := left(); issued != 10 || remaining != 9 {
+		t.Fatalf("issued %d, left %d; want 10 and 9", issued, remaining)
+	}
+
+	fresh, err := NewRecoveryCodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var freshHashes [][]byte
+	for _, code := range fresh {
+		hash, _ := recoveryHash(code)
+		freshHashes = append(freshHashes, hash)
+	}
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return replaceRecoveryCodes(t.Context(), tx, one, account, freshHashes)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if use(codes[1]) {
+		t.Fatal("a code of the old set still works after a new set was issued")
+	}
+	if !use(fresh[1]) {
+		t.Fatal("a code of the new set was refused")
+	}
+}

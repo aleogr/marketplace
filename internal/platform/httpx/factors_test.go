@@ -14,6 +14,12 @@ var securityRoutes = []struct{ method, path string }{
 	{http.MethodPost, "/account/security/app"},
 	{http.MethodPost, "/account/security/remove"},
 	{http.MethodPost, "/account/security/recovery"},
+	{http.MethodGet, "/account/security/email"},
+	{http.MethodPost, "/account/security/email/send"},
+	{http.MethodPost, "/account/security/email"},
+	{http.MethodGet, "/account/verify?for=factors&next=%2Faccount%2Fsecurity"},
+	{http.MethodPost, "/account/verify"},
+	{http.MethodPost, "/account/verify/email"},
 }
 
 // The security area is a signed-in area: anybody else is sent to sign in,

@@ -133,9 +133,12 @@ func (s Site) switchLanguage(w http.ResponseWriter, r *http.Request) {
 	// comes from the form and is therefore a visitor's to write, so only its
 	// path is used and never a host: a redirect that took a whole address from
 	// a form is an open redirect, and an open redirect is a phishing link with
-	// this deployment's name on it.
-	target := url.URL{Path: "/" + chosen + safePath(r.PostFormValue("path"))}
-	// #nosec G710 -- safePath keeps a path and discards a host; see above.
+	// this deployment's name on it. The query is the visitor's to write too,
+	// and is only ever written back as a query.
+	target := url.URL{Path: "/" + chosen + safePath(r.PostFormValue("path")),
+		RawQuery: safeQuery(r.PostFormValue("query"))}
+	// #nosec G710 -- safePath keeps a path and discards a host, and safeQuery
+	// keeps a query; see above.
 	http.Redirect(w, r, target.String(), http.StatusSeeOther)
 }
 
@@ -151,6 +154,17 @@ func safePath(path string) string {
 	return path
 }
 
+// safeQuery keeps the page's query, read as a query and written back as one:
+// whatever it holds is escaped into the query, so it cannot become a path, a
+// host or another header. A query that does not parse is dropped.
+func safeQuery(query string) string {
+	values, err := url.ParseQuery(query)
+	if err != nil {
+		return ""
+	}
+	return values.Encode()
+}
+
 // page prepares everything a template may need for this request.
 func (s Site) page(r *http.Request, path string) web.Page {
 	tag := i18n.FromContext(r.Context())
@@ -160,6 +174,7 @@ func (s Site) page(r *http.Request, path string) web.Page {
 	page.Nonce = Nonce(r.Context())
 	page.CSRFToken = CSRFToken(r.Context())
 	page.Path = path
+	page.Query = r.URL.RawQuery
 	page.Default = "/" + i18n.Default + path
 
 	// Absolute, because these are read by other people's servers when somebody

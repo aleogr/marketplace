@@ -1,0 +1,84 @@
+package web
+
+// ChallengePage asks for a second factor
+// (docs/superpowers/specs/2026-09-25-f14-two-factor-design.md, Flows). The
+// strongest method is shown first; the others, and a recovery code, are one
+// link away.
+templ ChallengePage(page Page, view Challenge) {
+	@Layout(page, page.T("identity.challenge.title")) {
+		<h1>{ page.T("identity.challenge.title") }</h1>
+		if view.Action != "" {
+			<p>{ page.T("identity.stepup.for." + view.Action) }</p>
+		}
+		if view.Form.Error != "" {
+			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
+		}
+		<p>{ page.T("identity.challenge.method." + view.Method) }</p>
+		if view.Method == "email" {
+			if view.Sent {
+				<p role="status">{ page.T("identity.challenge.sent") }</p>
+			}
+			@sendCodeForm(page, view)
+		}
+		@challengeForm(page, view) {
+			<label>
+				{ page.T("identity.field.code") }
+				if view.Method == "recovery" {
+					<input name="code" autocomplete="off" autocapitalize="none" spellcheck="false" required { view.Form.Input("code")... }/>
+				} else {
+					<input name="code" inputmode="numeric" autocomplete="one-time-code" required { view.Form.Input("code")... }/>
+				}
+			</label>
+			<button type="submit">{ page.T("identity.challenge.submit") }</button>
+		}
+		if len(view.Others()) > 0 || (view.Recovery && view.Method != "recovery") {
+			<p>{ page.T("identity.challenge.other") }</p>
+			<ul class="add">
+				for _, method := range view.Others() {
+					<li><a href={ templ.SafeURL(view.Base + "method=" + method) }>{ page.T("identity.challenge.use." + method) }</a></li>
+				}
+				if view.Recovery && view.Method != "recovery" {
+					<li><a href={ templ.SafeURL(view.Base + "method=recovery") }>{ page.T("identity.challenge.use.recovery") }</a></li>
+				}
+			</ul>
+		}
+	}
+}
+
+// challengeForm is the form an answer is posted in: to the sign-in's second
+// step, or to the step-up, which carries what it guards and where it returns.
+templ challengeForm(page Page, view Challenge) {
+	if view.Action == "" {
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/signin/verify") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<input type="hidden" name="method" value={ view.Method }/>
+			{ children... }
+		</form>
+	} else {
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/verify") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<input type="hidden" name="method" value={ view.Method }/>
+			<input type="hidden" name="for" value={ view.Action }/>
+			<input type="hidden" name="next" value={ view.Next }/>
+			{ children... }
+		</form>
+	}
+}
+
+// sendCodeForm asks for an e-mail code: for the sign-in's second step, or for
+// the step-up, which carries what it guards and where it returns.
+templ sendCodeForm(page Page, view Challenge) {
+	if view.Action == "" {
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/signin/verify/email") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<button type="submit" class="secondary">{ page.T("identity.challenge.send") }</button>
+		</form>
+	} else {
+		<form method="post" action={ templ.SafeURL("/" + page.Language + "/account/verify/email") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<input type="hidden" name="for" value={ view.Action }/>
+			<input type="hidden" name="next" value={ view.Next }/>
+			<button type="submit" class="secondary">{ page.T("identity.challenge.send") }</button>
+		</form>
+	}
+}

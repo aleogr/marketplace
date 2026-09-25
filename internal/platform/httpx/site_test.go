@@ -85,3 +85,54 @@ func TestAnUnknownLanguageIsNotRemembered(t *testing.T) {
 		t.Errorf("Location = %q, want the official language", location)
 	}
 }
+
+// switchWithQuery posts the language switch from a page whose address carried
+// query, and returns where the visitor was sent.
+func switchWithQuery(t *testing.T, path, query string) string {
+	t.Helper()
+
+	form := url.Values{"language": {"pt-BR"}, "path": {path}, "query": {query}}
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost,
+		"https://marketplace1.example"+httpx.LanguagePath, strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	recorder := httptest.NewRecorder()
+	routes(t, nil).ServeHTTP(recorder, request)
+	return recorder.Header().Get("Location")
+}
+
+// A page whose address carries a query — the step-up's action and return
+// path, the second step's method — is still that page after the switch.
+func TestTheSwitchKeepsThePagesQuery(t *testing.T) {
+	location := switchWithQuery(t, "/account/verify", "for=password&next=%2Faccount%2Fpassword")
+
+	if location != "/pt-BR/account/verify?for=password&next=%2Faccount%2Fpassword" {
+		t.Errorf("Location = %q, want the same page with its query, in the language chosen", location)
+	}
+}
+
+// The query comes from a form too, so it is a visitor's to write: it is read
+// as a query and written back as one, and whatever it holds stays in the
+// query. It can neither add a header nor change the host or the path.
+func TestTheSwitchsQueryCannotLeadAnywhereElse(t *testing.T) {
+	for _, query := range []string{
+		"x\r\nLocation: //evil.example",
+		"//evil.example",
+		"x=1#@evil.example/login",
+		"x=1&/../../evil",
+		"%zz",
+	} {
+		location := switchWithQuery(t, "/offers/17", query)
+
+		if strings.ContainsAny(location, "\r\n#") {
+			t.Errorf("a query of %q wrote %q into the Location", query, location)
+		}
+		target, err := url.Parse(location)
+		if err != nil {
+			t.Fatalf("a query of %q gave the Location %q, which does not parse: %v", query, location, err)
+		}
+		if target.Scheme != "" || target.Host != "" || target.Path != "/pt-BR/offers/17" {
+			t.Errorf("a query of %q sent the visitor to %q", query, location)
+		}
+	}
+}

@@ -22,6 +22,10 @@ import (
 // the subjects below are just the client, the address or the account.
 type IdentityLimits struct {
 	SignUp, Resend, ResendAddress, SignIn, SignInAddress, Password ratelimit.Limiter
+	// StepUp bounds the answers to step-ups per account: each challenge
+	// takes five, and a stolen session could otherwise open as many
+	// challenges as it liked (F14 spec, D3).
+	StepUp ratelimit.Limiter
 }
 
 // IdentityRoutes is what the identity pages need.
@@ -69,10 +73,22 @@ func (s Site) identityRoutes(mux *http.ServeMux) {
 	mux.Handle("GET /signin", inMarketplace(http.HandlerFunc(s.signInForm)))
 	mux.Handle("POST /signin", inMarketplace(limit(id.Limits.SignIn, byIP,
 		limit(id.Limits.SignInAddress, byAddress, http.HandlerFunc(s.signIn)))))
+	mux.Handle("GET "+secondStepPath, inMarketplace(http.HandlerFunc(s.secondStep)))
+	mux.Handle("POST "+secondStepPath, inMarketplace(limit(id.Limits.SignIn, byIP,
+		limit(id.Limits.SignInAddress, s.byChallenge, http.HandlerFunc(s.answerSecondStep)))))
+	mux.Handle("POST "+secondStepPath+"/email", inMarketplace(limit(id.Limits.SignIn, byIP,
+		limit(id.Limits.SignInAddress, s.byChallenge, http.HandlerFunc(s.sendSecondStepCode)))))
 	mux.Handle("POST /signout", inMarketplace(http.HandlerFunc(s.signOut)))
-	mux.Handle("GET /account/password", inMarketplace(signedIn(http.HandlerFunc(s.passwordForm))))
+	mux.Handle("GET /account/password", inMarketplace(signedIn(
+		s.steppedUp(identity.ActionPassword, "/account/password", http.HandlerFunc(s.passwordForm)))))
 	mux.Handle("POST /account/password", inMarketplace(signedIn(
-		limit(id.Limits.Password, byAccount, http.HandlerFunc(s.changePassword)))))
+		s.steppedUp(identity.ActionPassword, "/account/password",
+			limit(id.Limits.Password, byAccount, http.HandlerFunc(s.changePassword))))))
+	mux.Handle("GET "+stepUpPath, inMarketplace(signedIn(http.HandlerFunc(s.stepUpPage))))
+	mux.Handle("POST "+stepUpPath, inMarketplace(signedIn(
+		limit(id.Limits.StepUp, byAccount, http.HandlerFunc(s.answerStepUp)))))
+	mux.Handle("POST "+stepUpPath+"/email", inMarketplace(signedIn(
+		limit(id.Limits.StepUp, byAccount, http.HandlerFunc(s.sendStepUpCode)))))
 	s.factorRoutes(mux)
 }
 
@@ -284,14 +300,19 @@ func (s Site) resend(w http.ResponseWriter, r *http.Request) {
 	render(w, r, web.Resend(s.page(r, "/verify/resend"), true))
 }
 
+// signInForm serves the sign-in page; a second step that could no longer be
+// answered sends the visitor back here saying why.
 func (s Site) signInForm(w http.ResponseWriter, r *http.Request) {
-	render(w, r, web.SignIn(s.page(r, "/signin"), newForm(), r.URL.Query().Get("verified") == "1"))
+	form := newForm()
+	form.Error = again[r.URL.Query().Get("again")]
+	render(w, r, web.SignIn(s.page(r, "/signin"), form, r.URL.Query().Get("verified") == "1"))
 }
 
 // signIn answers an unknown address and a wrong password with one sentence
 // (D7), and tells the owner of an unconfirmed account to confirm it. A
 // session opened here revokes the one the browser held and renews the CSRF
-// secret.
+// secret. An account with a second factor goes on to the second step, with
+// the challenge in its own cookie and no session yet (F14 spec, D3).
 func (s Site) signIn(w http.ResponseWriter, r *http.Request) {
 	form := newForm()
 	form.Email = r.PostFormValue("email")
@@ -301,21 +322,16 @@ func (s Site) signIn(w http.ResponseWriter, r *http.Request) {
 		form.Error = "identity.signin.failed"
 	case errors.Is(err, identity.ErrUnverified):
 		form.Error = "identity.signin.unverified"
+	case errors.Is(err, identity.ErrSecondStep):
+		setChallenge(w, r, token)
+		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+secondStepPath, http.StatusSeeOther)
+		return
 	case err != nil:
 		s.identity.Log.ErrorContext(r.Context(), "sign-in failed", "error", err)
 		http.Error(w, "", http.StatusInternalServerError)
 		return
 	default:
-		// The cookie is about to be replaced, so the session it held, even
-		// another account's, is ended on the server rather than left valid
-		// with nobody holding it.
-		if held, err := r.Cookie(sessionCookieName(r)); err == nil && held.Value != "" {
-			if err := s.identity.Service.Supersede(r.Context(), visit(r), held.Value); err != nil {
-				s.identity.Log.ErrorContext(r.Context(), "a replaced session could not be revoked", "error", err)
-			}
-		}
-		setSession(w, r, token)
-		RenewCSRF(w, r)
+		s.openSession(w, r, token)
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+"/", http.StatusSeeOther)
 		return
 	}
@@ -352,6 +368,9 @@ func (s Site) changePassword(w http.ResponseWriter, r *http.Request) {
 	token, err := s.identity.Service.ChangePassword(r.Context(), visit(r), session,
 		r.PostFormValue("current_password"), r.PostFormValue("new_password"))
 	switch key, args, shown := formError(err); {
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionPassword, "/account/password")
+		return
 	case errors.Is(err, identity.ErrCredentials):
 		form.Error = "identity.password.wrong_current"
 	case shown:

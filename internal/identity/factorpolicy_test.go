@@ -41,9 +41,11 @@ func TestOnlyStaffAreRequiredToHaveASecondFactor(t *testing.T) {
 
 // Every combination of user kind, action and whether the account has a
 // second factor. Changing the password or the factors asks again only whoever
-// has one (D2), and staff always have one; adding a card, changing the address
-// and a store's sensitive actions always ask, with a code to the account's
-// own address accepted where the policy permits e-mail (§18.2).
+// has one (D2), whatever the known kind: staff must end up with a factor (F15
+// enforces that at sign-in), but is not asked before enrolling the first one,
+// or could never enrol one at all. Adding a card, changing the address and a
+// store's sensitive actions always ask, with a code to the account's own
+// address accepted where the policy permits e-mail (§18.2).
 func TestThePolicyAsksForAStepUpAsSection18Point2Says(t *testing.T) {
 	var p Policy
 	for _, kind := range everyKind {
@@ -51,7 +53,7 @@ func TestThePolicyAsksForAStepUpAsSection18Point2Says(t *testing.T) {
 			for _, has := range []bool{false, true} {
 				want := StepUp{Asked: true, Email: kind != KindStaff}
 				if action == ActionPassword || action == ActionFactors {
-					want = StepUp{Asked: has || kind == KindStaff}
+					want = StepUp{Asked: has}
 				}
 				if got := p.StepUpFor(kind, action, has); got != want {
 					t.Errorf("StepUpFor(%s, %s, has factor %v) = %+v, want %+v", kind, action, has, got, want)
@@ -62,7 +64,8 @@ func TestThePolicyAsksForAStepUpAsSection18Point2Says(t *testing.T) {
 }
 
 // Whatever the policy does not know is refused, never allowed: an unknown
-// kind permits nothing and is required a factor, and an unknown action asks.
+// kind permits nothing, is required a factor and is asked before changing the
+// password or the factors even without one, and an unknown action asks.
 func TestThePolicyFailsClosed(t *testing.T) {
 	var p Policy
 	for _, method := range everyMethod {
@@ -72,6 +75,16 @@ func TestThePolicyFailsClosed(t *testing.T) {
 	}
 	if !p.Required("owner?") {
 		t.Error("an unknown kind is not required a second factor")
+	}
+	for _, action := range []Action{ActionPassword, ActionFactors} {
+		if got := p.StepUpFor("owner?", action, false); got != (StepUp{Asked: true}) {
+			t.Errorf("StepUpFor(unknown kind, %s, no factor) = %+v, want a step-up with no e-mail code", action, got)
+		}
+		// Staff, who are required a factor too, are not asked before their
+		// first: they could never enrol one.
+		if got := p.StepUpFor(KindStaff, action, false); got.Asked {
+			t.Errorf("StepUpFor(staff, %s, no factor) = %+v, want no step-up", action, got)
+		}
 	}
 	if got := p.StepUpFor(KindBuyer, "delete_account", false); !got.Asked {
 		t.Errorf("an unknown action = %+v, want a step-up", got)

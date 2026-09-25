@@ -60,6 +60,7 @@ func securityHandler(t *testing.T) (http.Handler, *identity.Service, *tenancy.Ma
 	never := ratelimit.Never{}
 	handler := httpx.Sessions(service, silent())(identityHandler(t, service, httpx.IdentityLimits{
 		SignUp: never, Resend: never, ResendAddress: never, SignIn: never, SignInAddress: never, Password: never,
+		StepUp: never,
 	}))
 	confirmedAccount(t, pool, service, marketplace, "Leitora", "leitora@example.test", "correct horse battery staple")
 	return handler, service, marketplace
@@ -155,6 +156,22 @@ func TestAddingAndRemovingAnAppThroughThePages(t *testing.T) {
 	factor := regexp.MustCompile(`name="factor" value="([0-9a-f-]+)"`).FindStringSubmatch(listing)
 	if factor == nil {
 		t.Fatalf("the security page has no removal form: %s", listing)
+	}
+
+	// The account has 2FA now: removing the app asks for it again first
+	// (D2), and comes back.
+	asked := b.post("/account/security/remove", url.Values{"factor": {factor[1]}})
+	if asked.Code != http.StatusSeeOther || asked.Header().Get("Location") != "/pt-BR/account/verify?for=factors&next=%2Faccount%2Fsecurity" {
+		t.Fatalf("removal with no step-up: status %d, Location %q", asked.Code, asked.Header().Get("Location"))
+	}
+	stepUp := b.get("/account/verify?for=factors&next=%2Faccount%2Fsecurity")
+	if stepUp.Code != http.StatusOK || !strings.Contains(stepUp.Body.String(), "Antes de alterar seus segundos fatores, confirme que é você.") {
+		t.Fatalf("the step-up page: status %d, body %s", stepUp.Code, stepUp.Body.String())
+	}
+	back := b.post("/account/verify", url.Values{"for": {"factors"}, "next": {"/account/security"}, "method": {"totp"},
+		"code": {appCodeFor(t, key, time.Now().Add(30*time.Second))}})
+	if back.Code != http.StatusSeeOther || back.Header().Get("Location") != "/pt-BR/account/security" {
+		t.Fatalf("the step-up: status %d, Location %q, body %s", back.Code, back.Header().Get("Location"), back.Body.String())
 	}
 
 	removed := b.post("/account/security/remove", url.Values{"factor": {factor[1]}})

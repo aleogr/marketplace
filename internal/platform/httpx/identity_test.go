@@ -60,7 +60,7 @@ func identitySite(t *testing.T) http.Handler {
 		identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{}, nil, silent()),
 		httpx.IdentityLimits{
 			SignUp: never, Resend: never, ResendAddress: never,
-			SignIn: never, SignInAddress: never, Password: never,
+			SignIn: never, SignInAddress: never, Password: never, StepUp: never,
 		})
 }
 
@@ -213,6 +213,7 @@ func limitsRefusing(slot string) httpx.IdentityLimits {
 	return httpx.IdentityLimits{
 		SignUp: pick("SignUp"), Resend: pick("Resend"), ResendAddress: pick("ResendAddress"),
 		SignIn: pick("SignIn"), SignInAddress: pick("SignInAddress"), Password: pick("Password"),
+		StepUp: pick("StepUp"),
 	}
 }
 
@@ -221,7 +222,7 @@ func limitsRefusing(slot string) httpx.IdentityLimits {
 func signedIn(r *http.Request) *http.Request {
 	return r.WithContext(httpx.WithSession(r.Context(), identity.Session{
 		ID:      "00000000-0000-0000-0000-00000000000a",
-		Account: identity.Account{ID: "00000000-0000-0000-0000-00000000000b", Name: "Leitora"},
+		Account: identity.Account{ID: "00000000-0000-0000-0000-00000000000b", Name: "Leitora", Kind: identity.KindBuyer},
 	}))
 }
 
@@ -393,7 +394,7 @@ func breachAware(t *testing.T) http.Handler {
 		identity.NewService(nil, identity.NewHasher(cheap, 1), breached.Fake{Known: breached.Common}, nil, silent()),
 		httpx.IdentityLimits{
 			SignUp: never, Resend: never, ResendAddress: never,
-			SignIn: never, SignInAddress: never, Password: never,
+			SignIn: never, SignInAddress: never, Password: never, StepUp: never,
 		})
 }
 
