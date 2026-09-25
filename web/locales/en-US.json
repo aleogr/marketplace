@@ -131,5 +131,12 @@
     "=0": "You signed in with your last recovery code. Make new ones now, and add a second factor if you lost yours.",
     "one": "You signed in with a recovery code. %[1]d is left: if you lost your second factor, add a new one and make new codes.",
     "other": "You signed in with a recovery code. %[1]d are left: if you lost your second factor, add a new one and make new codes."
-  }
+  },
+  "identity.stepup.for.password": "Before changing your password, confirm it is you.",
+  "identity.stepup.for.factors": "Before changing your second factors, confirm it is you.",
+  "identity.stepup.for.add_card": "Before adding a card, confirm it is you.",
+  "identity.stepup.for.change_email": "Before changing your e-mail address, confirm it is you.",
+  "identity.stepup.for.store": "Before this change to your store, confirm it is you.",
+  "identity.stepup.expired": "The confirmation expired. Confirm again.",
+  "identity.stepup.exhausted": "Too many wrong codes. Confirm again with a new code."
 }

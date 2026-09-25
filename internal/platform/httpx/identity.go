@@ -22,6 +22,10 @@ import (
 // the subjects below are just the client, the address or the account.
 type IdentityLimits struct {
 	SignUp, Resend, ResendAddress, SignIn, SignInAddress, Password ratelimit.Limiter
+	// StepUp bounds the answers to step-ups per account: each challenge
+	// takes five, and a stolen session could otherwise open as many
+	// challenges as it liked (F14 spec, D3).
+	StepUp ratelimit.Limiter
 }
 
 // IdentityRoutes is what the identity pages need.
@@ -73,9 +77,14 @@ func (s Site) identityRoutes(mux *http.ServeMux) {
 	mux.Handle("POST "+secondStepPath, inMarketplace(limit(id.Limits.SignIn, byIP,
 		limit(id.Limits.SignInAddress, s.byChallenge, http.HandlerFunc(s.answerSecondStep)))))
 	mux.Handle("POST /signout", inMarketplace(http.HandlerFunc(s.signOut)))
-	mux.Handle("GET /account/password", inMarketplace(signedIn(http.HandlerFunc(s.passwordForm))))
+	mux.Handle("GET /account/password", inMarketplace(signedIn(
+		s.steppedUp(identity.ActionPassword, "/account/password", http.HandlerFunc(s.passwordForm)))))
 	mux.Handle("POST /account/password", inMarketplace(signedIn(
-		limit(id.Limits.Password, byAccount, http.HandlerFunc(s.changePassword)))))
+		s.steppedUp(identity.ActionPassword, "/account/password",
+			limit(id.Limits.Password, byAccount, http.HandlerFunc(s.changePassword))))))
+	mux.Handle("GET "+stepUpPath, inMarketplace(signedIn(http.HandlerFunc(s.stepUpPage))))
+	mux.Handle("POST "+stepUpPath, inMarketplace(signedIn(
+		limit(id.Limits.StepUp, byAccount, http.HandlerFunc(s.answerStepUp)))))
 	s.factorRoutes(mux)
 }
 
@@ -355,6 +364,9 @@ func (s Site) changePassword(w http.ResponseWriter, r *http.Request) {
 	token, err := s.identity.Service.ChangePassword(r.Context(), visit(r), session,
 		r.PostFormValue("current_password"), r.PostFormValue("new_password"))
 	switch key, args, shown := formError(err); {
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionPassword, "/account/password")
+		return
 	case errors.Is(err, identity.ErrCredentials):
 		form.Error = "identity.password.wrong_current"
 	case shown:

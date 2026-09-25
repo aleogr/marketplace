@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
@@ -60,6 +61,16 @@ def test_adding_and_removing_an_app(run_marketplace, screenshots, language):
         expect(page.locator("ul.factors li")).to_have_count(1)
         expect(page.locator("ul.factors li strong")).to_have_text("Celular")
         page.screenshot(path=screenshots / f"f14-security-app-{language}.png", full_page=True)
+
+        # The account has 2FA now: removing it asks for the second factor
+        # again first (D2), on the same challenge page as a sign-in's second
+        # step; stepping up returns to the security page, where the removal
+        # is asked again, and this time goes through (D4).
+        page.click("ul.factors button[type=submit]")
+        expect(page.locator("h1")).to_have_text("Confirme que é você" if language == "pt-BR" else "Confirm it is you")
+        page.fill("main form:has(input[name=code]) input[name=code]", totp(key, time.time() + 30))
+        page.click("main form:has(input[name=code]) button[type=submit]")
+        expect(page.locator("ul.factors li")).to_have_count(1)
 
         page.click("ul.factors button[type=submit]")
         expect(page.locator("[role=status]")).to_have_text(REMOVED[language])

@@ -7,6 +7,9 @@ package web
 templ ChallengePage(page Page, view Challenge) {
 	@Layout(page, page.T("identity.challenge.title")) {
 		<h1>{ page.T("identity.challenge.title") }</h1>
+		if view.Action != "" {
+			<p>{ page.T("identity.stepup.for." + view.Action) }</p>
+		}
 		if view.Form.Error != "" {
 			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
 		}

@@ -182,8 +182,11 @@ func TestStaffCannotRemoveTheirLastFactor(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Staff always step up before changing their factors; this one just did.
 	staff := session
 	staff.Account.Kind = KindStaff
+	now := s.now()
+	staff.SteppedUpAt = &now
 	if err := s.RemoveFactor(t.Context(), v, staff, security.Factors[0].ID); !errors.Is(err, ErrFactorRequired) {
 		t.Fatalf("staff removing their last factor = %v, want ErrFactorRequired", err)
 	}

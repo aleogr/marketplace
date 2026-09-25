@@ -525,6 +525,11 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 		// before it costs a normalisation, a hash or a transaction.
 		return "", ErrCredentials
 	}
+	// Whoever has a second factor proves it again first, so a stolen session
+	// cannot take the account by changing its password (F14 spec, D2).
+	if s.NeedsStepUp(session, ActionPassword) {
+		return "", ErrStepUpNeeded
+	}
 	if err := s.checkNew(ctx, next); err != nil {
 		return "", err
 	}
@@ -575,6 +580,16 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 		}
 		if err := insertSession(ctx, tx, v.Marketplace, account, hash, v.IP, v.UserAgent, now); err != nil {
 			return err
+		}
+		// The new session keeps the step-up the old one proved.
+		if session.SteppedUpAt != nil {
+			id, err := sessionID(ctx, tx, hash)
+			if err != nil {
+				return err
+			}
+			if err := markSteppedUp(ctx, tx, id, *session.SteppedUpAt); err != nil {
+				return err
+			}
 		}
 		if err := s.record(ctx, tx, v, account, "identity.password_changed"); err != nil {
 			return err

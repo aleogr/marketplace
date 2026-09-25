@@ -115,12 +115,16 @@ func (s *Service) appEnrolment(v Visit, session Session, secret []byte) AppEnrol
 }
 
 // BeginApp starts adding an authenticator app to the session's account, and
-// returns what the page shows. The secret is sealed with the person's key
+// returns what the page shows. Like every change to the factors of an account
+// that has 2FA, it needs a recent step-up (D2). The secret is sealed with the person's key
 // from the moment it exists (D5); the app becomes a second factor only when
 // ConfirmApp receives a code it made.
 func (s *Service) BeginApp(ctx context.Context, v Visit, session Session) (AppEnrolment, error) {
 	if !s.policy.Permits(session.Account.Kind, MethodApp, Enrol) {
 		return AppEnrolment{}, ErrNotPermitted
+	}
+	if s.NeedsStepUp(session, ActionFactors) {
+		return AppEnrolment{}, ErrStepUpNeeded
 	}
 	if s.sealer == nil {
 		return AppEnrolment{}, errNoSealer
@@ -172,6 +176,9 @@ func (s *Service) PendingApp(ctx context.Context, v Visit, session Session) (App
 func (s *Service) ConfirmApp(ctx context.Context, v Visit, session Session, label, code string) ([]string, error) {
 	if !s.policy.Permits(session.Account.Kind, MethodApp, Enrol) {
 		return nil, ErrNotPermitted
+	}
+	if s.NeedsStepUp(session, ActionFactors) {
+		return nil, ErrStepUpNeeded
 	}
 	if s.sealer == nil {
 		return nil, errNoSealer
@@ -253,6 +260,9 @@ func (s *Service) firstRecoverySet(ctx context.Context, tx pgx.Tx, v Visit, acco
 // Removing the last one turns two-factor authentication off and deletes the
 // recovery codes, unless the policy requires the account to keep one.
 func (s *Service) RemoveFactor(ctx context.Context, v Visit, session Session, id string) error {
+	if s.NeedsStepUp(session, ActionFactors) {
+		return ErrStepUpNeeded
+	}
 	account := session.Account.ID
 	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		removed, err := deleteFactor(ctx, tx, account, id)
@@ -282,6 +292,9 @@ func (s *Service) RemoveFactor(ctx context.Context, v Visit, session Session, id
 // RegenerateRecoveryCodes replaces the account's recovery codes with a fresh
 // set and returns it, to be shown once: the old codes stop working.
 func (s *Service) RegenerateRecoveryCodes(ctx context.Context, v Visit, session Session) ([]string, error) {
+	if s.NeedsStepUp(session, ActionFactors) {
+		return nil, ErrStepUpNeeded
+	}
 	codes, hashes, err := newRecoverySet()
 	if err != nil {
 		return nil, err

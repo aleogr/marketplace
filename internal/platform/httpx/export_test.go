@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/aleogr/marketplace/internal/identity"
 )
@@ -19,4 +20,10 @@ var (
 // service authenticated it.
 func WithSession(ctx context.Context, s identity.Session) context.Context {
 	return context.WithValue(ctx, sessionKey{}, s)
+}
+
+// SteppedUp exposes the step-up guard: the deliveries that add a card and
+// change the address mount it on their own routes.
+func (s Site) SteppedUp(action identity.Action, back string, next http.Handler) http.Handler {
+	return s.steppedUp(action, back, next)
 }

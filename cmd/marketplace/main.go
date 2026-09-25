@@ -258,6 +258,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 				SignIn:        ratelimit.NewDatabase(database, "signin", 30, 10*time.Minute),
 				SignInAddress: ratelimit.NewDatabase(database, "signin-address", 10, 15*time.Minute),
 				Password:      ratelimit.NewDatabase(database, "password", 10, time.Hour),
+				StepUp:        ratelimit.NewDatabase(database, "step-up", 10, 15*time.Minute),
 			},
 		})
 	}

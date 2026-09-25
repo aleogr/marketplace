@@ -51,6 +51,15 @@ func TestRenewingRecoveryCodesReplacesThem(t *testing.T) {
 		t.Fatalf("the app enrolment showed %d codes, want %d", len(issued), identity.RecoveryCodeCount)
 	}
 
+	// The account has 2FA now: renewing the codes asks for it again first
+	// (D2).
+	b.get("/account/verify?for=factors&next=%2Faccount%2Fsecurity")
+	steppedUp := b.post("/account/verify", url.Values{"for": {"factors"}, "next": {"/account/security"}, "method": {"totp"},
+		"code": {appCodeFor(t, key, time.Now().Add(30*time.Second))}})
+	if steppedUp.Code != http.StatusSeeOther || steppedUp.Header().Get("Location") != "/pt-BR/account/security" {
+		t.Fatalf("the step-up: status %d, Location %q, body %s", steppedUp.Code, steppedUp.Header().Get("Location"), steppedUp.Body.String())
+	}
+
 	renewed := b.post("/account/security/recovery", url.Values{})
 	if renewed.Code != http.StatusOK {
 		t.Fatalf("renewing the codes: status %d, body %s", renewed.Code, renewed.Body.String())

@@ -17,11 +17,16 @@ import (
 // (docs/superpowers/specs/2026-09-25-f14-two-factor-design.md). Every one is
 // served only signed in, and only on a marketplace's host.
 func (s Site) factorRoutes(mux *http.ServeMux) {
+	// Every change needs a recent step-up once the account has 2FA (D2, D4);
+	// reading the page does not.
+	changes := func(back string, h http.HandlerFunc) http.Handler {
+		return inMarketplace(signedIn(s.steppedUp(identity.ActionFactors, back, h)))
+	}
 	mux.Handle("GET /account/security", inMarketplace(signedIn(http.HandlerFunc(s.securityPage))))
-	mux.Handle("GET /account/security/app", inMarketplace(signedIn(http.HandlerFunc(s.appForm))))
-	mux.Handle("POST /account/security/app", inMarketplace(signedIn(http.HandlerFunc(s.addApp))))
-	mux.Handle("POST /account/security/remove", inMarketplace(signedIn(http.HandlerFunc(s.removeFactor))))
-	mux.Handle("POST /account/security/recovery", inMarketplace(signedIn(http.HandlerFunc(s.regenerateCodes))))
+	mux.Handle("GET /account/security/app", changes(securityPath+"/app", s.appForm))
+	mux.Handle("POST /account/security/app", changes(securityPath+"/app", s.addApp))
+	mux.Handle("POST /account/security/remove", changes(securityPath, s.removeFactor))
+	mux.Handle("POST /account/security/recovery", changes(securityPath, s.regenerateCodes))
 }
 
 // securityPath is where the security pages live, below the language.
@@ -126,6 +131,10 @@ func (s Site) appForm(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if errors.Is(err, identity.ErrStepUpNeeded) {
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/app")
+		return
+	}
 	if err != nil {
 		s.failed(w, r, "an app enrolment could not start", err)
 		return
@@ -154,6 +163,9 @@ func (s Site) addApp(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, identity.ErrNotPermitted):
 		http.NotFound(w, r)
+		return
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/app")
 		return
 	case errors.Is(err, identity.ErrCodeWrong):
 		view.Form.Error = "identity.app.wrong_code"
@@ -188,6 +200,8 @@ func (s Site) removeFactor(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
 	err := s.identity.Service.RemoveFactor(r.Context(), visit(r), session, r.PostFormValue("factor"))
 	switch {
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath)
 	case errors.Is(err, identity.ErrFactorUnknown):
 		http.NotFound(w, r)
 	case errors.Is(err, identity.ErrFactorRequired):
@@ -210,6 +224,8 @@ func (s Site) regenerateCodes(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
 	codes, err := s.identity.Service.RegenerateRecoveryCodes(r.Context(), visit(r), session)
 	switch {
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath)
 	case errors.Is(err, identity.ErrNoSecondFactor):
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath, http.StatusSeeOther)
 	case err != nil:
