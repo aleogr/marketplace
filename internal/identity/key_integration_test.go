@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 )
 
 // withKey is a signed-in account with a software key added through the
@@ -185,5 +186,48 @@ func TestAKeyAlreadyAddedIsRefused(t *testing.T) {
 	}
 	if security, err := s.Security(t.Context(), visit(one), session); err != nil || len(security.Factors) != 1 {
 		t.Fatalf("the account's keys after adding one again: %+v, %v", security, err)
+	}
+}
+
+// A key answers a step-up as it answers the second step: once the step-up of
+// the sign-in is older than StepUpLifetime, changing the factors asks again,
+// and the key's answer lets the change through (D2, D4).
+func TestAKeyAnswersAStepUp(t *testing.T) {
+	s, db, one, _, trail := service(t)
+	sealed(t, s)
+	_, key, _ := withKey(t, s, db, one, "r@example.test")
+	signed, err := signInWithKey(t, s, one, "r@example.test", key, key.assert)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	later := time.Now().UTC().Add(StepUpLifetime + time.Second)
+	s.now = func() time.Time { return later }
+	session, err := s.Authenticate(t.Context(), one, signed.Session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.NeedsStepUp(session, ActionFactors) {
+		t.Fatal("the sign-in's step-up is still enough after StepUpLifetime")
+	}
+
+	v := visit(one)
+	token, err := s.BeginStepUp(t.Context(), v, session, ActionFactors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, err := s.KeyOptions(t.Context(), v, token, session.ID)
+	if err != nil {
+		t.Fatalf("KeyOptions for the step-up = %v", err)
+	}
+	if err := s.StepUp(t.Context(), v, session, token, Answer{Method: MethodKey, Key: key.assert(options)}); err != nil {
+		t.Fatalf("StepUp with the key = %v", err)
+	}
+	stepped, err := s.Authenticate(t.Context(), one, signed.Session)
+	if err != nil || s.NeedsStepUp(stepped, ActionFactors) {
+		t.Fatalf("the session after the key's step-up = %+v, %v; still asks for one", stepped, err)
+	}
+	if entry := trail.entry(t, "identity.stepped_up"); string(entry.After) != `{"action":"factors","method":"webauthn","user_agent":"test"}` {
+		t.Fatalf("stepped_up recorded as %s", entry.After)
 	}
 }
