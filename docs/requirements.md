@@ -300,9 +300,9 @@ Platform staff, sellers and buyers all have a user panel that allows:
 
 ### 18.2 Two-factor authentication
 
-- Supported methods: **physical security keys** (such as YubiKey, via WebAuthn), **authenticator apps** (TOTP) and **email codes**.
+- Supported methods: **security keys and the device's own authenticators** (WebAuthn: a physical key such as YubiKey, or a phone's or laptop's fingerprint, face or PIN, including passkeys kept on a phone), **authenticator apps** (TOTP) and **email codes**.
 - A secure **account recovery** mechanism.
-- **Mandatory methods per user type:** the owner and staff must use an authenticator app or a security key (e-mail codes are not accepted as a second factor for console users, because e-mail is their recovery channel); stores are asked for a second factor on sensitive actions (bank or payout account changes, e-mail and password changes, bulk label generation, acceptance of terms), with any method and the e-mail code as the default for a new store; buyers use 2FA optionally, with a step-up by e-mail code when adding a card or changing the e-mail address.
+- **Mandatory methods per user type:** the owner and staff must use an authenticator app or a security key (e-mail codes are not accepted as a second factor for console users, because e-mail is their recovery channel); stores are asked for a second factor on sensitive actions (bank or payout account changes, e-mail and password changes, bulk label generation, acceptance of terms), with any method and the e-mail code as the default for a new store; buyers use 2FA optionally, with a step-up by e-mail code when adding a card or changing the e-mail address. Anyone who has enrolled a second factor is asked for it again, as a step-up, before changing the password or changing their second factors.
 - **Recovery:** one-time recovery codes are generated when an authenticator app or a security key is enrolled; a staff account is recovered only by the owner or another administrator resetting its factor, with an audit record; stores and buyers recover through e-mail with a security delay (default 24 hours, a parameter), a notification on every channel and revocation of all sessions.
 
 ### 18.3 Privacy
