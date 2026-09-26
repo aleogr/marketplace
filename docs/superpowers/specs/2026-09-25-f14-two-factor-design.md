@@ -87,10 +87,12 @@ vectors; a dependency would add more than it saves. The enrolment QR code uses `
 as a PNG data URI (the CSP already allows `img-src data:`).
 
 **D8. Consecutive failed second factors are counted, announced and, at a hundred, stop the codes.**
-The owner chose this on 2026-09-25. Without it, someone who has the password is bounded only by the
-shared per-address sign-in limit (10 attempts per 15 minutes): about 770 guesses a day at a
-six-digit code, roughly 0.2% a day and even odds within a year, and the person never knows. NIST
-SP 800-63B §5.2.2 caps consecutive failed attempts on one account at 100. So, per account:
+The owner chose this on 2026-09-25, and confirmed on 2026-09-26 that the lock applies at the
+step-up as well as at sign-in (a stolen session could otherwise keep guessing there). Without it,
+someone who has the password is bounded only by the shared per-address sign-in limit (10 attempts
+per 15 minutes): about 770 guesses a day at a six-digit code, roughly 0.2% a day and even odds
+within a year, and the person never knows. NIST SP 800-63B §5.2.2 caps consecutive failed attempts
+on one account at 100. So, per account:
 - every failed answer to the second step or to a step-up with a second factor counts — a wrong app
   or e-mail-factor code, a wrong recovery code, a refused key; a challenge that is unknown, expired
   or used does not, because no answer was checked, and neither does a code sent to the account's
@@ -101,11 +103,11 @@ SP 800-63B §5.2.2 caps consecutive failed attempts on one account at 100. So, p
 - at the 10th failure in a row the person is told by e-mail (`second-factor-failures`) that someone
   who knows the password keeps failing the second step, and to change the password if it was not
   them; audited as `identity.second_factor_failures_notified`;
-- at the 100th, codes from an authenticator app or by e-mail are refused at sign-in and at every
-  step-up until the password is changed: the challenge no longer offers them, an answer with one is
-  refused without being checked, and the page says so while still offering a key and a recovery
-  code. The person is told by e-mail (`second-factor-locked`); audited as
-  `identity.second_factor_locked`. A key or a recovery code still answers and lifts the lock.
+- at the 100th consecutive failure, codes from an authenticator app or by e-mail are refused at
+  sign-in and at the step-up until the password is changed or a key or a recovery code is accepted
+  (either lifts it): the challenge no longer offers them, an answer with one is refused without
+  being checked, and the page says so while still offering a key and a recovery code. The person is
+  told by e-mail (`second-factor-locked`); audited as `identity.second_factor_locked`.
 
 Each notice is sent once per run, when the count becomes exactly 10 or exactly 100. The count lives
 in its own table, `second_factor_failure`, rather than on `account`: an answer locks its challenge
@@ -143,11 +145,12 @@ owner on 2026-09-25.
 **Known limit, stated (D8):** an account whose codes are locked and whose only second factors are an
 app or e-mail, with no recovery code left, cannot confirm at sign-in or at a step-up, so it can
 neither sign in nor change its password: it waits for account recovery (F16). Someone who has the
-password can also lock an account's codes on purpose; the person is told at the 10th and the 100th
-failure, a key or a recovery code still works, and a new password lifts the lock. The count is read
-without a lock when a challenge is checked, so an answer already being checked when another reaches
-the 100th is still checked; each needs a challenge of its own, which needs the password and the
-sign-in limit.
+password can also lock an account's codes on purpose, and so can someone holding a signed-in session
+of the account, through failed step-ups, without knowing the password; the person is told at the
+10th and the 100th failure, a key or a recovery code still works and lifts the lock, and so does a
+new password. The count is read without a lock when a challenge is checked, so an answer already
+being checked when another reaches the 100th is still checked; each needs a challenge of its own,
+which needs the password and the sign-in limit, or a signed-in session and the step-up limit.
 
 ## Flows
 
