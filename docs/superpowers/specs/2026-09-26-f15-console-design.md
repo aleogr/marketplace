@@ -54,14 +54,26 @@ counter. The identity tables' row-level policies become `marketplace_id IS NOT D
 current_marketplace_id()`, so a transaction that names no marketplace sees the platform's rows (staff)
 and nothing else, and a marketplace's transaction still sees only its own. The identity service gains a
 platform visit (no marketplace) that opens its transactions that way. Staff must have an app or a key:
-a staff account that has none is sent to enrol one before any other console page, and e-mail codes stay
-refused to staff (F14). Staff never sign in on a store's host, and buyers never on the console's.
+a staff session that has none is sent to enrol one before any other console page, a sign-in with the
+password alone never opens such a session (D9), and e-mail codes stay refused to staff (F14). Staff
+never sign in on a store's host, and buyers never on the console's.
 
 **D5. Staff join by invitation.** The owner chose this on 2026-09-26 over a temporary password. A staff
 member with the permission to invite gives a name, an e-mail address and roles; the invitee receives a
 link, valid for 7 days and usable once, where they set their own password and enrol an app or a key
 before reaching the console. Nobody else ever knows their password. The invitation's token is stored as
 its SHA-256.
+
+An invitation gives at least one role; the roles are assigned when it is accepted, as assigned by
+whoever invited. A new invitation to an address replaces the open one, whose link stops working; an
+invitation that can no longer be used is deleted when the next is sent, since it holds a person's name
+and address for nothing. An address that already belongs to a staff member is refused when the
+invitation is sent: an active member's roles are assigned on the role pages, and a deactivated member
+cannot be brought back by an invitation, since reactivation is not in this delivery (an invitation
+cannot make a second account at the address, which is unique, and reviving the old one through a link
+would be a reactivation by another name). The acceptance is limited per client address under a named
+rate limit (`invitation`). The audit record of an invitation sent names it by its id and the roles it
+gives, not by the invitee's name or address, which stay on the invitation.
 
 **D6. Permissions are declared in the code; roles are made in the console.** The registry is a Go list
 of permissions, each with a key and a label in both languages. The migrator synchronises the
@@ -70,14 +82,24 @@ of permissions, each with a key and a label in both languages. The migrator sync
 code. The owner combines permissions into roles and assigns a role to a staff member with a scope: one
 marketplace or the whole platform. The permissions of this delivery:
 
-| key | allows |
-|---|---|
-| `console.view` | signing in to the console and seeing its home |
-| `console.version` | seeing the build identifier on `/console/version` |
-| `staff.invite` | inviting a staff member |
-| `staff.deactivate` | deactivating a staff member |
-| `staff.reset_factor` | resetting a colleague's second factor |
-| `roles.manage` | creating, editing and deleting roles and assigning them |
+| key | allows | reach |
+|---|---|---|
+| `console.view` | signing in to the console and seeing its home | anywhere |
+| `console.version` | seeing the build identifier on `/console/version` | anywhere |
+| `staff.invite` | inviting a staff member | the whole platform only |
+| `staff.deactivate` | deactivating a staff member | the whole platform only |
+| `staff.reset_factor` | resetting a colleague's second factor | the whole platform only |
+| `roles.manage` | creating, editing and deleting roles and assigning them | the whole platform only |
+
+Each permission in the registry declares its **reach** (the owner's ruling of 2026-09-26, on PR 2's
+open points). The console's own permissions, `console.view` and `console.version`, held in any scope
+open the console's own pages: a staff member invited for one marketplace signs in to the same console
+and sees its home. The permissions over the platform's staff and roles reach the whole platform only:
+a role that grants one of them is assigned across the platform or not at all. The service refuses
+such an assignment for one marketplace, and says so on the role's page in both languages; it refuses
+too to give such a permission to a role somebody holds for one marketplace; and the database refuses
+both again, through triggers reading the reach the migrator writes into `permission` with the key.
+So only a staff member holding `staff.invite` across the platform can invite.
 
 **D7. The owner role is protected in the service and in the database.** It has every permission,
 including those added later (it is checked by the role, not by rows); it cannot be deleted, edited or
@@ -91,12 +113,28 @@ staff member's roles permit.
 
 **D9. Staff recovery and offboarding are in this delivery.** The owner chose both on 2026-09-26.
 - **Resetting a colleague's second factor** (`staff.reset_factor`, §18.2): the colleague loses every
-  method and recovery code and every session, and must enrol a new factor at the next sign-in; they are
-  told by e-mail. Nobody resets their own factor this way (their recovery codes are for that), and only
-  the owner changes the owner's factors.
+  method and recovery code and every session, and is e-mailed a single-use link, valid for 24 hours;
+  only through that link, and with the password too, can the new factor be enrolled. Nobody resets their
+  own factor this way (their recovery codes are for that), and only the owner changes the owner's
+  factors.
+- **The password alone never leads to enrolment.** The owner decided this on 2026-09-26, after PR 3
+  first let a reset colleague enrol at the next sign-in with the password alone: whoever knew the
+  password — a leaked one — could sign in first and enrol their own factor, taking the account. A
+  staff account with no factor is therefore refused at sign-in, after the password, with a message
+  telling the person to use the link from the e-mail and, if it is no longer valid, to ask a staff member
+  with `staff.reset_factor` for a new reset; the same message whether or not a live link exists, since
+  the password's holder is owed no more than the remedy. The first factor is added only in a session
+  that proved more than the password: the first run's (the bootstrap token, in the same session), an
+  invitation's (its link), and a reset link's. A new reset replaces an older unused link; an expired or
+  used link is "no longer valid". The link's token is stored as its SHA-256, and its use is audited.
 - **Deactivating a staff member** (`staff.deactivate`): the account is marked deactivated, its sessions
   end and its roles are removed; a sign-in with it is answered like a wrong password; they are told by
   e-mail. The owner cannot be deactivated. Reactivation is not in this delivery.
+- Nobody deactivates themselves either: it would end the session making the change. The service
+  refuses the owner's deactivation and any reset of the owner's factor, and the database refuses them
+  again: a trigger on `account` refuses `deactivated_at` and `factor_reset_at` for the account holding
+  the owner role, and the owner's assignment, which a deactivation removes, is already kept (D7). The
+  notices are written in the language of the colleague making the change (see Out of this delivery).
 
 **D10. Sensitive console actions ask for the second factor again.** Creating, editing, deleting or
 assigning a role, inviting, deactivating and resetting a factor go through the F14 step-up, with its
@@ -106,13 +144,15 @@ ten-minute window.
 
 | table | columns that matter |
 |---|---|
-| `permission` | `key` (primary key), synchronised from the code; the labels live in the locale files |
+| `permission` | `key` (primary key) and `platform_only` (its reach), synchronised from the code; the labels live in the locale files |
 | `role` | `id`, `name`, `owner` (true only for the owner role; at most one row), `created_at` |
 | `role_permission` | `role_id`, `permission_key` (references `permission`) |
 | `user_role` | `account_id` (a staff account), `role_id`, `marketplace_id` (null for the whole platform), `assigned_by`, `assigned_at` |
 | `bootstrap` | `token_hash`, `used_at`, `owner_id`: at most one row, written when the owner is created |
-| `staff_invitation` | `id`, `token_hash`, `email`, `name`, `roles` (the role and scope pairs), `invited_by`, `expires_at`, `used_at` |
-| `account` (F13) | gains `deactivated_at`; the owner is the staff account holding the owner role |
+| `staff_invitation` | `id`, `token_hash`, `email`, `name`, `invited_by`, `expires_at`, `used_at`, and `account_id` (the account it made); at most one open per address |
+| `staff_invitation_role` | the role and scope pairs an invitation gives: `invitation_id`, `role_id`, `marketplace_id`; rows rather than a column, so that a role deleted or a marketplace gone leaves the invitation with it, the owner role can never be offered (the foreign key on `(role_id, owner)` that keeps it off `user_role`), and a platform-only role is offered for the whole platform only (D6's trigger) |
+| `factor_reset_link` | `account_id` (the key: one link per account, the last reset's), `token_hash` (SHA-256), `created_at`, `expires_at` (24 hours on), `used_at` |
+| `account` (F13) | gains `deactivated_at`, and `factor_reset_at` (when a colleague last reset its second factor); both for staff only, and both refused for the owner by a trigger; the owner is the staff account holding the owner role |
 
 These tables belong to the platform (no marketplace) and are read only by the console's platform
 transactions; the owner role's rules are enforced by a partial unique index (one owner role; one
@@ -128,8 +168,15 @@ is sent to enrol an app or a key, sees the recovery codes, and only then reaches
 token is refused under a named rate limit (`setup`). Once an owner exists, `/setup` is "not found".
 
 **Staff sign-in.** On the console host only: the password, then the second factor (F14's challenge),
-then the console. A staff account without a factor is sent to enrol one. A deactivated account is
-answered like a wrong password.
+then the console. A staff account without a factor is refused after the password and told to use the
+link from its e-mail (D9); a session without one — the first run's, an invitation's, a reset link's —
+is sent to enrol one before any other page. A deactivated account is answered like a wrong password.
+
+**Factor reset link.** The reset's e-mail carries a link to the console's `/new-factor`, valid for 24
+hours and usable once. Its page names the colleague and asks for the password; a right one opens a
+session that is sent to enrol an app or a key, and uses the link; a wrong one is refused on its field
+and leaves the link as it was, under the sign-in's rate limit. An unknown, used, replaced or expired
+link, or a deactivated colleague's, is "no longer valid" (410), with whom to ask for a new reset.
 
 **Roles.** A list of roles with their permissions; creating and editing a role (a name and a set of
 permissions); deleting a role no one holds; assigning a role to a staff member with a scope and removing
@@ -140,17 +187,24 @@ to set the password and enrol a factor; the invitation is then used. An expired 
 longer valid".
 
 **Staff list.** The staff members with their roles and the state of their second factor; the actions to
-reset a factor and to deactivate, each with a confirmation and a step-up.
+reset a factor and to deactivate, each with a confirmation and a step-up. D6 has no permission of its
+own for reading the list: it opens to whoever holds any of the three `staff.*` permissions across the
+platform, and offers each change only to whoever holds its permission, and never on the reader's own
+account, the owner's or a deactivated one.
 
 **Console shell.** Its own layout: the header with the staff member's name, the language switch and
 sign-out; the menu built from permissions; the footer with the build identifier. `/console/version`
 answers the build identifier as JSON to whoever holds `console.version`.
 
-**Mail** (en-US and pt-BR, text and HTML): the invitation, a factor reset, a deactivation.
+**Mail** (en-US and pt-BR, text and HTML): the invitation, a factor reset (carrying its link and its
+lifetime), a deactivation.
 
 **Audit:** the owner's creation; each role created, edited or deleted; each assignment and removal;
-each invitation sent and accepted; each deactivation; each factor reset, with the staff member as the
-actor (`audit.Staff`).
+each invitation sent and accepted; each deactivation; each factor reset and each use of a reset's
+link, with the staff member as the actor (`audit.Staff`); a sign-in refused because the account has no
+factor, with that reason. A permission a deploy removes — the code no longer declares it, and every role
+loses it — is logged by the migration job, not audited: no person acted, and the change to the code is
+its record.
 
 Every page, message and e-mail exists in en-US and pt-BR.
 
@@ -160,9 +214,11 @@ Every page, message and e-mail exists in en-US and pt-BR.
 marketplace A cannot read marketplace B; the owner role cannot be deleted, edited, reassigned or
 stripped, by the service or by SQL; `/setup` is gone after the bootstrap; the token cannot be used twice;
 a staff member without `console.version` gets 404 on the version endpoint; a buyer transaction sees no
-staff rows and a platform transaction no buyer rows; an expired or used invitation is refused; a
-deactivated account cannot sign in; a factor reset ends the sessions and forces enrolment; the permission
-table matches the code after a migration.
+staff rows and a platform transaction no buyer rows; a role granting a platform-only permission is
+refused for one marketplace, by the service and by SQL; an expired or used invitation is refused; a
+deactivated account cannot sign in; a factor reset ends the sessions, and afterwards the password alone
+opens nothing while the reset's link, with the password, opens a session to enrol, once, within 24
+hours, and not after a newer reset; the permission table matches the code after a migration.
 
 **End-to-end** against a fresh database: the whole bootstrap (token, owner, factor, recovery codes);
 creating a role, inviting a staff member with it for one marketplace, accepting the invitation, signing
@@ -192,15 +248,26 @@ Reactivating a deactivated staff member; editing a staff member's name or e-mail
 console; console parameters and the marketplace wizard (later deliveries); sessions listing and "sign out
 everywhere"; staff notices in an account-level language.
 
+A console page that shows one marketplace's data. D3's gate — the route names the marketplace, the
+permission is asked in it, and only then its transaction is opened — is built and tested in this
+delivery, on a page the tests mount that reads a marketplace's rows with no filter of its own; but no
+page of F15 shows a marketplace's data (roles, staff and invitations are the platform's), so the gate
+has no production caller until the first such page arrives with a later delivery.
+
 ## Risks
 
 **The owner loses every factor and every recovery code.** Nobody can reset the owner's factor through
 the console. The recovery is a manual database procedure, documented in `docs/infrastructure.md`,
-performed by someone with the migrator's access.
+performed by someone with the migrator's access: it removes the owner's factors and writes a reset link
+by hand, since the password alone opens nothing (D9). The same procedure serves an owner who leaves the
+first run before enrolling a factor: the first run's session is the owner's one way to the first factor.
 
 **Changing the identity policies.** Moving every identity table from `=` to `IS NOT DISTINCT FROM`
 must not let a marketplace see platform rows or the reverse; the integration tests assert both
 directions for every table touched.
 
 **The console subdomain needs DNS before it answers.** Until the owner creates the record, the lab's
-console is unreachable; nothing else depends on it.
+console is unreachable; nothing else depends on it. For the same reason the deployment's host check
+does not reach the console yet: a check that fails until the record exists would turn every
+deployment red. Adding the console's host to it once the record resolves is a recorded follow-up
+(`docs/roadmap.md`, F15; `docs/infrastructure.md`, "The console's host").
