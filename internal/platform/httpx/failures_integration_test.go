@@ -17,11 +17,12 @@ import (
 	"github.com/aleogr/marketplace/internal/tenancy"
 )
 
-// The lock's messages, as each language words them.
+// The lock's messages, as each language words them: what still works, and
+// what lifts the lock (F14 spec, D8).
 var (
 	codesLocked = map[string]string{
-		"pt-BR": "Houve respostas erradas demais nesta conta, então códigos de aplicativo autenticador ou por e-mail não funcionam mais até que a senha seja alterada.",
-		"en-US": "Too many wrong answers were given for this account, so codes from an authenticator app or by e-mail no longer work until its password is changed.",
+		"pt-BR": "Houve respostas erradas demais nesta conta, então códigos de aplicativo autenticador ou por e-mail não funcionam mais. Confirmar com uma chave de segurança ou um código de recuperação, ou alterar a senha, faz com que voltem a funcionar.",
+		"en-US": "Too many wrong answers were given for this account, so codes from an authenticator app or by e-mail no longer work. Confirming with a security key or a recovery code, or changing the password, makes them work again.",
 	}
 	wrongCode = map[string]string{
 		"pt-BR": "Esse código não confere.",

@@ -13,7 +13,8 @@ type Challenge struct {
 	Method   string
 	Recovery bool
 	// CodesLocked says the account's codes are refused after too many
-	// failed second factors in a row, until its password is changed.
+	// failed second factors in a row, until its password is changed or a
+	// key or a recovery code is accepted (F14 spec, D8).
 	CodesLocked bool
 	// LockRefused says the page answers what the lock refused — a code
 	// posted, or a code asked for by e-mail — so the lock's message is an
