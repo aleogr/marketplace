@@ -173,7 +173,9 @@ func storedEmailFactor(t *testing.T, marketplace *tenancy.Marketplace) {
 // when the page answers what the lock refused: an app code posted, or a code
 // asked for by e-mail from a page opened before the lock, which is answered
 // with the page and a 403 rather than a 404. At the second step and at a
-// step-up, in each language.
+// step-up, in each language. Shown, it is a notice, never the success box
+// (a plain status) with its check mark: a lock is a warning, and the layout
+// gives the notice colours of its own.
 func TestTheLockIsAnAlertWhenItRefuses(t *testing.T) {
 	handler, service, marketplace := bilingualSite(t)
 	// Signed in before the account had a second factor, as a session that
@@ -183,15 +185,28 @@ func TestTheLockIsAnAlertWhenItRefuses(t *testing.T) {
 	storedEmailFactor(t, marketplace)
 	lockCodes(t, marketplace)
 	shown := func(language string) string {
+		return `<p class="notice" role="status">` + html.EscapeString(codesLocked[language]) + `</p>`
+	}
+	success := func(language string) string {
 		return `<p role="status">` + html.EscapeString(codesLocked[language]) + `</p>`
 	}
 	alert := func(language string) string {
 		return `<p role="alert">` + html.EscapeString(codesLocked[language]) + `</p>`
 	}
+	notice := func(what, language, body string) {
+		t.Helper()
+		switch {
+		case !strings.Contains(body, shown(language)) || strings.Contains(body, success(language)):
+			t.Fatalf("%s in %s: want the lock as a notice, not in the success box: %s", what, language, body)
+		case !strings.Contains(body, `[role="status"].notice {`) || !strings.Contains(body, "--notice-bg:"):
+			t.Fatalf("%s in %s: the layout gives the notice no colours of its own: %s", what, language, body)
+		}
+	}
 	refusal := func(what, language string, page *httptest.ResponseRecorder) {
 		t.Helper()
 		body := page.Body.String()
-		if page.Code != http.StatusForbidden || !strings.Contains(body, alert(language)) || strings.Contains(body, shown(language)) {
+		if page.Code != http.StatusForbidden || !strings.Contains(body, alert(language)) ||
+			strings.Contains(body, shown(language)) || strings.Contains(body, success(language)) {
 			t.Fatalf("%s in %s: status %d, want %d and the lock as an alert: %s", what, language, page.Code, http.StatusForbidden, body)
 		}
 	}
@@ -199,9 +214,10 @@ func TestTheLockIsAnAlertWhenItRefuses(t *testing.T) {
 	for _, language := range []string{"pt-BR", "en-US"} {
 		visitor := passwordDone(t, handler, marketplace, language)
 		page := visitor.get("/" + language + "/signin/verify")
-		if body := page.Body.String(); page.Code != http.StatusOK || !strings.Contains(body, shown(language)) || strings.Contains(body, alert(language)) {
+		if body := page.Body.String(); page.Code != http.StatusOK || strings.Contains(body, alert(language)) {
 			t.Fatalf("the locked second step in %s: status %d, want the lock as a status: %s", language, page.Code, body)
 		}
+		notice("the locked second step", language, page.Body.String())
 		refusal("an app code at the second step", language,
 			visitor.post("/"+language+"/signin/verify", url.Values{"method": {"totp"}, "code": {"000000"}}))
 		refusal("a code asked for by e-mail at the second step", language,
@@ -210,9 +226,10 @@ func TestTheLockIsAnAlertWhenItRefuses(t *testing.T) {
 
 	for _, language := range []string{"pt-BR", "en-US"} {
 		page := b.get("/" + language + "/account/verify?for=add_card&next=%2Faccount%2Fsecurity")
-		if body := page.Body.String(); page.Code != http.StatusOK || !strings.Contains(body, shown(language)) {
+		if body := page.Body.String(); page.Code != http.StatusOK || strings.Contains(body, alert(language)) {
 			t.Fatalf("the locked step-up in %s: status %d, want the lock as a status: %s", language, page.Code, body)
 		}
+		notice("the locked step-up", language, page.Body.String())
 		refusal("an app code at a step-up", language, b.post("/"+language+"/account/verify",
 			url.Values{"method": {"totp"}, "code": {"000000"}, "for": {"add_card"}, "next": {"/account/security"}}))
 		refusal("a code asked for by e-mail at a step-up", language, b.post("/"+language+"/account/verify/email",

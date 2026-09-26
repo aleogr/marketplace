@@ -15,11 +15,11 @@ templ ChallengePage(page Page, view Challenge) {
 		}
 		if view.CodesLocked {
 			// A refusal when it answers one; otherwise what the page is
-			// like now.
+			// like now, as a notice: a lock is a warning, not a success.
 			if view.LockRefused {
 				<p role="alert">{ page.T("identity.challenge.codes_locked") }</p>
 			} else {
-				<p role="status">{ page.T("identity.challenge.codes_locked") }</p>
+				<p class="notice" role="status">{ page.T("identity.challenge.codes_locked") }</p>
 			}
 			if view.Method == "" {
 				<p>{ page.T("identity.challenge.codes_locked_none") }</p>
