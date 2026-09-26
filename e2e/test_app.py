@@ -75,5 +75,6 @@ def test_adding_and_removing_an_app(run_marketplace, screenshots, language):
         page.click("ul.factors button[type=submit]")
         expect(page.locator("[role=status]")).to_have_text(REMOVED[language])
         expect(page.locator("ul.factors")).to_have_count(0)
-        wait_for_mail(marketplace.mailbox, "second-factor-removed", email)
+        removed = wait_for_mail(marketplace.mailbox, "second-factor-removed", email)
+        assert removed["variables"]["Method"] == "totp" and removed["language"] == language, removed
         browser.close()

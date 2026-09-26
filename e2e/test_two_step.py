@@ -79,8 +79,8 @@ def test_signing_in_with_a_recovery_code(run_marketplace, screenshots, language)
         expect(page.locator("[role=status]")).to_contain_text(NINE_LEFT[language])
         page.screenshot(path=screenshots / f"f14-recovery-used-{language}.png", full_page=True)
         used = wait_for_mail(marketplace.mailbox, "recovery-code-used", email)
-        assert used["variables"]["Left"] == "9", used
-        assert used["variables"]["Purpose"] == "signin", used
+        assert used["variables"]["Left"] == "9" and used["variables"]["Purpose"] == "signin", used
+        assert used["language"] == language, used
 
         # The same code does not work twice.
         second_step(page, marketplace, email, language)

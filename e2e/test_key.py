@@ -36,7 +36,8 @@ def test_adding_a_key_and_signing_in_with_it(run_marketplace, screenshots, langu
         expect(page.locator("ol.codes code")).to_have_count(10)
         page.click("main a[href$='/account/security']")
         expect(page.locator("ul.factors li strong")).to_have_text("YubiKey")
-        assert wait_for_mail(marketplace.mailbox, "second-factor-added", email)["variables"]["Method"] == "webauthn"
+        added = wait_for_mail(marketplace.mailbox, "second-factor-added", email)
+        assert added["variables"]["Method"] == "webauthn" and added["language"] == language, added
         page.screenshot(path=screenshots / f"f14-security-key-{language}.png", full_page=True)
 
         page.click(SIGN_OUT)
