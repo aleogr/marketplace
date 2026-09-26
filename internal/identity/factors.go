@@ -148,9 +148,17 @@ func (s *Service) BeginApp(ctx context.Context, v Visit, session Session) (AppEn
 }
 
 // PendingApp returns the app enrolment the session has in progress, so the
-// page can be shown again after a wrong code; ErrNoEnrolment when there is
-// none, or it expired.
+// page can be shown again after a wrong code or a reload; ErrNoEnrolment when
+// there is none, or it expired. It shows the secret, so it asks what BeginApp
+// asks, whatever the route in front of it checks: an enrolment outlives the
+// step-up that started it (EnrolmentLifetime, StepUpLifetime).
 func (s *Service) PendingApp(ctx context.Context, v Visit, session Session) (AppEnrolment, error) {
+	if !s.policy.Permits(session.Account.Kind, MethodApp, Enrol) {
+		return AppEnrolment{}, ErrNotPermitted
+	}
+	if s.NeedsStepUp(session, ActionFactors) {
+		return AppEnrolment{}, ErrStepUpNeeded
+	}
 	if s.sealer == nil {
 		return AppEnrolment{}, errNoSealer
 	}

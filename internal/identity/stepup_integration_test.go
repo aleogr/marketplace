@@ -111,6 +111,41 @@ func TestAStepUpOlderThanTenMinutesIsRefused(t *testing.T) {
 	}
 }
 
+// The app the session is adding is shown again only as its start was: to a
+// kind of account that may use an app, and, once the account has 2FA, within
+// a recent step-up (D2). The add-app page reuses a live enrolment, which
+// outlives the step-up, so without its own checks a session whose step-up
+// has gone stale could still read the pending secret.
+func TestThePendingAppAsksWhatBeginAppAsks(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session, token, enrolment := withAppSignedIn(t, s, db, one, "r@example.test")
+	v := visit(one)
+	stepped := stepUp(t, s, one, token, session, ActionFactors, enrolment)
+	started, err := s.BeginApp(t.Context(), v, stepped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := s.PendingApp(t.Context(), v, stepped); err != nil || pending.Key != started.Key {
+		t.Fatalf("PendingApp within the step-up = %+v, %v; want the key BeginApp showed", pending, err)
+	}
+
+	unknown := stepped
+	unknown.Account.Kind = UserKind("unknown")
+	if _, err := s.PendingApp(t.Context(), v, unknown); !errors.Is(err, ErrNotPermitted) {
+		t.Fatalf("PendingApp for a kind that may not use an app = %v, want ErrNotPermitted", err)
+	}
+
+	if StepUpLifetime >= EnrolmentLifetime {
+		t.Fatal("an enrolment no longer outlives a step-up, so this no longer tests the step-up")
+	}
+	later := time.Now().UTC().Add(StepUpLifetime)
+	s.now = func() time.Time { return later }
+	if _, err := s.PendingApp(t.Context(), v, stepped); !errors.Is(err, ErrStepUpNeeded) {
+		t.Fatalf("PendingApp ten minutes after the step-up = %v, want ErrStepUpNeeded", err)
+	}
+}
+
 // Whoever has a second factor proves it before changing the password (D2),
 // and the session the change opens keeps that step-up.
 func TestThePasswordChangeAsksForTheSecondFactor(t *testing.T) {

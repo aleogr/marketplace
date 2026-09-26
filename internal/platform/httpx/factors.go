@@ -195,11 +195,17 @@ func (s Site) addApp(w http.ResponseWriter, r *http.Request) {
 	}
 	view.Form.Field = appFields[view.Form.Error]
 	enrolment, err := s.identity.Service.PendingApp(r.Context(), visit(r), session)
-	if errors.Is(err, identity.ErrNoEnrolment) {
+	switch {
+	case errors.Is(err, identity.ErrNoEnrolment):
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath+"/app", http.StatusSeeOther)
 		return
-	}
-	if err != nil {
+	case errors.Is(err, identity.ErrNotPermitted):
+		http.NotFound(w, r)
+		return
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/app")
+		return
+	case err != nil:
 		s.failed(w, r, "an app enrolment could not be read", err)
 		return
 	}
