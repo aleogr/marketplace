@@ -682,24 +682,28 @@ exist. The policy hook for it is delivered here.
 **Depends on:** F14.
 
 **What is needed from the owner** (one at a time, against the lab):
-1. Read the one-time bootstrap token from Secret Manager with the command provided.
-2. Open the first-run URL, set the owner e-mail and password.
-3. Enrol the owner's second factor — an authenticator app or a security key — and store the
+1. Create the DNS record of the console's subdomain in Cloudflare, as instructed.
+2. Read the one-time bootstrap token from Secret Manager with the command provided.
+3. Open the first-run URL, set the owner e-mail and password.
+4. Enrol the owner's second factor — an authenticator app or a security key — and store the
    recovery codes somewhere safe. Confirm a successful sign-in afterwards.
 
 **Scope:**
 - `permission` (a registry declared in Go and seeded by migration, so a permission cannot exist in
-  the database without existing in the code), `role`, `role_permission`, `role_scope` (a specific
-  marketplace or the whole platform), `user_role`.
+  the database without existing in the code), `role`, `role_permission`, and `user_role`, which
+  assigns a role with its scope (a specific marketplace or the whole platform).
 - The **owner role cannot be deleted and cannot lose permissions**, enforced in the service and
   again by a database constraint, and it requires a second factor (§19).
-- **First run:** while no owner exists, a `/setup` route is served, guarded by a one-time token
-  generated at start and written only to the log and to Secret Manager. The token expires on use
-  and the route disappears once the owner exists. No credential is ever hard-coded (§19).
+- **First run:** while no owner exists, a `/setup` route is served on the console's own subdomain,
+  guarded by a one-time token that Terraform generates into Secret Manager and the service only reads.
+  The token is used once and the route disappears once the owner exists. No credential is ever
+  hard-coded (§19; the design is `docs/superpowers/specs/2026-09-26-f15-console-design.md`).
 - The authorization middleware, and a console shell: templ layout, navigation, language switch and
   the **build identifier in the footer** (§27).
 - A `/console/version` endpoint restricted to a staff permission, exposing the build identifier.
 - An audit record for every role and permission change (§19).
+- Staff join by an e-mailed invitation, can be deactivated, and a colleague with the permission resets
+  a staff member's lost second factor (§18.2), each with a step-up and an audit record.
 
 **Verification:**
 - Integration tests: a staff member scoped to marketplace A cannot read marketplace B; the owner
