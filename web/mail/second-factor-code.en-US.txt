@@ -1,6 +1,6 @@
-Subject: Your code at {{.From}}: {{.Code}}
+Subject: Your code {{if eq .Purpose "signin"}}to sign in{{else if eq .Purpose "enrol"}}to add e-mail as a second factor{{else}}to confirm a change to your account{{end}} at {{.From}}
 Hello, {{.Name}}.
 
-Your code is {{.Code}}. It works once, for ten minutes.
+Your code {{if eq .Purpose "signin"}}to sign in{{else if eq .Purpose "enrol"}}to add e-mail as a second factor{{else}}to confirm a change to your account{{end}} at {{.From}} is {{.Code}}. It works once, for ten minutes.
 
 Nobody from {{.From}} will ever ask you for this code. If you did not ask for it, change your password.

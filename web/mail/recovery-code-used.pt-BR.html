@@ -1,0 +1,3 @@
+<p>Olá, {{.Name}}.</p>
+<p>Um dos seus códigos de recuperação acabou de ser usado {{if eq .Purpose "signin"}}para entrar na sua conta{{else}}para confirmar uma alteração na sua conta{{end}} em {{.From}}. Códigos de recuperação restantes: {{.Left}}.</p>
+<p>Se foi você, adicione de novo um segundo fator se perdeu o seu e gere novos códigos de recuperação na página de segurança da conta. Se não foi você, {{if eq .Purpose "signin"}}alguém tem sua senha e um dos seus códigos{{else}}alguém que entrou na sua conta tem um dos seus códigos{{end}}: altere sua senha, o que encerra todas as outras sessões, e gere novos códigos de recuperação agora.</p>

@@ -158,6 +158,10 @@
   "identity.key.intro": "Use a security key, or this device's fingerprint, face or PIN. The browser will ask you to touch the key or to confirm on the device.",
   "identity.key.submit": "Add it",
   "identity.key.failed": "The browser did not finish. Try again, or choose another way.",
-  "identity.key.needs_script": "A security key needs JavaScript, which is off in this browser. An authenticator app or a code by e-mail works without it.",
-  "identity.key.refused": "The key's answer could not be verified. Try again."
+  "identity.key.needs_script": "A security key needs JavaScript, which is off in this browser. Turn it on, or choose another way.",
+  "identity.key.refused": "The key's answer could not be verified. Try again.",
+  "identity.challenge.codes_locked": "Too many wrong answers were given for this account, so codes from an authenticator app or by e-mail no longer work. Confirming with a security key or a recovery code, or changing the password, makes them work again.",
+  "identity.challenge.codes_locked_none": "This account has no security key and no recovery code left to use instead, so it cannot be confirmed for now.",
+  "identity.key.unsupported": "This browser cannot use a security key or this device's fingerprint, face or PIN. Choose another way.",
+  "identity.key.enrol_needs_script": "Adding a key needs JavaScript in this browser."
 }

@@ -13,33 +13,20 @@ templ ChallengePage(page Page, view Challenge) {
 		if view.Form.Error != "" {
 			<p id={ ErrorID } role="alert">{ page.T(view.Form.Error, view.Form.ErrorArgs...) }</p>
 		}
-		<p>{ page.T("identity.challenge.method." + view.Method) }</p>
-		if view.Method == "email" {
-			if view.Sent {
-				<p role="status">{ page.T("identity.challenge.sent") }</p>
-			}
-			@sendCodeForm(page, view)
-		}
-		@challengeForm(page, view) {
-			if view.Method == "webauthn" {
-				<input type="hidden" name="key"/>
-				// Hidden until the script shows it: without the script the
-				// button would post an empty answer and spend an attempt.
-				<button type="submit" hidden>{ page.T("identity.challenge.use_key") }</button>
+		if view.CodesLocked {
+			// A refusal when it answers one; otherwise what the page is
+			// like now, as a notice: a lock is a warning, not a success.
+			if view.LockRefused {
+				<p role="alert">{ page.T("identity.challenge.codes_locked") }</p>
 			} else {
-				<label>
-					{ page.T("identity.field.code") }
-					if view.Method == "recovery" {
-						<input name="code" autocomplete="off" autocapitalize="none" spellcheck="false" required { view.Form.Input("code")... }/>
-					} else {
-						<input name="code" inputmode="numeric" autocomplete="one-time-code" required { view.Form.Input("code")... }/>
-					}
-				</label>
-				<button type="submit">{ page.T("identity.challenge.submit") }</button>
+				<p class="notice" role="status">{ page.T("identity.challenge.codes_locked") }</p>
+			}
+			if view.Method == "" {
+				<p>{ page.T("identity.challenge.codes_locked_none") }</p>
 			}
 		}
-		if view.Method == "webauthn" {
-			@keyScript(page)
+		if view.Method != "" {
+			@challengeMethod(page, view)
 		}
 		if len(view.Others()) > 0 || (view.Recovery && view.Method != "recovery") {
 			<p>{ page.T("identity.challenge.other") }</p>
@@ -52,6 +39,38 @@ templ ChallengePage(page Page, view Challenge) {
 				}
 			</ul>
 		}
+	}
+}
+
+// challengeMethod asks for the method the page shows.
+templ challengeMethod(page Page, view Challenge) {
+	<p>{ page.T("identity.challenge.method." + view.Method) }</p>
+	if view.Method == "email" {
+		if view.Sent {
+			<p role="status">{ page.T("identity.challenge.sent") }</p>
+		}
+		@sendCodeForm(page, view)
+	}
+	@challengeForm(page, view) {
+		if view.Method == "webauthn" {
+			<input type="hidden" name="key"/>
+			// Hidden until the script shows it: without the script the
+			// button would post an empty answer and spend an attempt.
+			<button type="submit" hidden>{ page.T("identity.challenge.use_key") }</button>
+		} else {
+			<label>
+				{ page.T("identity.field.code") }
+				if view.Method == "recovery" {
+					<input name="code" autocomplete="off" autocapitalize="none" spellcheck="false" required { view.Form.Input("code")... }/>
+				} else {
+					<input name="code" inputmode="numeric" autocomplete="one-time-code" required { view.Form.Input("code")... }/>
+				}
+			</label>
+			<button type="submit">{ page.T("identity.challenge.submit") }</button>
+		}
+	}
+	if view.Method == "webauthn" {
+		@keyScript(page)
 	}
 }
 
@@ -102,12 +121,14 @@ func keyAttributes(view Challenge) templ.Attributes {
 	return templ.Attributes{"data-webauthn": "get", "data-options": view.KeyOptions}
 }
 
-// keyScript is what a page that uses a key adds: the message the script
-// shows when the browser has no WebAuthn or does not complete the ceremony,
-// what a browser with no script reads instead, and the script itself, from
-// this origin under the page's nonce. The script also shows the key form's
-// button, which the page hides.
+// keyScript is what a page that uses a key adds: the messages the script
+// shows when the browser has no WebAuthn, and when it does not complete the
+// ceremony; what a browser with no script reads instead, which names no
+// other method, since which remain depends on the account and on the lock of
+// D8; and the script itself, from this origin under the page's nonce. The
+// script also shows the key form's button, which the page hides.
 templ keyScript(page Page) {
+	<p id="key-unsupported" role="alert" hidden>{ page.T("identity.key.unsupported") }</p>
 	<p id="key-failed" role="alert" hidden>{ page.T("identity.key.failed") }</p>
 	<noscript><p>{ page.T("identity.key.needs_script") }</p></noscript>
 	<script src="/assets/webauthn.js" nonce={ page.Nonce } defer></script>

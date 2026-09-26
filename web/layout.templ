@@ -65,6 +65,7 @@ templ Layout(page Page, title string) {
 				:root {
 					--error-text: #8b1a1a; --error-bg: #fdeceb; --error-edge: #c0392b;
 					--done-text: #14532d; --done-bg: #e7f6ec; --done-edge: #1f8a4c;
+					--notice-text: #713f12; --notice-bg: #fdf6e3; --notice-edge: #b45309;
 					--action-text: #ffffff; --action-bg: #1d4ed8;
 					--action-hover: #1e40af; --action-pressed: #1e3a8a;
 					--field-edge: #6b7280; --pressed-tint: rgb(0 0 0 / 0.1); --pressed-tint-strong: rgb(0 0 0 / 0.22);
@@ -73,6 +74,7 @@ templ Layout(page Page, title string) {
 					:root {
 						--error-text: #ffb4ab; --error-bg: #3a1414; --error-edge: #ff6b5e;
 						--done-text: #a7f3c1; --done-bg: #0f2a1a; --done-edge: #3fbf73;
+						--notice-text: #fcd9a0; --notice-bg: #2d2210; --notice-edge: #e8a33d;
 						--action-text: #0b1633; --action-bg: #8fb0ff;
 						--action-hover: #a9c2ff; --action-pressed: #c7d7ff;
 						--field-edge: #9ca3af; --pressed-tint: rgb(255 255 255 / 0.15); --pressed-tint-strong: rgb(255 255 255 / 0.32);
@@ -99,6 +101,15 @@ templ Layout(page Page, title string) {
 					color: var(--done-text);
 				}
 				[role="status"]::before { content: "\2713\00A0"; content: "\2713\00A0" / ""; }
+				/* A notice is a status that warns — something is limited, not
+				   done — so it takes neither the success's colours nor its
+				   check mark. */
+				[role="status"].notice {
+					background: var(--notice-bg);
+					border-color: var(--notice-edge);
+					color: var(--notice-text);
+				}
+				[role="status"].notice::before { content: "\26A0\FE0E\00A0"; content: "\26A0\FE0E\00A0" / ""; }
 				/* A form reads as one: each label on its own line, above its
 				   field. */
 				main form label { display: block; margin-top: 1rem; }

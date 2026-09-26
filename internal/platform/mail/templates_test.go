@@ -25,10 +25,13 @@ func templates(t *testing.T) *mail.Templates {
 // missing here fails this test: add the variable here when a template gains
 // one.
 var sampleVariables = map[string]string{
-	"Name":   "Reader",
-	"Link":   "https://marketplace1.example/en-US/verify?token=sample",
-	"SignIn": "https://marketplace1.example/en-US/signin",
-	"Code":   "123456",
+	"Name":    "Reader",
+	"Link":    "https://marketplace1.example/en-US/verify?token=sample",
+	"SignIn":  "https://marketplace1.example/en-US/signin",
+	"Code":    "123456",
+	"Method":  "totp",
+	"Left":    "9",
+	"Purpose": "signin",
 }
 
 // The definition of done: every user-facing text exists in both languages
@@ -113,6 +116,136 @@ func TestAnAddressIsComparedInOneForm(t *testing.T) {
 	for _, given := range []string{"Reader@Example.Test", "  reader@example.test  ", "READER@EXAMPLE.TEST"} {
 		if got := mail.Address(given); got != "reader@example.test" {
 			t.Errorf("Address(%q) = %q", given, got)
+		}
+	}
+}
+
+// The second-factor notices name the method in the reader's language: the
+// service passes its kind, and each template words it.
+func TestTheSecondFactorNoticesNameTheMethodInTheReadersLanguage(t *testing.T) {
+	for _, tc := range []struct{ template, language, method, want string }{
+		{"second-factor-added", "pt-BR", "webauthn", "uma chave de segurança ou dispositivo"},
+		{"second-factor-added", "en-US", "totp", "an authenticator app"},
+		{"second-factor-removed", "en-US", "email", "codes by e-mail"},
+		{"second-factor-removed", "pt-BR", "totp", "um aplicativo autenticador"},
+	} {
+		rendered, err := templates(t).Render(mail.Message{
+			Template: tc.template, Language: tc.language, To: "reader@example.test", From: "Loja Um",
+			Variables: map[string]string{"Name": "Leitora", "Method": tc.method},
+		}, i18n.Default)
+		if err != nil {
+			t.Fatalf("%s in %s: %v", tc.template, tc.language, err)
+		}
+		if !strings.Contains(rendered.Text, tc.want) || !strings.Contains(rendered.HTML, tc.want) {
+			t.Errorf("%s in %s with %s does not say %q: %s", tc.template, tc.language, tc.method, tc.want, rendered.Text)
+		}
+	}
+}
+
+// The notices of a run of failed second factors exist in both languages and
+// both parts, name the reader and the marketplace, and tell the reader to
+// change the password (F14 spec, D8). A failed step-up counts as a failed
+// second step does, so they do not assume a sign-in: whoever failed knows the
+// password or is signed in to the account.
+func TestTheFailureNoticesExistInBothLanguages(t *testing.T) {
+	for _, tc := range []struct{ template, language, want, who, never string }{
+		{"second-factor-failures", "en-US", "change your password now", "or is signed in to your account", "second step of signing in"},
+		{"second-factor-failures", "pt-BR", "altere sua senha agora", "ou que entrou na sua conta", "segunda etapa da entrada"},
+		{"second-factor-locked", "en-US", "Change your password now", "or is signed in to your account", "second step of signing in"},
+		{"second-factor-locked", "pt-BR", "Altere sua senha agora", "ou que entrou na sua conta", "segunda etapa da entrada"},
+	} {
+		rendered, err := templates(t).Render(mail.Message{
+			Template: tc.template, Language: tc.language, To: "reader@example.test", From: "Loja Um",
+			Variables: map[string]string{"Name": "Leitora"},
+		}, i18n.Default)
+		if err != nil {
+			t.Fatalf("%s in %s: %v", tc.template, tc.language, err)
+		}
+		if rendered.Language != tc.language || !strings.Contains(rendered.Subject, "Loja Um") {
+			t.Errorf("%s in %s: language %s, subject %q", tc.template, tc.language, rendered.Language, rendered.Subject)
+		}
+		for _, part := range []string{rendered.Text, rendered.HTML} {
+			if !strings.Contains(part, "Leitora") || !strings.Contains(part, "Loja Um") || !strings.Contains(part, tc.want) {
+				t.Errorf("%s in %s does not name the reader and the marketplace and say %q: %s", tc.template, tc.language, tc.want, part)
+			}
+			if !strings.Contains(part, tc.who) || strings.Contains(part, tc.never) {
+				t.Errorf("%s in %s does not say %q, or assumes a sign-in with %q: %s", tc.template, tc.language, tc.who, tc.never, part)
+			}
+		}
+	}
+}
+
+// The code's mail says what the code is for — signing in, confirming a
+// change, adding e-mail as a second factor — in the reader's language, and
+// keeps the code out of the subject, which lock screens and the provider's
+// activity logs show; the body carries it.
+func TestTheCodeMailSaysWhatItIsForAndKeepsTheCodeOutOfTheSubject(t *testing.T) {
+	for _, tc := range []struct{ language, purpose, want string }{
+		{"en-US", "signin", "to sign in"},
+		{"en-US", "stepup", "to confirm a change"},
+		{"en-US", "enrol", "to add e-mail as a second factor"},
+		{"pt-BR", "signin", "para entrar"},
+		{"pt-BR", "stepup", "para confirmar uma alteração"},
+		{"pt-BR", "enrol", "para adicionar o e-mail como segundo fator"},
+	} {
+		rendered, err := templates(t).Render(mail.Message{
+			Template: "second-factor-code", Language: tc.language, To: "reader@example.test", From: "Loja Um",
+			Variables: map[string]string{"Name": "Leitora", "Code": "481516", "Purpose": tc.purpose},
+		}, i18n.Default)
+		if err != nil {
+			t.Fatalf("second-factor-code in %s for %s: %v", tc.language, tc.purpose, err)
+		}
+		if strings.Contains(rendered.Subject, "481516") {
+			t.Errorf("the subject in %s for %s carries the code: %q", tc.language, tc.purpose, rendered.Subject)
+		}
+		if !strings.Contains(rendered.Subject, "Loja Um") || !strings.Contains(rendered.Subject, tc.want) {
+			t.Errorf("the subject in %s for %s = %q; want the marketplace and %q", tc.language, tc.purpose, rendered.Subject, tc.want)
+		}
+		for _, part := range []string{rendered.Text, rendered.HTML} {
+			if !strings.Contains(part, "481516") || !strings.Contains(part, tc.want) {
+				t.Errorf("second-factor-code in %s for %s does not carry the code and say %q: %s", tc.language, tc.purpose, tc.want, part)
+			}
+		}
+	}
+}
+
+// The recovery code's notice says what the code was used for: a recovery code
+// answers a step-up as well as the second step of signing in, so the notice
+// of one used to confirm a change does not claim that someone signed in.
+func TestTheRecoveryNoticeSaysWhatTheCodeWasUsedFor(t *testing.T) {
+	for _, tc := range []struct {
+		language, purpose, want string
+		never                   []string
+	}{
+		{"en-US", "signin", "to sign in", []string{"to confirm a change"}},
+		{"en-US", "stepup", "to confirm a change", []string{"to sign in", "signed in with"}},
+		{"pt-BR", "signin", "para entrar", []string{"para confirmar uma alteração"}},
+		{"pt-BR", "stepup", "para confirmar uma alteração", []string{"para entrar", "acabou de entrar"}},
+	} {
+		rendered, err := templates(t).Render(mail.Message{
+			Template: "recovery-code-used", Language: tc.language, To: "reader@example.test", From: "Loja Um",
+			Variables: map[string]string{"Name": "Leitora", "Left": "7", "Purpose": tc.purpose},
+		}, i18n.Default)
+		if err != nil {
+			t.Fatalf("recovery-code-used in %s for %s: %v", tc.language, tc.purpose, err)
+		}
+		if rendered.Language != tc.language || !strings.Contains(rendered.Subject, "Loja Um") ||
+			!strings.Contains(rendered.Subject, tc.want) {
+			t.Errorf("the subject in %s for %s = %q (%s); want the marketplace and %q",
+				tc.language, tc.purpose, rendered.Subject, rendered.Language, tc.want)
+		}
+		for _, part := range []string{rendered.Subject, rendered.Text, rendered.HTML} {
+			for _, never := range tc.never {
+				if strings.Contains(part, never) {
+					t.Errorf("recovery-code-used in %s for %s says %q: %s", tc.language, tc.purpose, never, part)
+				}
+			}
+		}
+		for _, part := range []string{rendered.Text, rendered.HTML} {
+			if !strings.Contains(part, "Leitora") || !strings.Contains(part, "7") || !strings.Contains(part, tc.want) {
+				t.Errorf("recovery-code-used in %s for %s does not name the reader and the codes left and say %q: %s",
+					tc.language, tc.purpose, tc.want, part)
+			}
 		}
 	}
 }

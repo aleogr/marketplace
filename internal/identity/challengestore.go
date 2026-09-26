@@ -35,6 +35,15 @@ func insertChallenge(ctx context.Context, tx pgx.Tx, marketplace, account string
 	return err
 }
 
+// endSignIns deletes the account's open sign-in challenges — not its
+// step-ups, which name a session — so that none opened with a password the
+// account no longer has can still open a session: the second step does not
+// check the password again.
+func endSignIns(ctx context.Context, tx pgx.Tx, account string) error {
+	_, err := tx.Exec(ctx, `DELETE FROM sign_in_challenge WHERE account_id = $1 AND session_id IS NULL`, account)
+	return err
+}
+
 // challengeForUpdate locks a challenge that can still be answered: not used,
 // not expired and with attempts left. Any other is pgx.ErrNoRows.
 func challengeForUpdate(ctx context.Context, tx pgx.Tx, hash []byte, now time.Time) (challenge, error) {

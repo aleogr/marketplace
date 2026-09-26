@@ -261,14 +261,14 @@ func Layout(page Page, title string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\">\n\t\t\t\t:root { color-scheme: light dark; }\n\t\t\t\tbody {\n\t\t\t\t\tfont-family: system-ui, sans-serif;\n\t\t\t\t\tline-height: 1.5;\n\t\t\t\t\tmargin: 0 auto;\n\t\t\t\t\tmax-width: 40rem;\n\t\t\t\t\tpadding: 2rem 1rem;\n\t\t\t\t}\n\t\t\t\theader { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 1rem; }\n\t\t\t\theader > strong { flex-shrink: 0; white-space: nowrap; }\n\t\t\t\tnav.account { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; }\n\t\t\t\tnav form { display: inline; }\n\t\t\t\tnav button {\n\t\t\t\t\tbackground: none;\n\t\t\t\t\tborder: 0;\n\t\t\t\t\tborder-radius: 0.25rem;\n\t\t\t\t\tcursor: pointer;\n\t\t\t\t\tfont: inherit;\n\t\t\t\t\tpadding: 0.25rem;\n\t\t\t\t\ttext-decoration: underline;\n\t\t\t\t}\n\t\t\t\tnav button[aria-current=\"true\"] { font-weight: 600; text-decoration: none; }\n\t\t\t\t/* Colours for both schemes, each pair at least 4.5:1 for text\n\t\t\t\t   and 3:1 for a border (WCAG 2.2 AA). */\n\t\t\t\t:root {\n\t\t\t\t\t--error-text: #8b1a1a; --error-bg: #fdeceb; --error-edge: #c0392b;\n\t\t\t\t\t--done-text: #14532d; --done-bg: #e7f6ec; --done-edge: #1f8a4c;\n\t\t\t\t\t--action-text: #ffffff; --action-bg: #1d4ed8;\n\t\t\t\t\t--action-hover: #1e40af; --action-pressed: #1e3a8a;\n\t\t\t\t\t--field-edge: #6b7280; --pressed-tint: rgb(0 0 0 / 0.1); --pressed-tint-strong: rgb(0 0 0 / 0.22);\n\t\t\t\t}\n\t\t\t\t@media (prefers-color-scheme: dark) {\n\t\t\t\t\t:root {\n\t\t\t\t\t\t--error-text: #ffb4ab; --error-bg: #3a1414; --error-edge: #ff6b5e;\n\t\t\t\t\t\t--done-text: #a7f3c1; --done-bg: #0f2a1a; --done-edge: #3fbf73;\n\t\t\t\t\t\t--action-text: #0b1633; --action-bg: #8fb0ff;\n\t\t\t\t\t\t--action-hover: #a9c2ff; --action-pressed: #c7d7ff;\n\t\t\t\t\t\t--field-edge: #9ca3af; --pressed-tint: rgb(255 255 255 / 0.15); --pressed-tint-strong: rgb(255 255 255 / 0.32);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t/* A refusal must not read as one more hint: a colour, a bar\n\t\t\t\t   and a mark, so it holds without colour too. The mark is\n\t\t\t\t   hidden from screen readers, which announce the alert. */\n\t\t\t\t[role=\"alert\"], [role=\"status\"] {\n\t\t\t\t\tborder-inline-start: 0.25rem solid;\n\t\t\t\t\tborder-radius: 0.25rem;\n\t\t\t\t\tpadding: 0.75rem 1rem;\n\t\t\t\t}\n\t\t\t\t[role=\"alert\"] {\n\t\t\t\t\tbackground: var(--error-bg);\n\t\t\t\t\tborder-color: var(--error-edge);\n\t\t\t\t\tcolor: var(--error-text);\n\t\t\t\t\tfont-weight: 600;\n\t\t\t\t}\n\t\t\t\t[role=\"alert\"]::before { content: \"\\26A0\\FE0E\\00A0\"; content: \"\\26A0\\FE0E\\00A0\" / \"\"; }\n\t\t\t\t[role=\"status\"] {\n\t\t\t\t\tbackground: var(--done-bg);\n\t\t\t\t\tborder-color: var(--done-edge);\n\t\t\t\t\tcolor: var(--done-text);\n\t\t\t\t}\n\t\t\t\t[role=\"status\"]::before { content: \"\\2713\\00A0\"; content: \"\\2713\\00A0\" / \"\"; }\n\t\t\t\t/* A form reads as one: each label on its own line, above its\n\t\t\t\t   field. */\n\t\t\t\tmain form label { display: block; margin-top: 1rem; }\n\t\t\t\tmain form input:not([type=\"hidden\"]) {\n\t\t\t\t\tborder: 1px solid var(--field-edge);\n\t\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\t\tbox-sizing: border-box;\n\t\t\t\t\tdisplay: block;\n\t\t\t\t\tfont: inherit;\n\t\t\t\t\tmargin-top: 0.25rem;\n\t\t\t\t\tmax-width: 24rem;\n\t\t\t\t\tpadding: 0.5rem;\n\t\t\t\t\twidth: 100%;\n\t\t\t\t}\n\t\t\t\tmain form input[aria-invalid=\"true\"] {\n\t\t\t\t\tborder-color: var(--error-edge);\n\t\t\t\t\tbox-shadow: 0 0 0 1px var(--error-edge);\n\t\t\t\t}\n\t\t\t\tmain form input[aria-invalid=\"true\"]:focus-visible { outline: 2px solid var(--error-edge); outline-offset: 2px; }\n\t\t\t\t#password-hint { font-size: 0.875rem; margin: 0.25rem 0 0; }\n\t\t\t\tmain form button[type=\"submit\"] {\n\t\t\t\t\tbackground: var(--action-bg);\n\t\t\t\t\tborder: 1px solid var(--action-bg);\n\t\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\t\tcolor: var(--action-text);\n\t\t\t\t\tcursor: pointer;\n\t\t\t\t\tfont: inherit;\n\t\t\t\t\tfont-weight: 600;\n\t\t\t\t\tmargin-top: 1.25rem;\n\t\t\t\t\tpadding: 0.5rem 1.25rem;\n\t\t\t\t}\n\t\t\t\tmain form button[type=\"submit\"]:hover { background: var(--action-hover); }\n\t\t\t\tmain form button[type=\"submit\"]:focus-visible { outline: 2px solid var(--action-bg); outline-offset: 2px; }\n\t\t\t\tmain form button[type=\"submit\"]:active { background: var(--action-pressed); }\n\t\t\t\tnav button:active { background: var(--pressed-tint); }\n\t\t\t\t/* A pressed control must say so at once, whatever the\n\t\t\t\t   connection is doing (docs/requirements.md, section 3). With\n\t\t\t\t   less motion asked for, the colour above still says it. */\n\t\t\t\tbutton[type=\"submit\"]:active { transform: scale(0.97); }\n\t\t\t\t@media (prefers-reduced-motion: reduce) {\n\t\t\t\t\tbutton[type=\"submit\"]:active { transform: none; }\n\t\t\t\t}\n\t\t\t\t/* The security page (F14): one second factor per row, its\n\t\t\t\t   removal beside it, as a quieter button than a form's own\n\t\t\t\t   submit. */\n\t\t\t\t.hint { font-size: 0.875rem; margin: 0.25rem 0 0; }\n\t\t\t\tul.factors { list-style: none; padding: 0; }\n\t\t\t\tul.factors li {\n\t\t\t\t\tborder: 1px solid var(--field-edge);\n\t\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\t\tdisplay: flex;\n\t\t\t\t\tflex-wrap: wrap;\n\t\t\t\t\tgap: 0.25rem 1rem;\n\t\t\t\t\talign-items: baseline;\n\t\t\t\t\tmargin-top: 0.75rem;\n\t\t\t\t\tpadding: 0.75rem 1rem;\n\t\t\t\t}\n\t\t\t\tul.factors li form { margin-inline-start: auto; }\n\t\t\t\tmain form button[type=\"submit\"].secondary {\n\t\t\t\t\tbackground: transparent;\n\t\t\t\t\tborder-color: var(--field-edge);\n\t\t\t\t\tcolor: inherit;\n\t\t\t\t\tmargin-top: 0;\n\t\t\t\t}\n\t\t\t\tmain form button[type=\"submit\"].secondary:hover { background: var(--pressed-tint); }\n\t\t\t\tmain form button[type=\"submit\"].secondary:active { background: var(--pressed-tint-strong); }\n\t\t\t\timg.qr { background: #ffffff; display: block; image-rendering: pixelated; margin: 1rem 0; padding: 0.5rem; }\n\t\t\t\tcode.key, ol.codes { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }\n\t\t\t\tcode.key { font-size: 1.125rem; word-spacing: 0.25rem; }\n\t\t\t\tol.codes { columns: 2; font-size: 1.125rem; }\n\t\t\t\tfooter { color: GrayText; font-size: 0.875rem; margin-top: 3rem; }\n\t\t\t</style></head><body><header><strong>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\">\n\t\t\t\t:root { color-scheme: light dark; }\n\t\t\t\tbody {\n\t\t\t\t\tfont-family: system-ui, sans-serif;\n\t\t\t\t\tline-height: 1.5;\n\t\t\t\t\tmargin: 0 auto;\n\t\t\t\t\tmax-width: 40rem;\n\t\t\t\t\tpadding: 2rem 1rem;\n\t\t\t\t}\n\t\t\t\theader { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 1rem; }\n\t\t\t\theader > strong { flex-shrink: 0; white-space: nowrap; }\n\t\t\t\tnav.account { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; }\n\t\t\t\tnav form { display: inline; }\n\t\t\t\tnav button {\n\t\t\t\t\tbackground: none;\n\t\t\t\t\tborder: 0;\n\t\t\t\t\tborder-radius: 0.25rem;\n\t\t\t\t\tcursor: pointer;\n\t\t\t\t\tfont: inherit;\n\t\t\t\t\tpadding: 0.25rem;\n\t\t\t\t\ttext-decoration: underline;\n\t\t\t\t}\n\t\t\t\tnav button[aria-current=\"true\"] { font-weight: 600; text-decoration: none; }\n\t\t\t\t/* Colours for both schemes, each pair at least 4.5:1 for text\n\t\t\t\t   and 3:1 for a border (WCAG 2.2 AA). */\n\t\t\t\t:root {\n\t\t\t\t\t--error-text: #8b1a1a; --error-bg: #fdeceb; --error-edge: #c0392b;\n\t\t\t\t\t--done-text: #14532d; --done-bg: #e7f6ec; --done-edge: #1f8a4c;\n\t\t\t\t\t--notice-text: #713f12; --notice-bg: #fdf6e3; --notice-edge: #b45309;\n\t\t\t\t\t--action-text: #ffffff; --action-bg: #1d4ed8;\n\t\t\t\t\t--action-hover: #1e40af; --action-pressed: #1e3a8a;\n\t\t\t\t\t--field-edge: #6b7280; --pressed-tint: rgb(0 0 0 / 0.1); --pressed-tint-strong: rgb(0 0 0 / 0.22);\n\t\t\t\t}\n\t\t\t\t@media (prefers-color-scheme: dark) {\n\t\t\t\t\t:root {\n\t\t\t\t\t\t--error-text: #ffb4ab; --error-bg: #3a1414; --error-edge: #ff6b5e;\n\t\t\t\t\t\t--done-text: #a7f3c1; --done-bg: #0f2a1a; --done-edge: #3fbf73;\n\t\t\t\t\t\t--notice-text: #fcd9a0; --notice-bg: #2d2210; --notice-edge: #e8a33d;\n\t\t\t\t\t\t--action-text: #0b1633; --action-bg: #8fb0ff;\n\t\t\t\t\t\t--action-hover: #a9c2ff; --action-pressed: #c7d7ff;\n\t\t\t\t\t\t--field-edge: #9ca3af; --pressed-tint: rgb(255 255 255 / 0.15); --pressed-tint-strong: rgb(255 255 255 / 0.32);\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\t/* A refusal must not read as one more hint: a colour, a bar\n\t\t\t\t   and a mark, so it holds without colour too. The mark is\n\t\t\t\t   hidden from screen readers, which announce the alert. */\n\t\t\t\t[role=\"alert\"], [role=\"status\"] {\n\t\t\t\t\tborder-inline-start: 0.25rem solid;\n\t\t\t\t\tborder-radius: 0.25rem;\n\t\t\t\t\tpadding: 0.75rem 1rem;\n\t\t\t\t}\n\t\t\t\t[role=\"alert\"] {\n\t\t\t\t\tbackground: var(--error-bg);\n\t\t\t\t\tborder-color: var(--error-edge);\n\t\t\t\t\tcolor: var(--error-text);\n\t\t\t\t\tfont-weight: 600;\n\t\t\t\t}\n\t\t\t\t[role=\"alert\"]::before { content: \"\\26A0\\FE0E\\00A0\"; content: \"\\26A0\\FE0E\\00A0\" / \"\"; }\n\t\t\t\t[role=\"status\"] {\n\t\t\t\t\tbackground: var(--done-bg);\n\t\t\t\t\tborder-color: var(--done-edge);\n\t\t\t\t\tcolor: var(--done-text);\n\t\t\t\t}\n\t\t\t\t[role=\"status\"]::before { content: \"\\2713\\00A0\"; content: \"\\2713\\00A0\" / \"\"; }\n\t\t\t\t/* A notice is a status that warns — something is limited, not\n\t\t\t\t   done — so it takes neither the success's colours nor its\n\t\t\t\t   check mark. */\n\t\t\t\t[role=\"status\"].notice {\n\t\t\t\t\tbackground: var(--notice-bg);\n\t\t\t\t\tborder-color: var(--notice-edge);\n\t\t\t\t\tcolor: var(--notice-text);\n\t\t\t\t}\n\t\t\t\t[role=\"status\"].notice::before { content: \"\\26A0\\FE0E\\00A0\"; content: \"\\26A0\\FE0E\\00A0\" / \"\"; }\n\t\t\t\t/* A form reads as one: each label on its own line, above its\n\t\t\t\t   field. */\n\t\t\t\tmain form label { display: block; margin-top: 1rem; }\n\t\t\t\tmain form input:not([type=\"hidden\"]) {\n\t\t\t\t\tborder: 1px solid var(--field-edge);\n\t\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\t\tbox-sizing: border-box;\n\t\t\t\t\tdisplay: block;\n\t\t\t\t\tfont: inherit;\n\t\t\t\t\tmargin-top: 0.25rem;\n\t\t\t\t\tmax-width: 24rem;\n\t\t\t\t\tpadding: 0.5rem;\n\t\t\t\t\twidth: 100%;\n\t\t\t\t}\n\t\t\t\tmain form input[aria-invalid=\"true\"] {\n\t\t\t\t\tborder-color: var(--error-edge);\n\t\t\t\t\tbox-shadow: 0 0 0 1px var(--error-edge);\n\t\t\t\t}\n\t\t\t\tmain form input[aria-invalid=\"true\"]:focus-visible { outline: 2px solid var(--error-edge); outline-offset: 2px; }\n\t\t\t\t#password-hint { font-size: 0.875rem; margin: 0.25rem 0 0; }\n\t\t\t\tmain form button[type=\"submit\"] {\n\t\t\t\t\tbackground: var(--action-bg);\n\t\t\t\t\tborder: 1px solid var(--action-bg);\n\t\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\t\tcolor: var(--action-text);\n\t\t\t\t\tcursor: pointer;\n\t\t\t\t\tfont: inherit;\n\t\t\t\t\tfont-weight: 600;\n\t\t\t\t\tmargin-top: 1.25rem;\n\t\t\t\t\tpadding: 0.5rem 1.25rem;\n\t\t\t\t}\n\t\t\t\tmain form button[type=\"submit\"]:hover { background: var(--action-hover); }\n\t\t\t\tmain form button[type=\"submit\"]:focus-visible { outline: 2px solid var(--action-bg); outline-offset: 2px; }\n\t\t\t\tmain form button[type=\"submit\"]:active { background: var(--action-pressed); }\n\t\t\t\tnav button:active { background: var(--pressed-tint); }\n\t\t\t\t/* A pressed control must say so at once, whatever the\n\t\t\t\t   connection is doing (docs/requirements.md, section 3). With\n\t\t\t\t   less motion asked for, the colour above still says it. */\n\t\t\t\tbutton[type=\"submit\"]:active { transform: scale(0.97); }\n\t\t\t\t@media (prefers-reduced-motion: reduce) {\n\t\t\t\t\tbutton[type=\"submit\"]:active { transform: none; }\n\t\t\t\t}\n\t\t\t\t/* The security page (F14): one second factor per row, its\n\t\t\t\t   removal beside it, as a quieter button than a form's own\n\t\t\t\t   submit. */\n\t\t\t\t.hint { font-size: 0.875rem; margin: 0.25rem 0 0; }\n\t\t\t\tul.factors { list-style: none; padding: 0; }\n\t\t\t\tul.factors li {\n\t\t\t\t\tborder: 1px solid var(--field-edge);\n\t\t\t\t\tborder-radius: 0.375rem;\n\t\t\t\t\tdisplay: flex;\n\t\t\t\t\tflex-wrap: wrap;\n\t\t\t\t\tgap: 0.25rem 1rem;\n\t\t\t\t\talign-items: baseline;\n\t\t\t\t\tmargin-top: 0.75rem;\n\t\t\t\t\tpadding: 0.75rem 1rem;\n\t\t\t\t}\n\t\t\t\tul.factors li form { margin-inline-start: auto; }\n\t\t\t\tmain form button[type=\"submit\"].secondary {\n\t\t\t\t\tbackground: transparent;\n\t\t\t\t\tborder-color: var(--field-edge);\n\t\t\t\t\tcolor: inherit;\n\t\t\t\t\tmargin-top: 0;\n\t\t\t\t}\n\t\t\t\tmain form button[type=\"submit\"].secondary:hover { background: var(--pressed-tint); }\n\t\t\t\tmain form button[type=\"submit\"].secondary:active { background: var(--pressed-tint-strong); }\n\t\t\t\timg.qr { background: #ffffff; display: block; image-rendering: pixelated; margin: 1rem 0; padding: 0.5rem; }\n\t\t\t\tcode.key, ol.codes { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }\n\t\t\t\tcode.key { font-size: 1.125rem; word-spacing: 0.25rem; }\n\t\t\t\tol.codes { columns: 2; font-size: 1.125rem; }\n\t\t\t\tfooter { color: GrayText; font-size: 0.875rem; margin-top: 3rem; }\n\t\t\t</style></head><body><header><strong>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(page.Title())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 177, Col: 26}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 188, Col: 26}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -303,7 +303,7 @@ func Layout(page Page, title string) templ.Component {
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(page.Year())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 187, Col: 20}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 198, Col: 20}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -316,7 +316,7 @@ func Layout(page Page, title string) templ.Component {
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(page.Title())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 187, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 198, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -364,7 +364,7 @@ func LanguageSwitch(page Page) templ.Component {
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.T("language.switch"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 200, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 211, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 		if templ_7745c5c3_Err != nil {
@@ -382,7 +382,7 @@ func LanguageSwitch(page Page) templ.Component {
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 203, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 214, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 			if templ_7745c5c3_Err != nil {
@@ -395,7 +395,7 @@ func LanguageSwitch(page Page) templ.Component {
 			var templ_7745c5c3_Var24 string
 			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(tag)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 204, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 215, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 			if templ_7745c5c3_Err != nil {
@@ -408,7 +408,7 @@ func LanguageSwitch(page Page) templ.Component {
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.Path)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 205, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 216, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 			if templ_7745c5c3_Err != nil {
@@ -426,7 +426,7 @@ func LanguageSwitch(page Page) templ.Component {
 				var templ_7745c5c3_Var26 string
 				templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.Query)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 207, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 218, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 				if templ_7745c5c3_Err != nil {
@@ -444,7 +444,7 @@ func LanguageSwitch(page Page) templ.Component {
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(tag)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 211, Col: 15}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 222, Col: 15}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 			if templ_7745c5c3_Err != nil {
@@ -467,7 +467,7 @@ func LanguageSwitch(page Page) templ.Component {
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(page.Name(tag))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 215, Col: 21}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 226, Col: 21}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 			if templ_7745c5c3_Err != nil {
@@ -518,7 +518,7 @@ func AccountNav(page Page) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.T("identity.header.account"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 226, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 237, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 		if templ_7745c5c3_Err != nil {
@@ -536,7 +536,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.header.signed_in_as", page.Account))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 228, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 239, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 			if templ_7745c5c3_Err != nil {
@@ -549,7 +549,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var32 templ.SafeURL
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/signout"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 229, Col: 79}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 240, Col: 79}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -562,7 +562,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 230, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 241, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var33)
 			if templ_7745c5c3_Err != nil {
@@ -575,7 +575,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.signout.submit"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 231, Col: 61}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 242, Col: 61}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -588,7 +588,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var35 templ.SafeURL
 			templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/account/password"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 233, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 244, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 			if templ_7745c5c3_Err != nil {
@@ -601,7 +601,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.header.password"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 233, Col: 108}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 244, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var36))
 			if templ_7745c5c3_Err != nil {
@@ -614,7 +614,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var37 templ.SafeURL
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/account/security"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 234, Col: 69}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 245, Col: 69}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
@@ -627,7 +627,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.header.security"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 234, Col: 108}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 245, Col: 108}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 			if templ_7745c5c3_Err != nil {
@@ -645,7 +645,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var39 templ.SafeURL
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/signin"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 236, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 247, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var39))
 			if templ_7745c5c3_Err != nil {
@@ -658,7 +658,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.link.signin"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 236, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 247, Col: 94}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -671,7 +671,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var41 templ.SafeURL
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/" + page.Language + "/signup"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 237, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 248, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -684,7 +684,7 @@ func AccountNav(page Page) templ.Component {
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(page.T("identity.link.signup"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 237, Col: 94}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/layout.templ`, Line: 248, Col: 94}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 			if templ_7745c5c3_Err != nil {

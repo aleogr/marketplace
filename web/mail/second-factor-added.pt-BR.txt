@@ -1,0 +1,6 @@
+Subject: Um segundo fator foi adicionado à sua conta em {{.From}}
+Olá, {{.Name}}.
+
+Um novo segundo fator acabou de ser adicionado à sua conta em {{.From}}: {{if eq .Method "totp"}}um aplicativo autenticador{{else if eq .Method "webauthn"}}uma chave de segurança ou dispositivo{{else}}códigos por e-mail{{end}}. A partir de agora, ao entrar, pedimos um segundo fator depois da senha.
+
+Se não foi você, outra pessoa está usando sua conta: altere sua senha e remova o segundo fator que você não reconhece na página de segurança da conta.

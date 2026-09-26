@@ -67,12 +67,13 @@
       },
     });
 
-  // The page's own message, in its language, for a ceremony the person
-  // cancelled or the browser could not complete. It is hidden and shown again
-  // only after a frame has been drawn without it, so that a second failure is
-  // announced again rather than left as an alert already read.
-  const failed = () => {
-    const message = document.getElementById("key-failed");
+  // The page's own messages, in its language: one for a browser that has no
+  // WebAuthn at all, one for a ceremony the person cancelled or the browser
+  // could not complete. A message is hidden and shown again only after a
+  // frame has been drawn without it, so that a second failure is announced
+  // again rather than left as an alert already read.
+  const show = (id) => {
+    const message = document.getElementById(id);
     if (message) {
       message.hidden = true;
       requestAnimationFrame(() =>
@@ -82,21 +83,24 @@
       );
     }
   };
+  const unsupported = () => show("key-unsupported");
+  const failed = () => show("key-failed");
 
   for (const form of document.querySelectorAll("form[data-webauthn]")) {
     const button = form.querySelector("button[type=submit]");
     // The page hides the button, so that nothing posts an empty answer, and
     // spends an attempt, where no key can answer: without this script, or in
-    // a browser without WebAuthn, which is told so here instead.
+    // a browser without WebAuthn, which is told so here instead of being
+    // asked to try again.
     if (window.PublicKeyCredential) {
       button.hidden = false;
     } else {
-      failed();
+      unsupported();
     }
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!window.PublicKeyCredential) {
-        failed();
+        unsupported();
         return;
       }
       button.disabled = true;

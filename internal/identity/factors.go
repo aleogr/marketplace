@@ -148,9 +148,17 @@ func (s *Service) BeginApp(ctx context.Context, v Visit, session Session) (AppEn
 }
 
 // PendingApp returns the app enrolment the session has in progress, so the
-// page can be shown again after a wrong code; ErrNoEnrolment when there is
-// none, or it expired.
+// page can be shown again after a wrong code or a reload; ErrNoEnrolment when
+// there is none, or it expired. It shows the secret, so it asks what BeginApp
+// asks, whatever the route in front of it checks: an enrolment outlives the
+// step-up that started it (EnrolmentLifetime, StepUpLifetime).
 func (s *Service) PendingApp(ctx context.Context, v Visit, session Session) (AppEnrolment, error) {
+	if !s.policy.Permits(session.Account.Kind, MethodApp, Enrol) {
+		return AppEnrolment{}, ErrNotPermitted
+	}
+	if s.NeedsStepUp(session, ActionFactors) {
+		return AppEnrolment{}, ErrStepUpNeeded
+	}
 	if s.sealer == nil {
 		return AppEnrolment{}, errNoSealer
 	}
@@ -218,7 +226,10 @@ func (s *Service) ConfirmApp(ctx context.Context, v Visit, session Session, labe
 		if issued, err = s.firstRecoverySet(ctx, tx, v, account, hashes); err != nil {
 			return err
 		}
-		return s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodApp)})
+		if err := s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodApp)}); err != nil {
+			return err
+		}
+		return notify(ctx, tx, v, session.Account, "second-factor-added", map[string]string{"Method": string(MethodApp)})
 	})
 	switch {
 	case err != nil:
@@ -284,8 +295,11 @@ func (s *Service) RemoveFactor(ctx context.Context, v Visit, session Session, id
 				return err
 			}
 		}
-		return s.recordWith(ctx, tx, v, account, "identity.second_factor_removed",
-			map[string]string{"method": string(removed.Method)})
+		if err := s.recordWith(ctx, tx, v, account, "identity.second_factor_removed",
+			map[string]string{"method": string(removed.Method)}); err != nil {
+			return err
+		}
+		return notify(ctx, tx, v, session.Account, "second-factor-removed", map[string]string{"Method": string(removed.Method)})
 	})
 }
 

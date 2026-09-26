@@ -5,13 +5,22 @@ package web
 // sign-in). Methods are what the account may answer with, strongest first,
 // and Method the one shown; Recovery says a recovery code may answer. Base is
 // this page's own address with its query so far, ending in ? or &, which the
-// links to the other methods complete.
+// links to the other methods complete. Method is empty when nothing is left
+// to answer with.
 type Challenge struct {
 	Action   string
 	Methods  []string
 	Method   string
 	Recovery bool
-	Base     string
+	// CodesLocked says the account's codes are refused after too many
+	// failed second factors in a row, until its password is changed or a
+	// key or a recovery code is accepted (F14 spec, D8).
+	CodesLocked bool
+	// LockRefused says the page answers what the lock refused — a code
+	// posted, or a code asked for by e-mail — so the lock's message is an
+	// alert rather than a status.
+	LockRefused bool
+	Base        string
 	// Next is where a step-up returns to, as a path below the language.
 	Next string
 	// Sent says an e-mail code was just sent.

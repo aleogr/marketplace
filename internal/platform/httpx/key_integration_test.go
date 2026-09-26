@@ -130,3 +130,77 @@ func TestTheKeyButtonWaitsForTheScript(t *testing.T) {
 		t.Errorf("the button that answers with the key, %s, is shown before the script runs", answering)
 	}
 }
+
+// The key's messages, as each language words them.
+var (
+	keyUnsupported = map[string]string{
+		"pt-BR": "Este navegador não consegue usar uma chave de segurança nem a digital, o rosto ou o PIN deste dispositivo. Escolha outro jeito.",
+		"en-US": "This browser cannot use a security key or this device's fingerprint, face or PIN. Choose another way.",
+	}
+	keyNeedsScript = map[string]string{
+		"pt-BR": "A chave de segurança precisa de JavaScript, que está desligado neste navegador. Ative-o ou escolha outro jeito.",
+		"en-US": "A security key needs JavaScript, which is off in this browser. Turn it on, or choose another way.",
+	}
+	keyEnrolNeedsScript = map[string]string{
+		"pt-BR": "Adicionar uma chave precisa de JavaScript neste navegador.",
+		"en-US": "Adding a key needs JavaScript in this browser.",
+	}
+)
+
+// Every page that uses a key carries, hidden, the message the script shows
+// when the browser has no WebAuthn — not "try again", which cannot help — and
+// the one it shows when a ceremony fails; and what a browser with no script
+// reads instead, in each language.
+func TestTheKeyPagesCarryTheirMessagesHidden(t *testing.T) {
+	handler, service, marketplace := bilingualSite(t)
+	b := signedInBrowser(t, handler, service, marketplace)
+	failed := map[string]string{
+		"pt-BR": "O navegador não concluiu. Tente de novo ou escolha outro jeito.",
+		"en-US": "The browser did not finish. Try again, or choose another way.",
+	}
+	check := func(path, language string) {
+		t.Helper()
+		page := b.get(path)
+		body := page.Body.String()
+		if page.Code != http.StatusOK {
+			t.Fatalf("%s: status %d, body %s", path, page.Code, body)
+		}
+		for _, want := range []string{
+			`<p id="key-unsupported" role="alert" hidden>` + html.EscapeString(keyUnsupported[language]) + `</p>`,
+			`<p id="key-failed" role="alert" hidden>` + html.EscapeString(failed[language]) + `</p>`,
+			`<noscript><p>` + html.EscapeString(keyNeedsScript[language]) + `</p></noscript>`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s does not carry %s: %s", path, want, body)
+			}
+		}
+	}
+	for _, language := range []string{"pt-BR", "en-US"} {
+		check("/"+language+"/account/security/key", language)
+	}
+	storedKey(t, marketplace)
+	for _, language := range []string{"pt-BR", "en-US"} {
+		check("/"+language+"/account/verify?for=factors&next=%2Faccount%2Fsecurity", language)
+	}
+}
+
+// Without the script, Enter in the label's field posts the form with no
+// credential: the page says that adding a key needs JavaScript, rather than
+// that the key's answer could not be verified, and keeps the label.
+func TestAKeyAddedWithoutTheScriptSaysItNeedsIt(t *testing.T) {
+	handler, service, marketplace := bilingualSite(t)
+	b := signedInBrowser(t, handler, service, marketplace)
+	for _, language := range []string{"pt-BR", "en-US"} {
+		b.get("/" + language + "/account/security/key")
+		refused := b.post("/"+language+"/account/security/key", url.Values{"label": {"YubiKey"}, "credential": {""}})
+		body := refused.Body.String()
+		if refused.Code != http.StatusUnprocessableEntity ||
+			!strings.Contains(body, `role="alert">`+html.EscapeString(keyEnrolNeedsScript[language])+`</p>`) ||
+			!strings.Contains(body, `value="YubiKey"`) {
+			t.Fatalf("a key posted with no credential in %s: status %d, body %s", language, refused.Code, body)
+		}
+		if strings.Contains(body, "Não foi possível verificar") || strings.Contains(body, "could not be verified") {
+			t.Fatalf("a key posted with no credential in %s reads as a refused answer: %s", language, body)
+		}
+	}
+}

@@ -8,7 +8,9 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -158,5 +160,114 @@ func TestAPasswordChangedMidChangeIsRefused(t *testing.T) {
 	}
 	if strings.Contains(logged.String(), "correct horse") || strings.Contains(logged.String(), "brand new") {
 		t.Errorf("the log carries a password: %q", logged.String())
+	}
+}
+
+// A sign-in's second step opened with the old password dies with it: a right
+// code on that challenge, after the password changed in another session, is
+// refused as a challenge that no longer exists (D3, D2).
+func TestAPasswordChangeEndsTheSignInsTheOldPasswordOpened(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session, token, enrolment := withAppSignedIn(t, s, db, one, "r@example.test")
+	opened := challenged(t, s, one, "r@example.test")
+
+	stepped := stepUp(t, s, one, token, session, ActionPassword, enrolment)
+	if _, err := s.ChangePassword(t.Context(), visit(one), stepped, "correct horse battery staple", "a brand new passphrase"); err != nil {
+		t.Fatalf("ChangePassword = %v", err)
+	}
+	s.now = func() time.Time { return time.Now().Add(time.Minute) }
+	if _, err := s.CompleteSignIn(t.Context(), visit(one), opened,
+		Answer{Method: MethodApp, Code: nextAppCode(t, s, enrolment)}); !errors.Is(err, ErrChallengeInvalid) {
+		t.Fatalf("the old password's challenge after the change = %v, want ErrChallengeInvalid", err)
+	}
+}
+
+// A sign-in whose password was checked before a change, and whose challenge
+// is written while the change waits for the password's row, is ended too:
+// the change deletes the challenges after it holds the credential, so it
+// sees every challenge the old password opened.
+func TestASignInOpenedWhileThePasswordChangesIsEnded(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session, token, enrolment := withAppSignedIn(t, s, db, one, "r@example.test")
+	stepped := stepUp(t, s, one, token, session, ActionPassword, enrolment)
+	account := session.Account.ID
+	opened, hash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The sign-in's transaction, held between locking the password it
+	// verified and writing its challenge, as SignIn takes them.
+	holding := make(chan string, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseA := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseA()
+	doneA := make(chan error, 1)
+	go func() {
+		doneA <- db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+			var secret, xid string
+			if err := tx.QueryRow(t.Context(), `
+				SELECT secret, xid(pg_current_xact_id())::text FROM credential
+				 WHERE account_id = $1 AND kind = 'password' FOR UPDATE`, account).Scan(&secret, &xid); err != nil {
+				return err
+			}
+			holding <- xid
+			<-release
+			return insertChallenge(t.Context(), tx, one, account, hash, "", "", time.Now())
+		})
+	}()
+	var xid string
+	select {
+	case xid = <-holding:
+	case err := <-doneA:
+		t.Fatalf("the sign-in = %v", err)
+	}
+
+	doneB := make(chan error, 1)
+	go func() {
+		_, err := s.ChangePassword(t.Context(), visit(one), stepped, "correct horse battery staple", "a brand new passphrase")
+		doneB <- err
+	}()
+	waitsFor(t, db, one, xid, doneB)
+	releaseA()
+	if err := <-doneA; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-doneB; err != nil {
+		t.Fatalf("ChangePassword = %v", err)
+	}
+	s.now = func() time.Time { return time.Now().Add(time.Minute) }
+	if _, err := s.CompleteSignIn(t.Context(), visit(one), opened,
+		Answer{Method: MethodApp, Code: nextAppCode(t, s, enrolment)}); !errors.Is(err, ErrChallengeInvalid) {
+		t.Fatalf("the challenge written during the change = %v, want ErrChallengeInvalid", err)
+	}
+}
+
+// A password change leaves the step-ups of other sessions alone: they are
+// not sign-ins, and the session that would answer one was ended with the
+// rest.
+func TestAPasswordChangeKeepsItsOwnStepUps(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session, token, enrolment := withAppSignedIn(t, s, db, one, "r@example.test")
+	stepped := stepUp(t, s, one, token, session, ActionPassword, enrolment)
+	pending, err := s.BeginStepUp(t.Context(), visit(one), stepped, ActionFactors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ChangePassword(t.Context(), visit(one), stepped, "correct horse battery staple", "a brand new passphrase"); err != nil {
+		t.Fatalf("ChangePassword = %v", err)
+	}
+	var left int
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		return tx.QueryRow(t.Context(), `SELECT count(*) FROM sign_in_challenge WHERE token_hash = $1`, HashToken(pending)).Scan(&left)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if left != 1 {
+		t.Fatalf("the step-up's challenge rows after the change = %d, want 1: only sign-ins are ended", left)
 	}
 }

@@ -55,11 +55,13 @@ func (s *Service) BeginStepUp(ctx context.Context, v Visit, session Session, act
 	}
 	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		ch := challenge{Account: session.Account.ID, Session: session.ID, Action: action}
-		methods, recovery, err := s.offers(ctx, tx, session.Account, ch)
+		o, err := s.offers(ctx, tx, session.Account, ch)
 		if err != nil {
 			return err
 		}
-		if len(methods) == 0 && !recovery {
+		// A locked account with nothing else to answer with still opens
+		// one, so that its page can say why (D8).
+		if len(o.Methods) == 0 && !o.Recovery && !o.CodesLocked {
 			return ErrNoSecondFactor
 		}
 		return insertChallenge(ctx, tx, v.Marketplace, session.Account.ID, hash, session.ID, action, s.now())
@@ -74,23 +76,24 @@ func (s *Service) BeginStepUp(ctx context.Context, v Visit, session Session, act
 // account's second factors marks the session stepped up now; a code to the
 // account's address that is not one of them proves only the address, for the
 // actions that accept it (§18.2), and never lets the password or the factors
-// change (D2, D4). Either way it audits the method and the action it was for.
+// change (D2, D4). It audits which it was — identity.stepped_up or
+// identity.email_confirmed — with the method and the action it was for.
 func (s *Service) StepUp(ctx context.Context, v Visit, session Session, token string, answer Answer) error {
 	return s.answerChallenge(ctx, v, token, session.ID, answer, func(tx pgx.Tx, ch challenge, account Account, now time.Time) error {
-		mark := markSteppedUp
+		mark, action := markSteppedUp, "identity.stepped_up"
 		if answer.Method == MethodEmail {
 			factor, err := hasEmailFactor(ctx, tx, account.ID)
 			if err != nil {
 				return err
 			}
 			if !factor {
-				mark = markEmailConfirmed
+				mark, action = markEmailConfirmed, "identity.email_confirmed"
 			}
 		}
 		if err := mark(ctx, tx, session.ID, now); err != nil {
 			return err
 		}
-		return s.recordWith(ctx, tx, v, account.ID, "identity.stepped_up",
+		return s.recordWith(ctx, tx, v, account.ID, action,
 			map[string]string{"method": string(answer.Method), "action": string(ch.Action)})
 	})
 }

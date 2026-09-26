@@ -1,3 +1,3 @@
 <p>Hello, {{.Name}}.</p>
-<p>Your code is <strong>{{.Code}}</strong>. It works once, for ten minutes.</p>
+<p>Your code {{if eq .Purpose "signin"}}to sign in{{else if eq .Purpose "enrol"}}to add e-mail as a second factor{{else}}to confirm a change to your account{{end}} at {{.From}} is <strong>{{.Code}}</strong>. It works once, for ten minutes.</p>
 <p>Nobody from {{.From}} will ever ask you for this code. If you did not ask for it, change your password.</p>

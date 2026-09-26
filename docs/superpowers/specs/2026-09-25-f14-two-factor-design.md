@@ -1,7 +1,9 @@
 # F14 — Two-factor authentication: design
 
 **Date:** 2026-09-25
-**Status:** agreed with the owner, not yet implemented
+**Status:** implemented on 2026-09-25, in aleogr/marketplace #81 (design and plan), #82 and #83
+(the app), #84 (the two-step sign-in, the step-up and e-mail codes), #85 and #86 (keys) and #87
+(the notices, the failure counter and the closing)
 **Delivers:** roadmap F14 (`docs/roadmap.md`), against `docs/requirements.md` §18.2 and
 `docs/design.md` §4 and item 5 of its decisions list.
 
@@ -41,10 +43,11 @@ the step-up they will call is delivered here. `docs/requirements.md` §18.2 reco
 a half-authenticated session and over a signed cookie on 2026-09-25. A correct password on an
 account with a second factor creates a `sign_in_challenge`: a random token in its own cookie, stored
 as its SHA-256, valid for 5 minutes, at most 5 attempts, used once. The session is created only when
-the second factor is accepted. The `session` table keeps holding complete sessions only, so the F13
-middleware and everything that reads a session stay as they are; there is no half-session to forget
-to check. A signed stateless cookie was rejected because it can neither count attempts nor be
-revoked.
+the second factor is accepted, and a password change ends the account's open sign-in challenges,
+since the second step does not check the password again. The `session` table keeps holding complete
+sessions only, so the F13 middleware and everything that reads a session stay as they are; there is
+no half-session to forget to check. A signed stateless cookie was rejected because it can neither
+count attempts nor be revoked.
 
 **D4. A step-up lasts ten minutes.** The session gains `stepped_up_at`, set when a second factor is
 accepted at sign-in or at a step-up. A sensitive action requires it to be less than ten minutes old,
@@ -83,6 +86,35 @@ implemented in the package, about forty lines over `crypto/hmac`, and tested aga
 vectors; a dependency would add more than it saves. The enrolment QR code uses `rsc.io/qr`, rendered
 as a PNG data URI (the CSP already allows `img-src data:`).
 
+**D8. Consecutive failed second factors are counted, announced and, at a hundred, stop the codes.**
+The owner chose this on 2026-09-25, and confirmed on 2026-09-26 that the lock applies at the
+step-up as well as at sign-in (a stolen session could otherwise keep guessing there). Without it,
+someone who has the password is bounded only by the shared per-address sign-in limit (10 attempts
+per 15 minutes): about 770 guesses a day at a six-digit code, roughly 0.2% a day and even odds
+within a year, and the person never knows. NIST SP 800-63B §5.2.2 caps consecutive failed attempts
+on one account at 100. So, per account:
+- every failed answer to the second step or to a step-up with a second factor counts — a wrong app
+  or e-mail-factor code, a wrong recovery code, a refused key; a challenge that is unknown, expired
+  or used does not, because no answer was checked, and neither does a code sent to the account's
+  address when e-mail is not one of its factors, which proves the address and not a second factor
+  (D4);
+- any accepted second factor, at sign-in or at a step-up, ends the run, and so does a password
+  change;
+- at the 10th failure in a row the person is told by e-mail (`second-factor-failures`) that someone
+  who knows the password, or is signed in to the account, keeps failing its second factor, and to
+  change the password if it was not them; audited as `identity.second_factor_failures_notified`;
+- at the 100th consecutive failure, codes from an authenticator app or by e-mail are refused at
+  sign-in and at the step-up until the password is changed or a key or a recovery code is accepted
+  (either lifts it): the challenge no longer offers them, an answer with one is refused without
+  being checked, and the page says so while still offering a key and a recovery code. The person is
+  told by e-mail (`second-factor-locked`); audited as `identity.second_factor_locked`.
+
+Each notice is sent once per run, when the count becomes exactly 10 or exactly 100. The count lives
+in its own table, `second_factor_failure`, rather than on `account`: an answer locks its challenge
+and then the factor rows, while removing a factor locks the account and then the factor rows, so
+writing the account after the factor rows could close a lock cycle. Every path takes the count's row
+last.
+
 ## Data model
 
 Under row-level security like every tenant table (`current_marketplace_id()`); every row carries
@@ -95,6 +127,7 @@ Under row-level security like every tenant table (`current_marketplace_id()`); e
 | `email_code` | `account_id`, `purpose`, `code_hash`, `expires_at`, `attempts`, `used_at` |
 | `sign_in_challenge` | `token_hash`, `account_id`, `session_id` and `action` (set when the challenge is a step-up, so only that session can answer it), `expires_at`, `attempts`, `used_at`, `webauthn_session` (the WebAuthn challenge) |
 | `factor_enrolment` | the pending enrolment between showing the page and the proving answer: an app's sealed secret or a key's registration ceremony, so the server, not the browser, chooses the secret; short-lived, one per session |
+| `second_factor_failure` | `account_id`, `failures` (the run of failed second factors, D8), `updated_at`; no row is a run of zero |
 | `session` (F13) | gains `stepped_up_at`, and `email_confirmed_at` (D4) |
 
 An account "has 2FA" when it has at least one `second_factor`. Removing the last one turns 2FA off
@@ -108,6 +141,16 @@ with N accounts of ten codes each, finding some account's code takes about 2^60/
 falls as the marketplace grows. Binding the stored hash to the account (of the account id and the
 code) forces a search per account instead, about 2^60/10 hashes each whatever N is; decided with the
 owner on 2026-09-25.
+
+**Known limit, stated (D8):** an account whose codes are locked and whose only second factors are an
+app or e-mail, with no recovery code left, cannot confirm at sign-in or at a step-up, so it can
+neither sign in nor change its password: it waits for account recovery (F16). Someone who has the
+password can also lock an account's codes on purpose, and so can someone holding a signed-in session
+of the account, through failed step-ups, without knowing the password; the person is told at the
+10th and the 100th failure, a key or a recovery code still works and lifts the lock, and so does a
+new password. The count is read without a lock when a challenge is checked, so an answer already
+being checked when another reaches the 100th is still checked; each needs a challenge of its own,
+which needs the password and the sign-in limit, or a signed-in session and the step-up limit.
 
 ## Flows
 
@@ -137,7 +180,8 @@ limiter (`step-up`, 10 answers per account per 15 minutes) stops a stolen sessio
 challenge after challenge.
 
 **Removal and recovery codes.** Removing a method sends an e-mail saying so. A recovery code used at
-sign-in sends an e-mail and shows, on the next page, how many remain.
+sign-in or at a step-up sends an e-mail saying which, and, at sign-in, shows on the next page how
+many remain.
 
 **Policy** (`identity.Policy`, one service every path consults):
 - Buyers: 2FA optional, any method.
@@ -152,13 +196,16 @@ sign-in sends an e-mail and shows, on the next page, how many remain.
 file served by the site, loaded with the page's nonce under the existing CSP (`script-src 'self'
 'nonce-…'`), no inline script. Without JavaScript, the app and the e-mail code still work.
 
-**Mail** (en-US and pt-BR, text and HTML): the code, method added, method removed, recovery code used.
+**Mail** (en-US and pt-BR, text and HTML): the code (saying what it is for, and kept out of the
+subject), method added, method removed, recovery code used (saying whether it signed in or
+confirmed a change), repeated failures of the second step and codes locked (D8).
 The code travels through the outbox, whose variables are cleared once dispatched (migration 00010),
 so it does not stay in the database after delivery.
 
-**Audit:** enrolment, removal, sign-in with a second factor (naming the method), step-up, recovery
-code used, recovery codes regenerated, a failed second factor, a WebAuthn counter that did not move
-forward.
+**Audit:** enrolment, removal, sign-in with a second factor (naming the method), step-up, an address
+proved by a code sent to it that is not a second factor (`identity.email_confirmed`, apart from the
+step-up's `identity.stepped_up`, D4), recovery code used, recovery codes regenerated, a failed second
+factor, a WebAuthn counter that did not move forward, the failures notice and the codes locked (D8).
 
 Every page, message and e-mail exists in en-US and pt-BR.
 

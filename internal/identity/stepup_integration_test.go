@@ -111,6 +111,41 @@ func TestAStepUpOlderThanTenMinutesIsRefused(t *testing.T) {
 	}
 }
 
+// The app the session is adding is shown again only as its start was: to a
+// kind of account that may use an app, and, once the account has 2FA, within
+// a recent step-up (D2). The add-app page reuses a live enrolment, which
+// outlives the step-up, so without its own checks a session whose step-up
+// has gone stale could still read the pending secret.
+func TestThePendingAppAsksWhatBeginAppAsks(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session, token, enrolment := withAppSignedIn(t, s, db, one, "r@example.test")
+	v := visit(one)
+	stepped := stepUp(t, s, one, token, session, ActionFactors, enrolment)
+	started, err := s.BeginApp(t.Context(), v, stepped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := s.PendingApp(t.Context(), v, stepped); err != nil || pending.Key != started.Key {
+		t.Fatalf("PendingApp within the step-up = %+v, %v; want the key BeginApp showed", pending, err)
+	}
+
+	unknown := stepped
+	unknown.Account.Kind = UserKind("unknown")
+	if _, err := s.PendingApp(t.Context(), v, unknown); !errors.Is(err, ErrNotPermitted) {
+		t.Fatalf("PendingApp for a kind that may not use an app = %v, want ErrNotPermitted", err)
+	}
+
+	if StepUpLifetime >= EnrolmentLifetime {
+		t.Fatal("an enrolment no longer outlives a step-up, so this no longer tests the step-up")
+	}
+	later := time.Now().UTC().Add(StepUpLifetime)
+	s.now = func() time.Time { return later }
+	if _, err := s.PendingApp(t.Context(), v, stepped); !errors.Is(err, ErrStepUpNeeded) {
+		t.Fatalf("PendingApp ten minutes after the step-up = %v, want ErrStepUpNeeded", err)
+	}
+}
+
 // Whoever has a second factor proves it before changing the password (D2),
 // and the session the change opens keeps that step-up.
 func TestThePasswordChangeAsksForTheSecondFactor(t *testing.T) {
@@ -234,8 +269,11 @@ func TestAnEmailCodeForACardIsNotASecondFactor(t *testing.T) {
 	if err := s.StepUp(t.Context(), v, session, challenge, Answer{Method: MethodEmail, Code: lastCode(t, db, one)}); err != nil {
 		t.Fatalf("StepUp with the e-mail code = %v", err)
 	}
-	if stepped := trail.entry(t, "identity.stepped_up"); string(stepped.After) != `{"action":"add_card","method":"email","user_agent":"test"}` {
-		t.Fatalf("stepped_up recorded as %s", stepped.After)
+	if proved := trail.entry(t, "identity.email_confirmed"); string(proved.After) != `{"action":"add_card","method":"email","user_agent":"test"}` {
+		t.Fatalf("email_confirmed recorded as %s", proved.After)
+	}
+	if n := trail.audited("identity.stepped_up"); n != 0 {
+		t.Fatalf("the address proved was audited as %d step-ups", n)
 	}
 	confirmed, err := s.Authenticate(t.Context(), one, token)
 	if err != nil || confirmed.SteppedUpAt != nil || confirmed.EmailConfirmedAt == nil {
@@ -274,7 +312,7 @@ func TestAnEmailCodeForACardIsNotASecondFactor(t *testing.T) {
 // An account whose second factor is e-mail steps up with an e-mail code for
 // anything, its factors included: there the code is the factor.
 func TestAnEmailFactorStepsUpForTheFactors(t *testing.T) {
-	s, db, one, _, _ := service(t)
+	s, db, one, _, trail := service(t)
 	sealed(t, s)
 	confirmed(t, s, db, one, "r@example.test")
 	token := signIn(t, s, one, "r@example.test", "correct horse battery staple")
@@ -308,6 +346,12 @@ func TestAnEmailFactorStepsUpForTheFactors(t *testing.T) {
 	stepped, err := s.Authenticate(t.Context(), one, token)
 	if err != nil || stepped.SteppedUpAt == nil {
 		t.Fatalf("the session after the step-up = %+v, %v; want it stepped up", stepped, err)
+	}
+	if entry := trail.entry(t, "identity.stepped_up"); string(entry.After) != `{"action":"factors","method":"email","user_agent":"test"}` {
+		t.Fatalf("stepped_up recorded as %s", entry.After)
+	}
+	if n := trail.audited("identity.email_confirmed"); n != 0 {
+		t.Fatalf("a step-up with the e-mail factor was audited as %d addresses proved", n)
 	}
 	for _, action := range []Action{ActionFactors, ActionPassword} {
 		if s.NeedsStepUp(stepped, action) {

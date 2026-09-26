@@ -28,7 +28,9 @@ const (
 )
 
 // A code's purpose: the second step of a sign-in, a step-up, or adding e-mail
-// as a second factor. A code of one is never accepted for another.
+// as a second factor. A code of one is never accepted for another. The code's
+// mail receives it as its Purpose, and web/mail/second-factor-code.* words
+// each value.
 const (
 	purposeSignIn = "signin"
 	purposeStepUp = "stepup"
@@ -162,7 +164,9 @@ func (s *Service) sendCode(ctx context.Context, tx pgx.Tx, v Visit, account Acco
 	return mail.Request(ctx, tx, mail.Message{
 		Template: "second-factor-code", Language: v.Language, To: account.Email,
 		From: v.MarketplaceName, Marketplace: v.Marketplace,
-		Variables: map[string]string{"Name": account.Name, "Code": code},
+		// The mail says what the code is for, so that a code nobody asked
+		// for reads as the warning it is; the template words the purpose.
+		Variables: map[string]string{"Name": account.Name, "Code": code, "Purpose": purpose},
 	})
 }
 
@@ -176,18 +180,23 @@ func purposeOf(ch challenge) string {
 
 // SendChallengeCode mails a code that answers the challenge a token opened,
 // for the session sessionID steps up, or for none at sign-in, when the
-// challenge accepts one.
+// challenge accepts one. While the account's codes are locked it accepts
+// none, and the refusal is ErrCodesLocked, so that a page opened before the
+// lock can say why (D8); otherwise ErrNotPermitted.
 func (s *Service) SendChallengeCode(ctx context.Context, v Visit, token, sessionID string) error {
 	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
 		ch, account, err := s.challenge(ctx, tx, token, sessionID)
 		if err != nil {
 			return err
 		}
-		methods, _, err := s.offers(ctx, tx, account, ch)
+		o, err := s.offers(ctx, tx, account, ch)
 		if err != nil {
 			return err
 		}
-		if !slices.Contains(methods, MethodEmail) {
+		if !slices.Contains(o.Methods, MethodEmail) {
+			if o.CodesLocked {
+				return ErrCodesLocked
+			}
 			return ErrNotPermitted
 		}
 		return s.sendCode(ctx, tx, v, account, purposeOf(ch), s.now())
@@ -267,7 +276,10 @@ func (s *Service) ConfirmEmail(ctx context.Context, v Visit, session Session, co
 			VALUES ($1, $2, 'email', '', $3)`, account, v.Marketplace, now); err != nil {
 			return err
 		}
-		return s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodEmail)})
+		if err := s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodEmail)}); err != nil {
+			return err
+		}
+		return notify(ctx, tx, v, session.Account, "second-factor-added", map[string]string{"Method": string(MethodEmail)})
 	})
 	if err == nil && wrong {
 		return ErrCodeWrong

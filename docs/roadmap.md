@@ -637,7 +637,7 @@ release (§18.1); the revocation it depends on is delivered here.
 
 ### F14 — Two-factor authentication
 
-- [ ] **Objective:** security keys, authenticator apps and e-mail codes, with the per-user-type
+- [x] **Objective:** security keys, authenticator apps and e-mail codes, with the per-user-type
   policy and the recovery codes of §18.2.
 
 **Depends on:** F13, F11.

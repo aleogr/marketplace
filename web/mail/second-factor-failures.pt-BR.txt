@@ -1,0 +1,6 @@
+Subject: Alguém está errando a segunda etapa da sua conta em {{.From}}
+Olá, {{.Name}}.
+
+Alguém que sabe sua senha, ou que entrou na sua conta, errou repetidas vezes o segundo fator da sua conta em {{.From}}, ao entrar ou ao confirmar uma alteração: todas as respostas, uma após a outra, estavam erradas.
+
+Se foi você, não há nada a fazer. Se não foi você, alguém tem sua senha ou uma das suas sessões: altere sua senha agora, o que também encerra todas as outras sessões. Se as respostas erradas continuarem, códigos de aplicativo autenticador ou por e-mail deixarão de funcionar na sua conta até que a senha seja alterada ou que uma chave de segurança ou um código de recuperação seja usado; ambos continuarão funcionando.

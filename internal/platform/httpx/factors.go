@@ -127,11 +127,18 @@ func (s Site) renderApp(w http.ResponseWriter, r *http.Request, status int, enro
 	renderStatus(w, r, status, web.EnrolApp(s.page(r, securityPath+"/app"), view))
 }
 
-// appForm starts adding an app: each visit draws a new secret, so a page
-// left open elsewhere is not the one that is confirmed.
+// appForm shows the app the session is adding, or starts adding one when
+// there is none live. A reload — a phone reloads a tab it discarded, and the
+// page is kept out of the back-forward cache — must not replace the secret
+// the person may already have typed into their app, which would make their
+// code "wrong"; the enrolment's lifetime still bounds how long one secret
+// is offered.
 func (s Site) appForm(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
-	enrolment, err := s.identity.Service.BeginApp(r.Context(), visit(r), session)
+	enrolment, err := s.identity.Service.PendingApp(r.Context(), visit(r), session)
+	if errors.Is(err, identity.ErrNoEnrolment) {
+		enrolment, err = s.identity.Service.BeginApp(r.Context(), visit(r), session)
+	}
 	if errors.Is(err, identity.ErrNotPermitted) {
 		http.NotFound(w, r)
 		return
@@ -188,11 +195,17 @@ func (s Site) addApp(w http.ResponseWriter, r *http.Request) {
 	}
 	view.Form.Field = appFields[view.Form.Error]
 	enrolment, err := s.identity.Service.PendingApp(r.Context(), visit(r), session)
-	if errors.Is(err, identity.ErrNoEnrolment) {
+	switch {
+	case errors.Is(err, identity.ErrNoEnrolment):
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath+"/app", http.StatusSeeOther)
 		return
-	}
-	if err != nil {
+	case errors.Is(err, identity.ErrNotPermitted):
+		http.NotFound(w, r)
+		return
+	case errors.Is(err, identity.ErrStepUpNeeded):
+		toStepUp(w, r, identity.ActionFactors, securityPath+"/app")
+		return
+	case err != nil:
 		s.failed(w, r, "an app enrolment could not be read", err)
 		return
 	}
@@ -332,12 +345,20 @@ func (s Site) keyForm(w http.ResponseWriter, r *http.Request) {
 }
 
 // addKey adds the key the browser registered. The first app or key shows the
-// recovery codes, once.
+// recovery codes, once. A form with no credential was posted without the
+// script — Enter in the label's field, where the button is hidden — and is
+// told so, rather than that a key's answer could not be verified.
 func (s Site) addKey(w http.ResponseWriter, r *http.Request) {
 	session, _ := SessionFrom(r.Context())
 	label := r.PostFormValue("label")
-	codes, err := s.identity.Service.ConfirmKey(r.Context(), visit(r), session, label, []byte(r.PostFormValue("credential")))
 	view := web.KeyEnrolment{Label: label}
+	credential := r.PostFormValue("credential")
+	if strings.TrimSpace(credential) == "" {
+		view.Form.Error = "identity.key.enrol_needs_script"
+		s.renderKey(w, r, http.StatusUnprocessableEntity, view)
+		return
+	}
+	codes, err := s.identity.Service.ConfirmKey(r.Context(), visit(r), session, label, []byte(credential))
 	switch {
 	case errors.Is(err, identity.ErrNoEnrolment):
 		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+securityPath+"/key", http.StatusSeeOther)

@@ -7,7 +7,7 @@ import re
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
-from accounts import SIGNED_IN, confirmed_account, sign_in
+from accounts import SIGNED_IN, confirmed_account, sign_in, wait_for_mail
 from factors import SIGN_OUT, virtual_authenticator
 
 
@@ -36,6 +36,8 @@ def test_adding_a_key_and_signing_in_with_it(run_marketplace, screenshots, langu
         expect(page.locator("ol.codes code")).to_have_count(10)
         page.click("main a[href$='/account/security']")
         expect(page.locator("ul.factors li strong")).to_have_text("YubiKey")
+        added = wait_for_mail(marketplace.mailbox, "second-factor-added", email)
+        assert added["variables"]["Method"] == "webauthn" and added["language"] == language, added
         page.screenshot(path=screenshots / f"f14-security-key-{language}.png", full_page=True)
 
         page.click(SIGN_OUT)

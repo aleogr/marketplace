@@ -76,7 +76,9 @@ func backToSignIn(w http.ResponseWriter, r *http.Request, why string) {
 }
 
 // shownMethod is the method a challenge page shows: the one the visitor
-// chose, when the challenge accepts it, or the strongest.
+// chose, when the challenge accepts it, or the strongest, or none when
+// nothing is left to answer with, as for an account whose codes are locked
+// and that has neither a key nor a recovery code (F14 spec, D8).
 func shownMethod(pending identity.Pending, chosen string) string {
 	method := identity.Method(chosen)
 	if slices.Contains(pending.Methods, method) || (method == identity.MethodRecovery && pending.Recovery) {
@@ -85,13 +87,16 @@ func shownMethod(pending identity.Pending, chosen string) string {
 	if len(pending.Methods) > 0 {
 		return string(pending.Methods[0])
 	}
-	return string(identity.MethodRecovery)
+	if pending.Recovery {
+		return string(identity.MethodRecovery)
+	}
+	return ""
 }
 
 // challengeView is what a challenge page shows for pending.
 func challengeView(pending identity.Pending, chosen, base string) web.Challenge {
 	view := web.Challenge{Action: string(pending.Action), Recovery: pending.Recovery, Base: base,
-		Method: shownMethod(pending, chosen)}
+		Method: shownMethod(pending, chosen), CodesLocked: pending.CodesLocked}
 	for _, method := range pending.Methods {
 		view.Methods = append(view.Methods, string(method))
 	}
@@ -122,7 +127,7 @@ func (s Site) renderSecondStep(w http.ResponseWriter, r *http.Request, status in
 		return
 	}
 	view := challengeView(pending, chosen, "/"+i18n.FromContext(r.Context())+secondStepPath+"?")
-	view.Form, view.Sent = form, r.URL.Query().Get("sent") == "1"
+	view.Form, view.Sent, view.LockRefused = form, r.URL.Query().Get("sent") == "1", status == lockRefused
 	if err := s.keyOptions(r, &view, token, ""); err != nil {
 		s.failed(w, r, "a key's options could not be prepared", err)
 		return
@@ -161,6 +166,10 @@ func wrongAnswer(method string) web.Form {
 	return web.Form{Error: "identity.challenge.wrong", Field: "code"}
 }
 
+// lockRefused is the status a challenge page answers what the lock of D8
+// refused with, and only that: the page then shows the lock as an alert.
+const lockRefused = http.StatusForbidden
+
 // codeRefusal names the message a refused request for an e-mail code is
 // shown as.
 func codeRefusal(err error) (string, bool) {
@@ -189,6 +198,10 @@ func (s Site) sendSecondStepCode(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, identity.ErrChallengeInvalid):
 		backToSignIn(w, r, "expired")
+	case errors.Is(err, identity.ErrCodesLocked):
+		// Asked for from a page opened before the lock: the page again,
+		// saying why, and what still works.
+		s.renderSecondStep(w, r, lockRefused, string(identity.MethodEmail), web.Form{})
 	case errors.Is(err, identity.ErrNotPermitted):
 		http.NotFound(w, r)
 	case err != nil:
@@ -211,6 +224,10 @@ func (s Site) answerSecondStep(w http.ResponseWriter, r *http.Request) {
 	answer := answerOf(r)
 	signed, err := s.identity.Service.CompleteSignIn(r.Context(), visit(r), token, answer)
 	switch {
+	case errors.Is(err, identity.ErrCodesLocked):
+		// The page says the codes are locked, and shows what still works.
+		s.renderSecondStep(w, r, lockRefused, string(answer.Method), web.Form{})
+		return
 	case errors.Is(err, identity.ErrCodeWrong):
 		s.renderSecondStep(w, r, http.StatusUnauthorized, string(answer.Method), wrongAnswer(string(answer.Method)))
 		return
