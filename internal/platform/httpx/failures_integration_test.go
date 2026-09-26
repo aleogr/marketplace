@@ -182,8 +182,12 @@ func TestTheLockIsAnAlertWhenItRefuses(t *testing.T) {
 	enrolledApp(t, service, marketplace)
 	storedEmailFactor(t, marketplace)
 	lockCodes(t, marketplace)
-	shown := func(language string) string { return `<p role="status">` + html.EscapeString(codesLocked[language]) + `</p>` }
-	alert := func(language string) string { return `<p role="alert">` + html.EscapeString(codesLocked[language]) + `</p>` }
+	shown := func(language string) string {
+		return `<p role="status">` + html.EscapeString(codesLocked[language]) + `</p>`
+	}
+	alert := func(language string) string {
+		return `<p role="alert">` + html.EscapeString(codesLocked[language]) + `</p>`
+	}
 	refusal := func(what, language string, page *httptest.ResponseRecorder) {
 		t.Helper()
 		body := page.Body.String()
