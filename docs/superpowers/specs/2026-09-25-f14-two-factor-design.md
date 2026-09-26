@@ -180,7 +180,8 @@ limiter (`step-up`, 10 answers per account per 15 minutes) stops a stolen sessio
 challenge after challenge.
 
 **Removal and recovery codes.** Removing a method sends an e-mail saying so. A recovery code used at
-sign-in sends an e-mail and shows, on the next page, how many remain.
+sign-in or at a step-up sends an e-mail saying which, and, at sign-in, shows on the next page how
+many remain.
 
 **Policy** (`identity.Policy`, one service every path consults):
 - Buyers: 2FA optional, any method.
@@ -196,8 +197,8 @@ file served by the site, loaded with the page's nonce under the existing CSP (`s
 'nonce-…'`), no inline script. Without JavaScript, the app and the e-mail code still work.
 
 **Mail** (en-US and pt-BR, text and HTML): the code (saying what it is for, and kept out of the
-subject), method added, method removed, recovery code used, repeated failures of the second step
-and codes locked (D8).
+subject), method added, method removed, recovery code used (saying whether it signed in or
+confirmed a change), repeated failures of the second step and codes locked (D8).
 The code travels through the outbox, whose variables are cleared once dispatched (migration 00010),
 so it does not stay in the database after delivery.
 

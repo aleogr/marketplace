@@ -1,3 +1,3 @@
 <p>Hello, {{.Name}}.</p>
-<p>Someone just signed in to your account at {{.From}} with one of your recovery codes. Recovery codes left: {{.Left}}.</p>
-<p>If it was you, add a second factor again if you lost yours, and make new recovery codes on your account's security page. If it was not you, someone has your password and one of your codes: change your password and make new recovery codes now.</p>
+<p>One of your recovery codes was just used {{if eq .Purpose "signin"}}to sign in to your account{{else}}to confirm a change to your account{{end}} at {{.From}}. Recovery codes left: {{.Left}}.</p>
+<p>If it was you, add a second factor again if you lost yours, and make new recovery codes on your account's security page. If it was not you, {{if eq .Purpose "signin"}}someone has your password and one of your codes{{else}}someone who is signed in to your account has one of your codes{{end}}: change your password, which signs out every other session, and make new recovery codes now.</p>

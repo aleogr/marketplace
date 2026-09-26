@@ -262,7 +262,7 @@ func (s *Service) answerChallenge(ctx context.Context, v Visit, token, sessionID
 			return err
 		}
 		if answer.Method == MethodRecovery {
-			if err := s.recoveryUsed(ctx, tx, v, account); err != nil {
+			if err := s.recoveryUsed(ctx, tx, v, account, purposeOf(ch)); err != nil {
 				return err
 			}
 		}
@@ -288,8 +288,9 @@ func (s *Service) answerChallenge(ctx context.Context, v Visit, token, sessionID
 }
 
 // recoveryUsed audits a recovery code spent, with how many are left, and
-// tells the owner by e-mail.
-func (s *Service) recoveryUsed(ctx context.Context, tx pgx.Tx, v Visit, account Account) error {
+// tells the owner by e-mail what it was used for (purposeOf: signing in or
+// a step-up), since a recovery code answers both.
+func (s *Service) recoveryUsed(ctx context.Context, tx pgx.Tx, v Visit, account Account, purpose string) error {
 	_, left, err := recoveryCodes(ctx, tx, account.ID)
 	if err != nil {
 		return err
@@ -298,7 +299,8 @@ func (s *Service) recoveryUsed(ctx context.Context, tx pgx.Tx, v Visit, account 
 		map[string]string{"left": strconv.Itoa(left)}); err != nil {
 		return err
 	}
-	return notify(ctx, tx, v, account, "recovery-code-used", map[string]string{"Left": strconv.Itoa(left)})
+	return notify(ctx, tx, v, account, "recovery-code-used",
+		map[string]string{"Left": strconv.Itoa(left), "Purpose": purpose})
 }
 
 // SignedIn is what a completed second step opened: the session's token, and,

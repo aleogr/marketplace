@@ -203,3 +203,44 @@ func TestTheCodeMailSaysWhatItIsForAndKeepsTheCodeOutOfTheSubject(t *testing.T) 
 		}
 	}
 }
+
+// The recovery code's notice says what the code was used for: a recovery code
+// answers a step-up as well as the second step of signing in, so the notice
+// of one used to confirm a change does not claim that someone signed in.
+func TestTheRecoveryNoticeSaysWhatTheCodeWasUsedFor(t *testing.T) {
+	for _, tc := range []struct {
+		language, purpose, want string
+		never                   []string
+	}{
+		{"en-US", "signin", "to sign in", []string{"to confirm a change"}},
+		{"en-US", "stepup", "to confirm a change", []string{"to sign in", "signed in with"}},
+		{"pt-BR", "signin", "para entrar", []string{"para confirmar uma alteração"}},
+		{"pt-BR", "stepup", "para confirmar uma alteração", []string{"para entrar", "acabou de entrar"}},
+	} {
+		rendered, err := templates(t).Render(mail.Message{
+			Template: "recovery-code-used", Language: tc.language, To: "reader@example.test", From: "Loja Um",
+			Variables: map[string]string{"Name": "Leitora", "Left": "7", "Purpose": tc.purpose},
+		}, i18n.Default)
+		if err != nil {
+			t.Fatalf("recovery-code-used in %s for %s: %v", tc.language, tc.purpose, err)
+		}
+		if rendered.Language != tc.language || !strings.Contains(rendered.Subject, "Loja Um") ||
+			!strings.Contains(rendered.Subject, tc.want) {
+			t.Errorf("the subject in %s for %s = %q (%s); want the marketplace and %q",
+				tc.language, tc.purpose, rendered.Subject, rendered.Language, tc.want)
+		}
+		for _, part := range []string{rendered.Subject, rendered.Text, rendered.HTML} {
+			for _, never := range tc.never {
+				if strings.Contains(part, never) {
+					t.Errorf("recovery-code-used in %s for %s says %q: %s", tc.language, tc.purpose, never, part)
+				}
+			}
+		}
+		for _, part := range []string{rendered.Text, rendered.HTML} {
+			if !strings.Contains(part, "Leitora") || !strings.Contains(part, "7") || !strings.Contains(part, tc.want) {
+				t.Errorf("recovery-code-used in %s for %s does not name the reader and the codes left and say %q: %s",
+					tc.language, tc.purpose, tc.want, part)
+			}
+		}
+	}
+}

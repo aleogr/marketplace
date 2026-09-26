@@ -49,7 +49,8 @@ func TestChangingTheFactorsTellsTheOwner(t *testing.T) {
 	}
 }
 
-// A recovery code used to sign in tells the owner how many are left.
+// A recovery code used to sign in tells the owner how many are left, and that
+// it signed in.
 func TestARecoveryCodeUsedTellsTheOwner(t *testing.T) {
 	s, db, one, _, _ := service(t)
 	sealed(t, s)
@@ -58,7 +59,30 @@ func TestARecoveryCodeUsedTellsTheOwner(t *testing.T) {
 		Answer{Method: MethodRecovery, Code: codes[0]}); err != nil {
 		t.Fatal(err)
 	}
-	if to, variables := mailed(t, db, one, "recovery-code-used"); to != "r@example.test" || variables["Left"] != "9" {
+	if to, variables := mailed(t, db, one, "recovery-code-used"); to != "r@example.test" ||
+		variables["Left"] != "9" || variables["Purpose"] != "signin" {
+		t.Fatalf("recovery-code-used to %s with %v", to, variables)
+	}
+}
+
+// A recovery code that answers a step-up tells the owner too, saying it
+// confirmed a change rather than that someone signed in.
+func TestARecoveryCodeUsedAtAStepUpSaysSo(t *testing.T) {
+	s, db, one, _, _ := service(t)
+	sealed(t, s)
+	session := signedIn(t, s, db, one, "r@example.test")
+	v := visit(one)
+	_, codes := enrolApp(t, s, v, session, "phone")
+	session.SecondFactor = true
+	challenge, err := s.BeginStepUp(t.Context(), v, session, ActionAddCard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.StepUp(t.Context(), v, session, challenge, Answer{Method: MethodRecovery, Code: codes[0]}); err != nil {
+		t.Fatal(err)
+	}
+	if to, variables := mailed(t, db, one, "recovery-code-used"); to != "r@example.test" ||
+		variables["Left"] != "9" || variables["Purpose"] != "stepup" {
 		t.Fatalf("recovery-code-used to %s with %v", to, variables)
 	}
 }
