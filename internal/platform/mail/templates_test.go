@@ -144,13 +144,15 @@ func TestTheSecondFactorNoticesNameTheMethodInTheReadersLanguage(t *testing.T) {
 
 // The notices of a run of failed second factors exist in both languages and
 // both parts, name the reader and the marketplace, and tell the reader to
-// change the password (F14 spec, D8).
+// change the password (F14 spec, D8). A failed step-up counts as a failed
+// second step does, so they do not assume a sign-in: whoever failed knows the
+// password or is signed in to the account.
 func TestTheFailureNoticesExistInBothLanguages(t *testing.T) {
-	for _, tc := range []struct{ template, language, want string }{
-		{"second-factor-failures", "en-US", "change your password now"},
-		{"second-factor-failures", "pt-BR", "altere sua senha agora"},
-		{"second-factor-locked", "en-US", "Change your password now"},
-		{"second-factor-locked", "pt-BR", "Altere sua senha agora"},
+	for _, tc := range []struct{ template, language, want, who, never string }{
+		{"second-factor-failures", "en-US", "change your password now", "or is signed in to your account", "second step of signing in"},
+		{"second-factor-failures", "pt-BR", "altere sua senha agora", "ou que entrou na sua conta", "segunda etapa da entrada"},
+		{"second-factor-locked", "en-US", "Change your password now", "or is signed in to your account", "second step of signing in"},
+		{"second-factor-locked", "pt-BR", "Altere sua senha agora", "ou que entrou na sua conta", "segunda etapa da entrada"},
 	} {
 		rendered, err := templates(t).Render(mail.Message{
 			Template: tc.template, Language: tc.language, To: "reader@example.test", From: "Loja Um",
@@ -165,6 +167,9 @@ func TestTheFailureNoticesExistInBothLanguages(t *testing.T) {
 		for _, part := range []string{rendered.Text, rendered.HTML} {
 			if !strings.Contains(part, "Leitora") || !strings.Contains(part, "Loja Um") || !strings.Contains(part, tc.want) {
 				t.Errorf("%s in %s does not name the reader and the marketplace and say %q: %s", tc.template, tc.language, tc.want, part)
+			}
+			if !strings.Contains(part, tc.who) || strings.Contains(part, tc.never) {
+				t.Errorf("%s in %s does not say %q, or assumes a sign-in with %q: %s", tc.template, tc.language, tc.who, tc.never, part)
 			}
 		}
 	}

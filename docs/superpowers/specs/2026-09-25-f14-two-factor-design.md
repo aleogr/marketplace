@@ -101,8 +101,8 @@ on one account at 100. So, per account:
 - any accepted second factor, at sign-in or at a step-up, ends the run, and so does a password
   change;
 - at the 10th failure in a row the person is told by e-mail (`second-factor-failures`) that someone
-  who knows the password keeps failing the second step, and to change the password if it was not
-  them; audited as `identity.second_factor_failures_notified`;
+  who knows the password, or is signed in to the account, keeps failing its second factor, and to
+  change the password if it was not them; audited as `identity.second_factor_failures_notified`;
 - at the 100th consecutive failure, codes from an authenticator app or by e-mail are refused at
   sign-in and at the step-up until the password is changed or a key or a recovery code is accepted
   (either lifts it): the challenge no longer offers them, an answer with one is refused without

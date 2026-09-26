@@ -1,6 +1,6 @@
 Subject: Someone is failing the second step of your account at {{.From}}
 Hello, {{.Name}}.
 
-Someone who knows your password has repeatedly failed the second step of signing in to your account at {{.From}}: every answer, one after another, was wrong.
+Someone who knows your password, or is signed in to your account, has repeatedly failed your account's second factor at {{.From}}, when signing in or when confirming a change: every answer, one after another, was wrong.
 
-If it was you, there is nothing to do. If it was not you, someone has your password: change your password now. If the wrong answers go on, codes from an authenticator app or by e-mail will stop working for your account until the password is changed; a security key and your recovery codes will still work.
+If it was you, there is nothing to do. If it was not you, someone has your password or one of your sessions: change your password now, which also signs out every other session. If the wrong answers go on, codes from an authenticator app or by e-mail will stop working for your account until the password is changed or a security key or a recovery code is used; both will still work.

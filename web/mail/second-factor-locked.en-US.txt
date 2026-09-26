@@ -1,6 +1,6 @@
 Subject: Codes no longer work for your account at {{.From}}
 Hello, {{.Name}}.
 
-Someone who knows your password has failed the second step of signing in to your account at {{.From}} so many times in a row that, to stop the guessing, codes from an authenticator app or by e-mail no longer work for your account.
+Someone who knows your password, or is signed in to your account, has failed your account's second factor at {{.From}} so many times in a row, when signing in or when confirming a change, that, to stop the guessing, codes from an authenticator app or by e-mail no longer work for your account.
 
-Change your password now: someone else knows it, and a new password makes the codes work again. Until then, confirm it is you with a security key or a recovery code.
+Change your password now: someone else knows it or has one of your sessions, and a new password signs out every other session and makes the codes work again. Until then, confirm it is you with a security key or a recovery code, which also makes the codes work again.
