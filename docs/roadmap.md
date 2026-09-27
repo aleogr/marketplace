@@ -713,6 +713,16 @@ exist. The policy hook for it is delivered here.
   assigning it, signing in as that staff member and asserting the menu shows only what the role
   permits.
 - Screenshots of the console in both languages, and the audit records produced by the run.
+- A colleague's factor reset e-mails a single-use link, valid for 24 hours, and a staff sign-in
+  with the password alone never leads to enrolment (the owner's decision of 2026-09-26, recorded in
+  §18.2).
+
+**Follow-up:** the console's host is not yet among the hosts the deployment checks
+(`.github/workflows/deploy.yml`, "Read the region, the build identifier and the hosts"). Its
+Cloudflare record is the owner's first manual step, and a check that fails until it exists would
+turn every deployment red. Once the owner reports that the record resolves and the console answers
+over HTTPS, `console_host` is added to the hosts that step reads — the change is described in
+`docs/infrastructure.md`, "The console's host".
 
 ---
 
@@ -916,6 +926,7 @@ later phase are listed because the design says to start them **now** or **during
 | Cloud SQL tier decision and budget alert | F4 | When F3 merges | Yes, from F4 onward |
 | E-mail provider account, domain verification, production access | F11 | **Start when F10 merges.** Design §8 places it in the foundation phase because sign-up and password recovery depend on e-mail; production access can take a business day | No — F11 merges with the fake adapter |
 | MaxMind account and GeoLite2 licence key | F18 | **Start when F8 merges.** Design §8 places it in the foundation phase | No — F18 merges with the fake adapter |
+| Cloudflare CNAME for the console host | F15 | When F15's first pull request is deployed; the certificate can take 24 h | Only the live check of F15, and the console's place in the deployment's host check |
 | Owner first-run bootstrap in the lab | F15 | When F14 merges | Yes for F15's verification |
 | Alert e-mail address and the first restore test | F19 | At F19 | Yes for F19 |
 | **Lawyer** (terms of use, right of withdrawal for vehicles, retention periods, incident duties) | Phases 5 and 7 | **Now**, in parallel. The answers are needed before checkout reaches the lab with real stores | **No** — the provisional defaults of design decision 22 are parameters, so the answer changes a value, not code |
