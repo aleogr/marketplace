@@ -58,9 +58,13 @@ var (
 	ErrSessionInvalid = errors.New("identity: session invalid")
 )
 
-// Transactor opens a transaction for one marketplace (db.Pool.InTxFor).
+// Transactor opens a transaction for one marketplace (db.Pool.InTxFor), or
+// one that names none (db.Pool.InTx), which is the platform's: under the
+// identity tables' policies it sees staff's rows and nothing else (F15 spec,
+// D4).
 type Transactor interface {
 	InTxFor(ctx context.Context, marketplaceID string, fn func(pgx.Tx) error) error
+	InTx(ctx context.Context, fn func(pgx.Tx) error) error
 }
 
 // Auditor appends to the audit log ((*audit.Log).Append).
@@ -70,7 +74,17 @@ type Auditor interface {
 
 // Visit is the request a flow runs for, as the flow needs it.
 type Visit struct {
-	Marketplace     string // id
+	Marketplace string // id; empty on a platform visit
+	// Platform is a visit on the console's host, which belongs to no
+	// marketplace: a staff member's (F15 spec, D4). Its transactions name no
+	// marketplace, so its flows see staff's accounts and nobody else's, as a
+	// marketplace's see only its own. It is said rather than inferred from
+	// an empty Marketplace, so that a marketplace's visit that lost its id is
+	// still refused rather than served as the platform's.
+	Platform bool
+	// MarketplaceName is who the visit's mail is from and what an app or a
+	// key names the account's site: the marketplace's name, or the
+	// platform's on a platform visit.
 	MarketplaceName string
 	Language        string
 	IP              string
@@ -113,6 +127,33 @@ func NewService(db Transactor, hasher *Hasher, checker breached.Checker, auditor
 		now: func() time.Time { return time.Now().UTC() }}
 }
 
+// errVisitScope is a visit that names a marketplace and says it is the
+// platform's: a programming error, refused before any transaction opens.
+var errVisitScope = errors.New("identity: a platform visit names no marketplace")
+
+// within runs fn in the visit's transaction: the marketplace's, or, on a
+// platform visit, one that names no marketplace (F15 spec, D4). Every flow
+// opens its transactions here.
+func (s *Service) within(ctx context.Context, v Visit, fn func(pgx.Tx) error) error {
+	if v.Platform {
+		if v.Marketplace != "" {
+			return errVisitScope
+		}
+		return s.db.InTx(ctx, fn)
+	}
+	return s.db.InTxFor(ctx, v.Marketplace, fn)
+}
+
+// actorKind is who acts on a visit: staff on the platform's, a buyer on a
+// marketplace's. Stores, when they arrive, act in a marketplace too and will
+// say so here.
+func (v Visit) actorKind() audit.Kind {
+	if v.Platform {
+		return audit.Staff
+	}
+	return audit.Buyer
+}
+
 // checkNew applies D4 to a password about to be set.
 func (s *Service) checkNew(ctx context.Context, password string) error {
 	if err := CheckPassword(password); err != nil {
@@ -147,7 +188,7 @@ func (s *Service) recordWith(ctx context.Context, tx pgx.Tx, v Visit, account, a
 	}
 	return s.audit.Append(ctx, tx, audit.Entry{
 		Marketplace: v.Marketplace,
-		Actor:       audit.Actor{ID: account, Kind: audit.Buyer},
+		Actor:       audit.Actor{ID: account, Kind: v.actorKind()},
 		Action:      action,
 		Subject:     audit.Subject{Kind: "account", ID: account, Person: account},
 		From:        v.IP,
@@ -184,7 +225,7 @@ func (s *Service) SignUp(ctx context.Context, v Visit, name, email, password str
 		return err
 	}
 
-	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	return s.within(ctx, v, func(tx pgx.Tx) error {
 		id, err := insertAccount(ctx, tx, v.Marketplace, strings.TrimSpace(email), normalised, name)
 		if errors.Is(err, errTaken) {
 			existing, err := accountByEmail(ctx, tx, normalised)
@@ -219,7 +260,7 @@ func (s *Service) SignUp(ctx context.Context, v Visit, name, email, password str
 
 // Verify spends a confirmation token.
 func (s *Service) Verify(ctx context.Context, v Visit, token string) error {
-	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	return s.within(ctx, v, func(tx pgx.Tx) error {
 		account, err := consumeVerification(ctx, tx, HashToken(token), s.now())
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrTokenInvalid
@@ -242,7 +283,7 @@ func (s *Service) Resend(ctx context.Context, v Visit, email string) error {
 	if err != nil {
 		return err
 	}
-	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	return s.within(ctx, v, func(tx pgx.Tx) error {
 		account, err := accountByEmail(ctx, tx, normalised)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && account.VerifiedAt != nil) {
 			return nil
@@ -304,9 +345,10 @@ func (s *Service) refusalWith(ctx context.Context, tx pgx.Tx, v Visit, account, 
 }
 
 // credentials reads an account and its password hash, or reports found false
-// for an address with no account in this marketplace.
-func (s *Service) credentials(ctx context.Context, marketplace, normalised string) (account Account, secret string, found bool, err error) {
-	err = s.db.InTxFor(ctx, marketplace, func(tx pgx.Tx) error {
+// for an address with no account in the visit's marketplace, or, on a
+// platform visit, no staff account.
+func (s *Service) credentials(ctx context.Context, v Visit, normalised string) (account Account, secret string, found bool, err error) {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		a, err := accountByEmail(ctx, tx, normalised)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -344,7 +386,7 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 		s.hasher.Waste(ctx, password)
 		return "", ErrCredentials
 	}
-	account, secret, found, err := s.credentials(ctx, v.Marketplace, normalised)
+	account, secret, found, err := s.credentials(ctx, v, normalised)
 	if err != nil {
 		return "", err
 	}
@@ -360,7 +402,7 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 		return "", err
 	}
 	if !ok {
-		if err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+		if err := s.within(ctx, v, func(tx pgx.Tx) error {
 			return s.refusal(ctx, tx, v, account.ID, "identity.signin_failed")
 		}); err != nil {
 			return "", err
@@ -384,7 +426,7 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 		return "", err
 	}
 	var second bool
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		still, err := passwordStill(ctx, tx, account.ID, secret)
 		if err != nil {
 			return err
@@ -422,7 +464,7 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 	if second {
 		return token, ErrSecondStep
 	}
-	s.sweep(ctx, v.Marketplace)
+	s.sweep(ctx, v)
 	return token, nil
 }
 
@@ -431,9 +473,9 @@ func (s *Service) SignIn(ctx context.Context, v Visit, email, password string) (
 // mutex against concurrent sign-ins, decides whether this call is due. It
 // runs in its own transaction, opened only after the sign-in's has
 // committed, so a sweep failure can never roll the sign-in back — the person
-// already has their session — and is only logged. Row-level security scopes
-// the sweep to marketplace, the one that just signed in.
-func (s *Service) sweep(ctx context.Context, marketplace string) {
+// already has their session — and is only logged. It sweeps the visit's
+// scope: the marketplace that just signed in, or the platform.
+func (s *Service) sweep(ctx context.Context, v Visit) {
 	now := s.now()
 	s.sweepMu.Lock()
 	due := now.Sub(s.lastSweep) >= sweepEvery
@@ -444,8 +486,8 @@ func (s *Service) sweep(ctx context.Context, marketplace string) {
 	if !due {
 		return
 	}
-	if err := s.db.InTxFor(ctx, marketplace, func(tx pgx.Tx) error {
-		_, err := sweepSessions(ctx, tx, marketplace, now)
+	if err := s.within(ctx, v, func(tx pgx.Tx) error {
+		_, err := sweepSessions(ctx, tx, v.Marketplace, now)
 		return err
 	}); err != nil {
 		s.log.WarnContext(ctx, "session sweep failed", "error", err)
@@ -469,7 +511,7 @@ func (s *Service) Supersede(ctx context.Context, v Visit, token string) error {
 
 // end revokes the session a token opened, for reason, and audits action.
 func (s *Service) end(ctx context.Context, v Visit, token, reason, action string) error {
-	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	return s.within(ctx, v, func(tx pgx.Tx) error {
 		account, err := revokeSession(ctx, tx, HashToken(token), reason, s.now())
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
@@ -484,8 +526,26 @@ func (s *Service) end(ctx context.Context, v Visit, token, reason, action string
 // Authenticate returns the session a token belongs to in marketplace, or
 // ErrSessionInvalid for one that is unknown, revoked, idle or expired.
 func (s *Service) Authenticate(ctx context.Context, marketplace, token string) (Session, error) {
+	return s.authenticate(ctx, Visit{Marketplace: marketplace}, token)
+}
+
+// AuthenticateStaff returns the staff session a token belongs to, on the
+// platform, or ErrSessionInvalid: a marketplace's session is invisible there,
+// as a staff session is in every marketplace (F15 spec, D4).
+func (s *Service) AuthenticateStaff(ctx context.Context, token string) (Session, error) {
+	session, err := s.authenticate(ctx, Visit{Platform: true}, token)
+	if err == nil && session.Account.Kind != KindStaff {
+		// The schema allows no other account without a marketplace; this
+		// is the second belt, not the first.
+		return Session{}, ErrSessionInvalid
+	}
+	return session, err
+}
+
+// authenticate returns the live session a token opened in the visit's scope.
+func (s *Service) authenticate(ctx context.Context, v Visit, token string) (Session, error) {
 	var session Session
-	err := s.db.InTxFor(ctx, marketplace, func(tx pgx.Tx) error {
+	err := s.within(ctx, v, func(tx pgx.Tx) error {
 		now := s.now()
 		row, err := liveSession(ctx, tx, HashToken(token))
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -542,7 +602,7 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 	}
 	account := session.Account.ID
 	var secret string
-	if err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	if err := s.within(ctx, v, func(tx pgx.Tx) error {
 		var err error
 		secret, err = passwordOf(ctx, tx, account)
 		return err
@@ -565,7 +625,7 @@ func (s *Service) ChangePassword(ctx context.Context, v Visit, session Session, 
 	if err != nil {
 		return "", err
 	}
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		still, err := passwordStill(ctx, tx, account, secret)
 		if err != nil {
 			return err

@@ -53,7 +53,7 @@ func (s *Service) BeginStepUp(ctx context.Context, v Visit, session Session, act
 	if err != nil {
 		return "", err
 	}
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		ch := challenge{Account: session.Account.ID, Session: session.ID, Action: action}
 		o, err := s.offers(ctx, tx, session.Account, ch)
 		if err != nil {

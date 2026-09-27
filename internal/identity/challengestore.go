@@ -30,7 +30,7 @@ func insertChallenge(ctx context.Context, tx pgx.Tx, marketplace, account string
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO sign_in_challenge (token_hash, account_id, marketplace_id, session_id, action, expires_at)
-		VALUES ($1, $2, $3, nullif($4, '')::uuid, nullif($5, ''), $6)`,
+		VALUES ($1, $2, nullif($3, '')::uuid, nullif($4, '')::uuid, nullif($5, ''), $6)`,
 		hash, account, marketplace, session, string(action), now.Add(ChallengeLifetime))
 	return err
 }

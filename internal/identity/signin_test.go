@@ -25,6 +25,11 @@ func (u untouched) InTxFor(context.Context, string, func(pgx.Tx) error) error {
 	return errors.New("no transaction expected")
 }
 
+func (u untouched) InTx(context.Context, func(pgx.Tx) error) error {
+	u.t.Error("the flow opened a transaction")
+	return errors.New("no transaction expected")
+}
+
 // A password no person could have set is refused before anything is spent on
 // it: no normalisation, no argon2, no transaction, and the same answer as a
 // wrong password (D7).

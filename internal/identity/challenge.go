@@ -108,7 +108,7 @@ func (s *Service) offers(ctx context.Context, tx pgx.Tx, account Account, ch cha
 // answered.
 func (s *Service) Pending(ctx context.Context, v Visit, token, sessionID string) (Pending, error) {
 	var pending Pending
-	err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err := s.within(ctx, v, func(tx pgx.Tx) error {
 		ch, account, err := s.challenge(ctx, tx, token, sessionID)
 		if err != nil {
 			return err
@@ -141,7 +141,7 @@ func (s *Service) challenge(ctx context.Context, tx pgx.Tx, token, sessionID str
 // the password and the second step share one limit.
 func (s *Service) ChallengeAddress(ctx context.Context, v Visit, token string) string {
 	var address string
-	if err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	if err := s.within(ctx, v, func(tx pgx.Tx) error {
 		var err error
 		address, err = challengeAddress(ctx, tx, HashToken(token))
 		return err
@@ -232,7 +232,7 @@ func (s *Service) checkApp(ctx context.Context, tx pgx.Tx, account, code string,
 func (s *Service) answerChallenge(ctx context.Context, v Visit, token, sessionID string, answer Answer,
 	done func(tx pgx.Tx, ch challenge, account Account, now time.Time) error) error {
 	var wrong, locked, exhausted bool
-	err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err := s.within(ctx, v, func(tx pgx.Tx) error {
 		now := s.now()
 		ch, account, err := s.challenge(ctx, tx, token, sessionID)
 		if err != nil {
@@ -342,6 +342,6 @@ func (s *Service) CompleteSignIn(ctx context.Context, v Visit, token string, ans
 	if err != nil {
 		return SignedIn{}, err
 	}
-	s.sweep(ctx, v.Marketplace)
+	s.sweep(ctx, v)
 	return signed, nil
 }

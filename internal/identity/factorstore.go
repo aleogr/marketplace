@@ -52,7 +52,7 @@ func factorsOf(ctx context.Context, tx pgx.Tx, account string) ([]factor, error)
 func insertApp(ctx context.Context, tx pgx.Tx, marketplace, account, label string, sealed []byte, step int64, now time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO second_factor (account_id, marketplace_id, kind, label, secret, totp_last_step, created_at)
-		VALUES ($1, $2, 'totp', $3, $4, $5, $6)`, account, marketplace, label, sealed, step, now)
+		VALUES ($1, nullif($2, '')::uuid, 'totp', $3, $4, $5, $6)`, account, marketplace, label, sealed, step, now)
 	return err
 }
 
@@ -100,7 +100,7 @@ func replaceRecoveryCodes(ctx context.Context, tx pgx.Tx, marketplace, account s
 	}
 	for _, hash := range hashes {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO recovery_code (account_id, marketplace_id, code_hash) VALUES ($1, $2, $3)`,
+			INSERT INTO recovery_code (account_id, marketplace_id, code_hash) VALUES ($1, nullif($2, '')::uuid, $3)`,
 			account, marketplace, boundRecoveryHash(account, hash)); err != nil {
 			return err
 		}
@@ -135,7 +135,7 @@ func putEnrolment(ctx context.Context, tx pgx.Tx, marketplace, session, account 
 	secret, webauthnSession []byte, expires time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO factor_enrolment (session_id, account_id, marketplace_id, kind, secret, webauthn_session, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		VALUES ($1, $2, nullif($3, '')::uuid, $4, $5, $6, $7)
 		ON CONFLICT (session_id) DO UPDATE SET kind = EXCLUDED.kind, secret = EXCLUDED.secret,
 			webauthn_session = EXCLUDED.webauthn_session, expires_at = EXCLUDED.expires_at, created_at = now()`,
 		session, account, marketplace, method, secret, webauthnSession, expires)
