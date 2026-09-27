@@ -60,11 +60,15 @@ type Kind int
 const (
 	// Unknown is a host nobody configured.
 	Unknown Kind = iota
-	// PlatformHost is the platform's own host: the administrative console and
-	// everything that belongs to no marketplace.
+	// PlatformHost is the platform's own host: everything that belongs to no
+	// marketplace, except the console, which has a host of its own.
 	PlatformHost
 	// MarketplaceHost is a host a marketplace answers on.
 	MarketplaceHost
+	// ConsoleHost is the console's own host: the staff's sign-in and the
+	// console, and nothing else. It belongs to no marketplace, and no
+	// marketplace is served on it (F15 spec, D1).
+	ConsoleHost
 )
 
 // Resolution is what a host resolved to.
@@ -92,6 +96,7 @@ const defaultTTL = 30 * time.Second
 type Resolver struct {
 	loader       Loader
 	platformHost string
+	consoleHost  string
 	ttl          time.Duration
 	now          func() time.Time
 
@@ -114,6 +119,15 @@ func NewResolver(loader Loader, platformHost string) *Resolver {
 	}
 }
 
+// WithConsoleHost returns the resolver answering host as the console's.
+//
+// Configuration, like the platform's host, and for the same reasons. A
+// resolver never given one has no console: an empty name matches nothing.
+func (r *Resolver) WithConsoleHost(host string) *Resolver {
+	r.consoleHost = Normalise(host)
+	return r
+}
+
 // Resolve reports what host is.
 func (r *Resolver) Resolve(ctx context.Context, host string) (Resolution, error) {
 	name := Normalise(host)
@@ -123,6 +137,9 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (Resolution, error)
 
 	if r.platformHost != "" && name == r.platformHost {
 		return Resolution{Kind: PlatformHost}, nil
+	}
+	if r.consoleHost != "" && name == r.consoleHost {
+		return Resolution{Kind: ConsoleHost}, nil
 	}
 
 	hosts, err := r.load(ctx)

@@ -140,6 +140,13 @@ resource "google_cloud_run_v2_service" "marketplace" {
         value = var.platform_host
       }
 
+      # The console's own host, which serves the console and nothing else
+      # (docs/superpowers/specs/2026-09-26-f15-console-design.md, D1).
+      env {
+        name  = "CONSOLE_HOST"
+        value = var.console_host
+      }
+
       # Where the queues are, and who the callbacks are signed as. Declared
       # here rather than discovered at run time: a process that had to ask
       # which project it is in would fail differently in every environment
@@ -323,6 +330,24 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 resource "google_cloud_run_domain_mapping" "platform" {
   location = var.region
   name     = var.platform_host
+
+  metadata {
+    namespace = var.project_id
+    labels    = local.labels
+  }
+
+  spec {
+    route_name = google_cloud_run_v2_service.marketplace.name
+  }
+}
+
+# The console's host, mapped like the platform's (F15 spec, D1). The DNS record
+# behind it is created by hand in Cloudflare, as every host's is
+# (docs/infrastructure.md, "The console's host"); until it exists the console
+# is unreachable and nothing else is affected.
+resource "google_cloud_run_domain_mapping" "console" {
+  location = var.region
+  name     = var.console_host
 
   metadata {
     namespace = var.project_id

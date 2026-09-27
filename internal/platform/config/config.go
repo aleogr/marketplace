@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 )
 
 // ProvidersMode selects between the real external providers and the fakes used
@@ -68,6 +69,12 @@ type Config struct {
 	// data because it belongs to the deployment and exists before any
 	// marketplace does (docs/requirements.md, section 7).
 	PlatformHost string
+	// ConsoleHost is the host the console answers on, and nothing else does:
+	// the staff's sign-in and the console's pages, on a subdomain of their
+	// own so that the console's cookies are never sent to a store and a
+	// store's never to the console (F15 spec, D1). Configuration for the same
+	// reason PlatformHost is. Empty means this deployment serves no console.
+	ConsoleHost string
 	// ProxyHops is how many entries the infrastructure in front of this
 	// process appends to `X-Forwarded-For`. It decides which entry of that
 	// header is the client's address and which are written by the client
@@ -294,6 +301,11 @@ func Load(lookup Lookup) (Config, error) {
 		return nil
 	})
 
+	read("CONSOLE_HOST", func(value string) error {
+		cfg.ConsoleHost = value
+		return nil
+	})
+
 	read("MAIL_FROM", func(value string) error {
 		cfg.Mail.From = value
 		return nil
@@ -330,6 +342,7 @@ func Load(lookup Lookup) (Config, error) {
 	})
 
 	problems = append(problems, cfg.Database.problems()...)
+	problems = append(problems, cfg.hostProblems()...)
 	problems = append(problems, cfg.Mail.problems(cfg.ProvidersMode)...)
 	problems = append(problems, cfg.Audit.problems(cfg.ProvidersMode)...)
 
@@ -337,6 +350,22 @@ func Load(lookup Lookup) (Config, error) {
 		return Config{}, fmt.Errorf("invalid configuration: %w", errors.Join(problems...))
 	}
 	return cfg, nil
+}
+
+// hostProblems reports a console host that is also the platform's. The two
+// are compared as the resolver compares hosts — case and a final dot aside —
+// because a host declared twice would be answered by whichever kind the
+// resolver happens to check first, and the other would never be served.
+func (c Config) hostProblems() []error {
+	if c.ConsoleHost == "" {
+		return nil
+	}
+	name := func(host string) string { return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".") }
+	if name(c.ConsoleHost) == name(c.PlatformHost) {
+		return []error{fmt.Errorf("CONSOLE_HOST %q is PLATFORM_HOST; the console answers on a host of its own",
+			c.ConsoleHost)}
+	}
+	return nil
 }
 
 // problems reports an audit log that would be protected by nothing.

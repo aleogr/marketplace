@@ -170,6 +170,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		// a database is a thing somebody must be able to see.
 		"database", databaseMode(cfg.Database),
 		"platform_host", cfg.PlatformHost,
+		"console_host", cfg.ConsoleHost,
 	)
 
 	// The catalogues are read once, at start-up. A catalogue that cannot be
@@ -299,7 +300,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// It needs the database to know the hosts, so a process running without
 	// one serves every host as before.
 	if database != nil {
-		resolver := tenancy.NewResolver(tenancy.NewRepository(database), cfg.PlatformHost)
+		resolver := tenancy.NewResolver(tenancy.NewRepository(database), cfg.PlatformHost).
+			WithConsoleHost(cfg.ConsoleHost)
 		handler = tenancy.Resolve(resolver, pages, httpx.HealthPath)(handler)
 	}
 

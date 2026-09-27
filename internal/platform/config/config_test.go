@@ -260,3 +260,34 @@ func TestLoadRefusesRealProvidersWithoutAKeyManager(t *testing.T) {
 		t.Error("Load() accepted a key manager and a local key at once")
 	}
 }
+
+// The console answers on a host of its own (F15 spec, D1), declared like the
+// platform's.
+func TestLoadReadsTheConsoleHost(t *testing.T) {
+	cfg, err := config.Load(env(map[string]string{
+		"PLATFORM_HOST": "marketplace.example",
+		"CONSOLE_HOST":  "console.marketplace.example",
+	}))
+	if err != nil {
+		t.Fatalf("Load() = %v, want nil", err)
+	}
+	if cfg.ConsoleHost != "console.marketplace.example" {
+		t.Errorf("ConsoleHost = %q, want console.marketplace.example", cfg.ConsoleHost)
+	}
+}
+
+// One host cannot be both: the console host serves the console and nothing
+// else, and the platform host never serves the console. Declared the same,
+// one of the two would silently win.
+func TestLoadRefusesAConsoleHostThatIsThePlatformHost(t *testing.T) {
+	_, err := config.Load(env(map[string]string{
+		"PLATFORM_HOST": "marketplace.example",
+		"CONSOLE_HOST":  "Marketplace.Example.",
+	}))
+	if err == nil {
+		t.Fatal("Load() accepted the platform's host as the console's, want an error")
+	}
+	if !strings.Contains(err.Error(), "CONSOLE_HOST") {
+		t.Errorf("error %q does not name CONSOLE_HOST", err)
+	}
+}

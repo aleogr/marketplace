@@ -56,8 +56,27 @@ func (s Site) WithMail(webhook MailWebhook) Site {
 	return s
 }
 
-// Handler returns the routes served by the process.
+// Handler returns the routes served by the process: the console's on the
+// console's host, and everybody else's on every other host. The split is made
+// once, here, by the kind of host, so that no route of one can be reached on
+// the other: the console host serves no marketplace, and no other host serves
+// the console (F15 spec, D1).
 func (s Site) Handler() http.Handler {
+	site, console := s.siteRoutes(), s.consoleRoutes()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if onConsole(r) {
+			// Never a page for a search engine to list, whatever the
+			// deployment's setting.
+			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+			console.ServeHTTP(w, r)
+			return
+		}
+		site.ServeHTTP(w, r)
+	})
+}
+
+// siteRoutes are the routes of the platform's host and of the marketplaces'.
+func (s Site) siteRoutes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+HealthPath, health(s.database))
 	mux.HandleFunc("GET "+RobotsPath, robots(s.indexable, s.sitemap()))

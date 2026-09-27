@@ -77,7 +77,9 @@ func Resolve(resolver *Resolver, unresolved Unresolved, bypass ...string) func(h
 					unresolved.InPreparation(w, r, resolution.Marketplace)
 					return
 				}
-			case PlatformHost:
+			case PlatformHost, ConsoleHost:
+				// Neither belongs to a marketplace; what each serves is
+				// the routes' decision (internal/platform/httpx).
 			}
 
 			next.ServeHTTP(w, r.WithContext(

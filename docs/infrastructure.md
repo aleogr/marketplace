@@ -419,6 +419,33 @@ and the spike that decides the production approach is scheduled before launch
 (`docs/design.md`, section 7). Nothing depends on its outcome: the service
 resolves the marketplace from the host it receives, whatever put it there.
 
+### The console's host
+
+The console answers on a host of its own, `console.marketplace.lab.aleogr.dev`
+(`console_host` in the environment's `.tfvars`), and on nothing else: the
+platform's host and the marketplaces' never serve it, and it serves no
+marketplace (`docs/superpowers/specs/2026-09-26-f15-console-design.md`, D1).
+The service reads it as `CONSOLE_HOST`. Its cookies are host cookies, so the
+console's session is never sent to a store and a store's never to the console.
+
+Terraform maps the domain (`google_cloud_run_domain_mapping.console`); the DNS
+record is by hand, once, in Cloudflare, with the same shape as the platform's:
+
+| Type | Name | Target | Proxy status |
+|---|---|---|---|
+| CNAME | `console.marketplace.lab` | `ghs.googlehosted.com` | DNS only |
+
+The check is the same as the platform's —
+
+```
+$ getent hosts console.marketplace.lab.aleogr.dev
+```
+
+— an address in Google's range. Until the record exists the console is
+unreachable and nothing else is affected; once it does, the certificate takes
+the usual fifteen minutes to a day, and
+`terraform -chdir=infra/terraform output console_url` is the address to open.
+
 ## The database
 
 **The instance is not this project's.** The lab's PostgreSQL lives in

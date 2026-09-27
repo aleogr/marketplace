@@ -34,6 +34,21 @@ variable "platform_host" {
   }
 }
 
+variable "console_host" {
+  description = "Host the console answers on: the staff's sign-in and the console, and nothing of a marketplace (docs/superpowers/specs/2026-09-26-f15-console-design.md, D1). A subdomain of its own, so that the console's host cookies are never sent to a store and a store's never to the console."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$", var.console_host))
+    error_message = "The console host must be a lowercase DNS name, with no scheme, no port and no trailing dot."
+  }
+
+  validation {
+    condition     = var.console_host != var.platform_host
+    error_message = "The console answers on a host of its own, not on the platform host."
+  }
+}
+
 variable "github_repository" {
   description = "Repository allowed to deploy, as owner/name. The federation provider already carries this value in its attribute condition (docs/infrastructure.md); it is repeated here because the binding on the deploy account is Terraform's while the provider is not."
   type        = string
