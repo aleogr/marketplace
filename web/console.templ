@@ -1,0 +1,79 @@
+package web
+
+// ConsoleLayout is the console's own shell (F15 spec, Flows): the header with
+// the staff member's name, the language switch and the way out; the menu,
+// built from what they may do; and the footer with the build identifier
+// (docs/requirements.md, section 27). No page of the console is for a search
+// engine, so it carries no description to share and says so to robots too.
+templ ConsoleLayout(page Page, title string) {
+	<!DOCTYPE html>
+	<html lang={ page.Language }>
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="robots" content="noindex, nofollow"/>
+			<title>{ title } — { page.Title() }</title>
+			@styles(page)
+		</head>
+		<body class="console">
+			<header>
+				<strong>{ page.Title() }</strong>
+				@LanguageSwitch(page)
+				if page.Account != "" {
+					<nav class="account" aria-label={ page.T("identity.header.account") }>
+						<span>{ page.T("identity.header.signed_in_as", page.Account) }</span>
+						<form method="post" action={ templ.SafeURL("/" + page.Language + "/signout") }>
+							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+							<button type="submit">{ page.T("identity.signout.submit") }</button>
+						</form>
+					</nav>
+				}
+			</header>
+			if len(page.Menu) > 0 {
+				<nav class="menu" aria-label={ page.T("console.menu") }>
+					<ul>
+						for _, item := range page.Menu {
+							<li>
+								<a
+									href={ templ.SafeURL("/" + page.Language + item.Path) }
+									if item.Current {
+										aria-current="page"
+									}
+								>{ page.T(item.Label) }</a>
+							</li>
+						}
+					</ul>
+				</nav>
+			}
+			<main>
+				{ children... }
+			</main>
+			<footer>
+				<p>{ page.T("console.build", page.Version) }</p>
+			</footer>
+		</body>
+	</html>
+}
+
+// ConsoleHome is the console's first page.
+templ ConsoleHome(page Page) {
+	@Layout(page, page.T("console.home.title")) {
+		<h1>{ page.T("console.home.title") }</h1>
+		<p>{ page.T("console.home.welcome", page.Account) }</p>
+		<p>{ page.T("console.home.intro") }</p>
+	}
+}
+
+// ConsoleEnrol is where a staff member with no second factor is sent before
+// any other page of the console (F15 spec, D4): an app or a key, never a code
+// by e-mail, which is staff's recovery channel (§18.2).
+templ ConsoleEnrol(page Page) {
+	@Layout(page, page.T("console.enrol.title")) {
+		<h1>{ page.T("console.enrol.title") }</h1>
+		<p>{ page.T("console.enrol.intro") }</p>
+		<ul class="enrol">
+			<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/key") }>{ page.T("identity.security.add_key") }</a></li>
+			<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/app") }>{ page.T("identity.security.add_app") }</a></li>
+		</ul>
+	}
+}

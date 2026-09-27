@@ -56,7 +56,8 @@ templ SecurityPage(page Page, view Security) {
 		<ul class="add">
 			<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/key") }>{ page.T("identity.security.add_key") }</a></li>
 			<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/app") }>{ page.T("identity.security.add_app") }</a></li>
-			if !view.HasEmail() {
+			// Never for staff, whose recovery channel e-mail is (§18.2).
+			if !view.HasEmail() && !page.Console {
 				<li><a href={ templ.SafeURL("/" + page.Language + "/account/security/email") }>{ page.T("identity.security.add_email") }</a></li>
 			}
 		</ul>

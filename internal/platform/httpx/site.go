@@ -7,6 +7,7 @@ import (
 
 	"github.com/aleogr/marketplace/internal/platform/i18n"
 	"github.com/aleogr/marketplace/internal/platform/seo"
+	"github.com/aleogr/marketplace/internal/platform/version"
 	"github.com/aleogr/marketplace/internal/tenancy"
 	"github.com/aleogr/marketplace/web"
 )
@@ -37,6 +38,9 @@ type Site struct {
 	// identity serves sign-up, sign-in and the account's pages. It is nil in
 	// a process with no database, which has no accounts to serve.
 	identity *IdentityRoutes
+	// console serves the console on the console's host, with the identity
+	// routes staff sign in through. Nil where there is no console.
+	console *ConsoleRoutes
 }
 
 // NewSite returns the site's routes, ready to be mounted behind the pipeline.
@@ -68,7 +72,7 @@ func (s Site) Handler() http.Handler {
 			// Never a page for a search engine to list, whatever the
 			// deployment's setting.
 			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
-			console.ServeHTTP(w, r)
+			console.ServeHTTP(w, s.withConsoleName(r))
 			return
 		}
 		site.ServeHTTP(w, r)
@@ -215,6 +219,12 @@ func (s Site) page(r *http.Request, path string) web.Page {
 	page.Accounts = s.identity != nil && page.Marketplace != ""
 	if session, ok := SessionFrom(r.Context()); ok {
 		page.Account = session.Account.Name
+	}
+	if onConsole(r) {
+		// The console's shell: the build in its footer, and a menu of what
+		// the staff member may open (F15 spec, Flows).
+		page.Console, page.Version = true, version.String()
+		page.Menu = s.consoleMenu(r, path)
 	}
 
 	// One source for every description the page carries, cut once
