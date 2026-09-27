@@ -18,8 +18,18 @@
 -- (migration 00012). The sweep therefore names its scope itself
 -- (internal/identity.sweepSessions), which the index does answer; the policy
 -- is still what guarantees the scope.
+--
+-- **The lookup by e-mail's index.** The same is true of `account_email_is_unique`
+-- (migration 00009), which leads with `marketplace_id`: the policy is no
+-- longer an index condition, so a query that names only `email_normalised`
+-- (internal/identity.accountByEmail) can no longer use that index to find its
+-- handful of rows, and every sign-in reads every account instead. A second
+-- index, on `email_normalised` alone, is what the lookup uses; the policy
+-- still filters what it finds to the calling scope.
 
 -- +goose Up
+CREATE INDEX account_by_email ON account (email_normalised);
+
 DROP POLICY account_belongs_to_the_marketplace ON account;
 CREATE POLICY account_belongs_to_its_scope ON account
     FOR ALL USING (marketplace_id IS NOT DISTINCT FROM current_marketplace_id())
@@ -71,6 +81,8 @@ CREATE POLICY second_factor_failure_belongs_to_its_scope ON second_factor_failur
     WITH CHECK (marketplace_id IS NOT DISTINCT FROM current_marketplace_id());
 
 -- +goose Down
+DROP INDEX account_by_email;
+
 DROP POLICY IF EXISTS account_belongs_to_its_scope ON account;
 CREATE POLICY account_belongs_to_the_marketplace ON account
     FOR ALL USING (marketplace_id = current_marketplace_id())

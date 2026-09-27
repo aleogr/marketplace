@@ -733,7 +733,7 @@ and nothing more; it may write none.
 
 From then on `/setup` answers "not found", whatever token it is given; the
 token's SHA-256 is recorded in the `bootstrap` table as used. Attempts are
-limited per address (`setup`, ten an hour), like every sign-in.
+limited per client IP address (`setup`, ten an hour), like every sign-in.
 
 ### If the owner loses every second factor and every recovery code
 

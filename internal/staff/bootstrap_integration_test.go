@@ -209,6 +209,55 @@ func TestTwoFirstRunsAtOnceMakeOneOwner(t *testing.T) {
 	}
 }
 
+// Two first runs at once with the same e-mail race at the account, not at the
+// bootstrap row: the loser's CreateStaff answers identity.ErrAddressTaken,
+// which Setup must still answer as ErrSetupClosed once the winner's Open()
+// shows an owner exists — the page already turns ErrSetupClosed into 404, and
+// ErrAddressTaken would otherwise reach it as a 500 (F15 spec).
+func TestTwoFirstRunsAtOnceWithTheSameAddressMakeOneOwner(t *testing.T) {
+	database, service, trail := fresh(t)
+	bootstrap := staff.NewBootstrap(database, service, trail, token)
+
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = bootstrap.Setup(t.Context(), platform(), token, "Owner", "owner@example.test", password)
+		}()
+	}
+	wg.Wait()
+
+	succeeded, closed := 0, 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, staff.ErrSetupClosed):
+			closed++
+		default:
+			t.Fatalf("a concurrent Setup with the same address = %v, want nil or ErrSetupClosed", err)
+		}
+	}
+	if succeeded != 1 || closed != 1 {
+		t.Fatalf("%d first runs succeeded and %d were closed, want one each", succeeded, closed)
+	}
+	var owners, accounts int
+	if err := database.InTx(t.Context(), func(tx pgx.Tx) error {
+		if err := tx.QueryRow(t.Context(),
+			`SELECT count(*) FROM user_role u JOIN role r ON r.id = u.role_id WHERE r.owner`).Scan(&owners); err != nil {
+			return err
+		}
+		return tx.QueryRow(t.Context(), `SELECT count(*) FROM account`).Scan(&accounts)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if owners != 1 || accounts != 1 {
+		t.Fatalf("%d owners and %d staff accounts, want one of each", owners, accounts)
+	}
+}
+
 // A deployment given no token has no first run at all.
 func TestWithoutATokenThereIsNoFirstRun(t *testing.T) {
 	database, service, trail := fresh(t)

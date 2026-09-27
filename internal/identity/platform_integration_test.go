@@ -5,6 +5,7 @@ package identity
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -187,5 +188,35 @@ func TestTheSweepRemovesOnlyItsOwnScopesSessions(t *testing.T) {
 	sweep(one)
 	if seen, _ := visible(t, db, one, "session", "account_id", buyer); seen != 0 {
 		t.Error("the marketplace's sweep left its stale session")
+	}
+}
+
+// accountByEmail's lookup finds its account through account_by_email: the
+// unique index leads with marketplace_id, which the policy's
+// IS NOT DISTINCT FROM (this migration) is not an index condition for, so
+// without a second index every sign-in would scan every account
+// (migrations/00016_platform_identity_rows.sql).
+func TestAccountByEmailUsesTheIndex(t *testing.T) {
+	db, one, _ := twoMarketplaces(t)
+	email := unique(t, "lookup") + "@example.test"
+	everyIdentityRow(t, db, one, email)
+
+	var plan string
+	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
+		// The table holds only a handful of rows in this test, which the
+		// planner may cost a sequential scan for regardless of the index;
+		// enable_seqscan = off makes it price the index instead, the way it
+		// already would at the row counts a live marketplace holds.
+		if _, err := tx.Exec(t.Context(), "SET LOCAL enable_seqscan = off"); err != nil {
+			return err
+		}
+		return tx.QueryRow(t.Context(),
+			`EXPLAIN (FORMAT JSON) SELECT id FROM account WHERE email_normalised = $1`, email).Scan(&plan)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(plan, "account_by_email") {
+		t.Fatalf("the plan does not use account_by_email: %s", plan)
 	}
 }

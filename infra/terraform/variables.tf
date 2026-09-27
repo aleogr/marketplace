@@ -47,6 +47,11 @@ variable "console_host" {
     condition     = var.console_host != var.platform_host
     error_message = "The console answers on a host of its own, not on the platform host."
   }
+
+  validation {
+    condition     = !contains(flatten([for m in var.marketplaces : m.hosts]), var.console_host)
+    error_message = "The console host must not be one of the marketplaces' hosts: the resolver checks the console host before the marketplace map, and a collision would make a store host serve the console."
+  }
 }
 
 variable "github_repository" {

@@ -91,9 +91,21 @@ func (b *Bootstrap) Setup(ctx context.Context, v identity.Visit, token, name, em
 	if subtle.ConstantTimeCompare(given[:], b.hash[:]) != 1 {
 		return "", ErrTokenWrong
 	}
-	return b.identity.CreateStaff(ctx, v, name, email, password, func(ctx context.Context, tx pgx.Tx, account string) error {
+	session, err := b.identity.CreateStaff(ctx, v, name, email, password, func(ctx context.Context, tx pgx.Tx, account string) error {
 		return b.claim(ctx, tx, v, account)
 	})
+	if errors.Is(err, identity.ErrAddressTaken) {
+		// Two first runs at once with the same e-mail race at the account, not
+		// at the bootstrap row: the loser's insert waits on the unique index
+		// and then finds it taken, by the winner's own account rather than by
+		// someone else's. Once the winner has made an owner, the loser's
+		// address being taken is the setup closing under it, not a real
+		// conflict, so it gets the same answer every other latecomer does.
+		if open, openErr := b.Open(ctx); openErr == nil && !open {
+			return "", ErrSetupClosed
+		}
+	}
+	return session, err
 }
 
 // claim records the first run as done by account and makes account the
