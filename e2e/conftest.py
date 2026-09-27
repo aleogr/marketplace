@@ -25,6 +25,8 @@ from typing import Iterator
 
 import pytest
 
+from console import CONSOLE_HOST, PLATFORM_HOST
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 START_TIMEOUT = 30.0
 
@@ -213,6 +215,19 @@ SEED = json.dumps([
 AUDIT_LOCAL_KEY = base64.b64encode(secrets.token_bytes(32)).decode()
 
 
+def migrate(binary: Path, db) -> None:
+    """Apply the migrations to db and seed the suite's marketplaces, as the
+    migration job does, granting the application role what it needs."""
+    result = subprocess.run(
+        [str(binary), "migrate"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
+        env={"PATH": os.environ.get("PATH", ""), "PROVIDERS_MODE": "fake",
+             "DATABASE_URL": db.owner_url, "DATABASE_NAME": db.name,
+             "DATABASE_APP_USER": db.role, "SEED_MARKETPLACES": SEED,
+             "AUDIT_LOCAL_KEY": AUDIT_LOCAL_KEY},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.fixture(scope="session")
 def database(binary: Path):
     """A PostgreSQL, migrated and seeded once for the whole session.
@@ -225,14 +240,7 @@ def database(binary: Path):
 
     db, remove = provision()
     try:
-        migrate = subprocess.run(
-            [str(binary), "migrate"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
-            env={"PATH": os.environ.get("PATH", ""), "PROVIDERS_MODE": "fake",
-                 "DATABASE_URL": db.owner_url, "DATABASE_NAME": db.name,
-                 "DATABASE_APP_USER": db.role, "SEED_MARKETPLACES": SEED,
-                 "AUDIT_LOCAL_KEY": AUDIT_LOCAL_KEY},
-        )
-        assert migrate.returncode == 0, migrate.stdout + migrate.stderr
+        migrate(binary, db)
         yield db
     finally:
         # A migration that failed still leaves the database provision()
@@ -270,10 +278,58 @@ def run_marketplace(run_server, database, tmp_path):
             conn.execute("DELETE FROM rate_limit")
             conn.execute("DELETE FROM outbox_event WHERE state = 'pending'")
         mailbox = tmp_path / "mailbox"
-        server = run_server(DATABASE_URL=database.app_url, MAIL_DIRECTORY=str(mailbox),
-                            AUDIT_LOCAL_KEY=AUDIT_LOCAL_KEY, **env)
+        server = run_server(**{"DATABASE_URL": database.app_url, "MAIL_DIRECTORY": str(mailbox),
+                               "AUDIT_LOCAL_KEY": AUDIT_LOCAL_KEY, "PLATFORM_HOST": PLATFORM_HOST,
+                               "CONSOLE_HOST": CONSOLE_HOST, **env})
         port = int(server.base_url.rsplit(":", 1)[1])
         return Marketplace(base_url=server.base_url, process=server.process,
                            log_lines=server.log_lines, port=port, mailbox=mailbox)
 
     return factory
+
+
+@dataclass
+class Console(Marketplace):
+    """A local process serving the console, over a database of its own."""
+
+    token: str = ""
+    database: object = None
+
+
+@pytest.fixture
+def run_console(run_server, database, binary, tmp_path):
+    """Start the binary over a fresh database — migrated and seeded, with no
+    owner yet — with the console's host and a first-run token.
+
+    The first run happens once per database, so it cannot share the session's:
+    the test that creates the owner must be the database's first
+    (docs/superpowers/specs/2026-09-26-f15-console-design.md, Testing).
+    """
+    from database import another
+
+    removals = []
+    started: list[Console] = []
+
+    def factory() -> Console:
+        fresh, remove = another(database)
+        removals.append(remove)
+        migrate(binary, fresh)
+        token = secrets.token_urlsafe(36)
+        mailbox = tmp_path / f"mailbox-{fresh.name}"
+        server = run_server(DATABASE_URL=fresh.app_url, MAIL_DIRECTORY=str(mailbox),
+                            AUDIT_LOCAL_KEY=AUDIT_LOCAL_KEY, PLATFORM_HOST=PLATFORM_HOST,
+                            CONSOLE_HOST=CONSOLE_HOST, BOOTSTRAP_TOKEN=token)
+        port = int(server.base_url.rsplit(":", 1)[1])
+        console = Console(base_url=server.base_url, process=server.process, log_lines=server.log_lines,
+                          port=port, mailbox=mailbox, token=token, database=fresh)
+        started.append(console)
+        return console
+
+    yield factory
+
+    # The process lets go of its database before the database goes.
+    for console in started:
+        console.process.terminate()
+        console.process.wait(timeout=10)
+    for remove in removals:
+        remove()
