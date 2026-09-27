@@ -701,6 +701,75 @@ that belongs to no marketplace is therefore what an address the edge *does*
 route answers with — the service's `run.app` address, which no marketplace
 claims. That is where every deployment proves it (`e2e/test_hosts.py`).
 
+## The console's owner
+
+The platform's first staff member, the owner, is created once, by a first run
+on the console's host (`docs/superpowers/specs/2026-09-26-f15-console-design.md`,
+D2). No credential is ever written into this repository or into a log: the
+first run is guarded by a token Terraform generates into the
+`console-bootstrap-token` secret (`infra/terraform/console.tf`), which Cloud Run
+hands to the service as `BOOTSTRAP_TOKEN`. The service may read that one secret
+and nothing more; it may write none.
+
+**The bootstrap, one step at a time, once the console's host answers:**
+
+1. Read the token, in Cloud Shell:
+
+   ```
+   gcloud secrets versions access latest --secret=console-bootstrap-token \
+     --project=aleogr-marketplace-lab-a4j5
+   ```
+
+2. Open `https://console.marketplace.lab.aleogr.dev/setup` and give the token,
+   the owner's name, e-mail address and password. The password follows the
+   same rules as everybody's: at least 12 characters, and not one found in a
+   known breach.
+3. The console asks for an authenticator app or a security key before
+   anything else, and shows ten recovery codes once. Keep them somewhere safe
+   and apart from the second factor: they are the only way back in without
+   it.
+4. Sign out and sign in again, to confirm the password and the second factor
+   work.
+
+From then on `/setup` answers "not found", whatever token it is given; the
+token's SHA-256 is recorded in the `bootstrap` table as used. Attempts are
+limited per address (`setup`, ten an hour), like every sign-in.
+
+### If the owner loses every second factor and every recovery code
+
+Nobody can reset the owner's second factor through the console: resetting a
+colleague's factor never applies to the owner (F15 spec, D9), and the owner's
+own recovery codes are what the owner uses. With all of them gone, the
+recovery is by hand, by someone with the migration user's access, through
+the Cloud SQL Auth Proxy as in "Reading the database by hand" above:
+
+```sql
+BEGIN;
+-- The owner: the staff account holding the owner role.
+SELECT a.id, a.email FROM account a
+  JOIN user_role u ON u.account_id = a.id
+  JOIN role r ON r.id = u.role_id AND r.owner;
+-- With that id as :owner — every second factor, recovery code, enrolment in
+-- progress, open challenge and failure count, and every session.
+DELETE FROM second_factor         WHERE account_id = :'owner';
+DELETE FROM recovery_code         WHERE account_id = :'owner';
+DELETE FROM factor_enrolment      WHERE account_id = :'owner';
+DELETE FROM sign_in_challenge     WHERE account_id = :'owner';
+DELETE FROM second_factor_failure WHERE account_id = :'owner';
+UPDATE session SET revoked_at = now(), revoked_reason = 'factor_reset'
+ WHERE account_id = :'owner' AND revoked_at IS NULL;
+COMMIT;
+```
+
+(`\set owner '<the id>'` in `psql` first.) The owner then signs in with the
+password alone and is sent to enrol a new app or key, with new recovery
+codes, before anything else — the same path the first run takes. The
+migration user owns the tables, so row-level security does not hide the
+owner's rows from it. Nothing in the audit log records a change made this way,
+so the person who made it writes down when and why, in the owner's own
+records. The password is not touched: an owner who lost it too has lost the
+account, and that is a decision for the owner, not a procedure.
+
 ## Which entry of `X-Forwarded-For` is the client
 
 Rate limiting keys on the client's address, so reading the wrong entry of that

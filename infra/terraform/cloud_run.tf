@@ -224,6 +224,20 @@ resource "google_cloud_run_v2_service" "marketplace" {
         }
       }
 
+      # The console's first-run token. Cloud Run reads the secret and sets the
+      # variable; the service only compares against it, and nothing in this
+      # repository or in a workflow ever holds the value
+      # (infra/terraform/console.tf).
+      env {
+        name = "BOOTSTRAP_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.bootstrap_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+
       # The key that wraps every person's audit key. The service may ask this
       # key to wrap and unwrap and cannot read it, which is what makes a
       # destroyed key final (infra/terraform/audit.tf).
@@ -287,6 +301,9 @@ resource "google_cloud_run_v2_service" "marketplace" {
   }
 
   depends_on = [
+    google_secret_manager_secret_iam_member.service_bootstrap_token,
+    # A revision reading "latest" of a secret with no version is refused.
+    google_secret_manager_secret_version.bootstrap_token,
     google_secret_manager_secret_iam_member.service_mail_webhook_token,
     google_secret_manager_secret_iam_member.service_mail_api_key,
     google_kms_crypto_key_iam_member.service,

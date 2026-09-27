@@ -273,3 +273,33 @@ func waitFor(address string) error {
 	}
 	return errors.New("the server did not accept connections in time")
 }
+
+// Fresh returns the address of a database of the test's own on the same
+// server, created empty and dropped when the test ends. Most tests share the
+// package's database and keep their fixtures apart by name; a test of
+// something a database holds once — the owner's first run
+// (internal/staff) — needs a database no other test has touched.
+func Fresh(t *testing.T) string {
+	t.Helper()
+	server := URL(t)
+	name, err := databaseName()
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoted := pgx.Identifier{name}.Sanitize() //nolint:misspell // pgx's own method name.
+	if err := onServer(t.Context(), server, "CREATE DATABASE "+quoted); err != nil {
+		t.Fatalf("dbtest: cannot create the database %s: %v", name, err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := onServer(ctx, server, "DROP DATABASE IF EXISTS "+quoted+" WITH (FORCE)"); err != nil {
+			t.Errorf("dbtest: cannot drop the database %s: %v", name, err)
+		}
+	})
+	own, err := addressOf(server, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return own
+}
