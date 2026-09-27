@@ -146,16 +146,25 @@ func revokeSession(ctx context.Context, tx pgx.Tx, hash []byte, reason string, n
 	return account, err
 }
 
-// sweepSessions deletes the session rows that can never authenticate again
-// (Task 12b): created more than SessionLifetime ago, unseen for more than
-// SessionIdle, or revoked more than RevokedKept ago. now is the caller's
-// clock, not the database's, like every other check made against a session.
-// Row-level security scopes the DELETE to one marketplace.
-func sweepSessions(ctx context.Context, tx pgx.Tx, now time.Time) (int64, error) {
+// sweepSessions deletes the session rows of scope — a marketplace's id, or
+// "" for the platform's — that can never authenticate again (Task 12b):
+// created more than SessionLifetime ago, unseen for more than SessionIdle, or
+// revoked more than RevokedKept ago. now is the caller's clock, not the
+// database's, like every other check made against a session.
+//
+// Row-level security is what guarantees the scope. The scope is named here
+// as well, as `=` or `IS NULL`, because that is what the index on
+// session.marketplace_id answers, and the policy's IS NOT DISTINCT FROM is
+// not (migrations/00016_platform_identity_rows.sql): without it the DELETE
+// reads every session of every scope.
+func sweepSessions(ctx context.Context, tx pgx.Tx, scope string, now time.Time) (int64, error) {
+	where, args := `marketplace_id IS NULL`, []any{now.Add(-SessionLifetime), now.Add(-SessionIdle), now.Add(-RevokedKept)}
+	if scope != "" {
+		where, args = `marketplace_id = $4`, append(args, scope)
+	}
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM session
-		 WHERE created_at < $1 OR last_seen_at < $2 OR revoked_at < $3`,
-		now.Add(-SessionLifetime), now.Add(-SessionIdle), now.Add(-RevokedKept))
+		 WHERE `+where+` AND (created_at < $1 OR last_seen_at < $2 OR revoked_at < $3)`, args...)
 	if err != nil {
 		return 0, err
 	}

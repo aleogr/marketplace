@@ -60,8 +60,9 @@ func insertApp(ctx context.Context, tx pgx.Tx, marketplace, account, label strin
 // touch its factors and recovery codes serialise instead of each reading a
 // state the other is about to change. FOR NO KEY UPDATE, not FOR UPDATE, so
 // it does not block the FOR KEY SHARE lock a session insert takes on the same
-// row at sign-in. Exec, not Scan: a staff account's row is invisible to the
-// application role under RLS, and a missing row must not be an error.
+// row at sign-in. Exec, not Scan: an account outside the transaction's scope
+// is invisible to the application role under RLS, and a missing row must not
+// be an error.
 func lockAccount(ctx context.Context, tx pgx.Tx, account string) error {
 	_, err := tx.Exec(ctx, `SELECT 1 FROM account WHERE id = $1 FOR NO KEY UPDATE`, account)
 	return err

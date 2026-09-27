@@ -447,7 +447,7 @@ func TestSweepRemovesSessionsPastEachCondition(t *testing.T) {
 	var removed int64
 	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
 		var err error
-		removed, err = sweepSessions(t.Context(), tx, now)
+		removed, err = sweepSessions(t.Context(), tx, one, now)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -488,7 +488,7 @@ func TestSweepNeverTouchesAnotherMarketplace(t *testing.T) {
 	seedSession(t, db, two, acctTwo, eligibleInTwo, now.Add(-SessionLifetime-time.Hour), now.Add(-time.Hour), nil)
 
 	if err := db.InTxFor(t.Context(), one, func(tx pgx.Tx) error {
-		_, err := sweepSessions(t.Context(), tx, now)
+		_, err := sweepSessions(t.Context(), tx, one, now)
 		return err
 	}); err != nil {
 		t.Fatal(err)

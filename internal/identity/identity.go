@@ -445,7 +445,7 @@ func (s *Service) sweep(ctx context.Context, marketplace string) {
 		return
 	}
 	if err := s.db.InTxFor(ctx, marketplace, func(tx pgx.Tx) error {
-		_, err := sweepSessions(ctx, tx, now)
+		_, err := sweepSessions(ctx, tx, marketplace, now)
 		return err
 	}); err != nil {
 		s.log.WarnContext(ctx, "session sweep failed", "error", err)
