@@ -175,5 +175,11 @@
   "console.home.welcome": "Boas-vindas, %[1]s.",
   "console.home.intro": "Este é o console da plataforma. A versão em execução aparece no rodapé de cada página.",
   "console.enrol.title": "Adicione um segundo fator",
-  "console.enrol.intro": "O console pede um segundo fator a cada entrada. Adicione um aplicativo autenticador ou uma chave de segurança antes de continuar; códigos por e-mail não são aceitos para a equipe."
+  "console.enrol.intro": "O console pede um segundo fator a cada entrada. Adicione um aplicativo autenticador ou uma chave de segurança antes de continuar; códigos por e-mail não são aceitos para a equipe.",
+  "console.setup.title": "Criar a conta de proprietário",
+  "console.setup.intro": "Esta página existe uma única vez, enquanto a plataforma não tem proprietário. O proprietário é o primeiro membro da equipe e pode fazer tudo no console.",
+  "console.setup.token": "Token de inicialização",
+  "console.setup.token_hint": "O token guardado no Secret Manager, lido com o comando do guia de infraestrutura.",
+  "console.setup.wrong_token": "Este não é o token de inicialização.",
+  "console.setup.submit": "Criar a conta"
 }

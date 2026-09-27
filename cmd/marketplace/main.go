@@ -269,7 +269,14 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// identity flows on a platform visit (F15 spec, D1, D4). Until the roles
 	// arrive the owner is the only staff member allowed anything.
 	if identityService != nil && cfg.ConsoleHost != "" {
-		site = site.WithConsole(httpx.ConsoleRoutes{Authoriser: staff.NewOwners(database)})
+		site = site.WithConsole(httpx.ConsoleRoutes{
+			Authoriser: staff.NewOwners(database),
+			// The first run, while no owner exists, guarded by the token
+			// Terraform generated and limited per address like a sign-in
+			// (F15 spec, D2).
+			Bootstrap: staff.NewBootstrap(database, identityService, trail, cfg.BootstrapToken),
+			Setup:     ratelimit.NewDatabase(database, "setup", 10, time.Hour),
+		})
 	}
 
 	handler := site.Handler()

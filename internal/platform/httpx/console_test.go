@@ -61,7 +61,7 @@ func TestTheConsoleHostIsNeverIndexable(t *testing.T) {
 // paths are not found there, whatever is signed in.
 func TestTheConsoleIsNotFoundOnOtherHosts(t *testing.T) {
 	for _, place := range []func(*http.Request) *http.Request{onPlatform, inMarketplace} {
-		for _, path := range []string{"/console/version", "/enrol"} {
+		for _, path := range []string{"/console/version", "/enrol", "/setup"} {
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 			recorder := httptest.NewRecorder()
 			identitySite(t).ServeHTTP(recorder, place(request))

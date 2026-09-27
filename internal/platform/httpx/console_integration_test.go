@@ -47,6 +47,12 @@ type console struct {
 
 func newConsole(t *testing.T, withOwner bool) console {
 	t.Helper()
+	return newConsoleWith(t, withOwner, bootToken, ratelimit.Never{})
+}
+
+// newConsoleWith is newConsole with the first run's token and its limit.
+func newConsoleWith(t *testing.T, withOwner bool, token string, setup ratelimit.Limiter) console {
+	t.Helper()
 	pool, err := db.Open(t.Context(), config.Database{URL: dbtest.Fresh(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +79,7 @@ func newConsole(t *testing.T, withOwner bool) console {
 	database := serving{t, pool}
 	service := identity.NewService(database, identity.NewHasher(cheap, 2), breached.Fake{}, unaudited{}, silent()).
 		WithSealer(audit.NewKeys(keeper))
-	bootstrap := staff.NewBootstrap(database, service, unaudited{}, bootToken)
+	bootstrap := staff.NewBootstrap(database, service, unaudited{}, token)
 	if withOwner {
 		if _, err := bootstrap.Setup(t.Context(), identity.Visit{Platform: true, Language: "pt-BR"},
 			bootToken, "Dona", ownerEmail, ownerPassword); err != nil {
@@ -90,7 +96,7 @@ func newConsole(t *testing.T, withOwner bool) console {
 		Service: service, Pages: httpx.NewPages(catalogue), Log: silent(),
 		Limits: httpx.IdentityLimits{SignUp: never, Resend: never, ResendAddress: never, SignIn: never,
 			SignInAddress: never, Password: never, StepUp: never},
-	}).WithConsole(httpx.ConsoleRoutes{Authoriser: staff.NewOwners(database)})
+	}).WithConsole(httpx.ConsoleRoutes{Authoriser: staff.NewOwners(database), Bootstrap: bootstrap, Setup: setup})
 	return console{pool: pool, service: service, marketplace: marketplace, bootstrap: bootstrap,
 		handler: httpx.Sessions(service, silent())(site.Handler())}
 }
@@ -299,5 +305,71 @@ func TestTheConsoleIsNotServedOnAStore(t *testing.T) {
 		if answer := store.get(path); answer.Code != http.StatusNotFound {
 			t.Errorf("%s on a store = %d, want 404", path, answer.Code)
 		}
+	}
+}
+
+// setupForm is the first run's form.
+func setupForm(token, password string) url.Values {
+	return url.Values{"token": {token}, "name": {"Dona"}, "email": {ownerEmail}, "password": {password}}
+}
+
+// The first run through its page: a wrong token and a password the rules
+// refuse are each told so on the field they are about; the right token
+// creates the owner, signs them in and sends them to add a second factor;
+// and from then on the page is not found, whatever it is given (D2, D8).
+func TestTheFirstRunThroughItsPage(t *testing.T) {
+	c := newConsole(t, false)
+	v := c.onConsole(t)
+
+	page := v.get("/setup")
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="token"`) {
+		t.Fatalf("the first run's page: status %d, body %s", page.Code, page.Body.String())
+	}
+	wrong := v.post("/setup", setupForm("not-the-token", ownerPassword))
+	if wrong.Code != http.StatusUnauthorized || !strings.Contains(wrong.Body.String(), `role="alert"`) ||
+		!strings.Contains(input(t, wrong.Body.String(), "token"), `aria-invalid="true"`) {
+		t.Fatalf("a wrong token: status %d, body %s", wrong.Code, wrong.Body.String())
+	}
+	short := v.post("/setup", setupForm(bootToken, "short"))
+	if short.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(input(t, short.Body.String(), "password"), `aria-invalid="true"`) {
+		t.Fatalf("a short password: status %d, body %s", short.Code, short.Body.String())
+	}
+	if _, ok := v.cookies["session"]; ok {
+		t.Fatal("a refused first run signed somebody in")
+	}
+
+	wantRedirect(t, v.post("/setup", setupForm(bootToken, ownerPassword)), "/pt-BR/enrol")
+	wantRedirect(t, v.get("/"), "/pt-BR/enrol")
+	enrolAppOnConsole(t, v)
+	if home := v.get("/"); home.Code != http.StatusOK || !strings.Contains(home.Body.String(), "Dona") {
+		t.Fatalf("the owner's home: status %d", home.Code)
+	}
+
+	for _, again := range []*httptest.ResponseRecorder{
+		c.onConsole(t).get("/setup"),
+		c.onConsole(t).post("/setup", setupForm(bootToken, ownerPassword)),
+		c.onConsole(t).post("/setup", setupForm("not-the-token", ownerPassword)),
+	} {
+		if again.Code != http.StatusNotFound {
+			t.Errorf("the first run once the owner exists = %d, want 404", again.Code)
+		}
+	}
+}
+
+// Every attempt counts against the first run's own named limit, the wrong
+// tokens included.
+func TestTheFirstRunIsLimited(t *testing.T) {
+	c := newConsoleWith(t, false, bootToken, refusing{})
+	if refused := c.onConsole(t).post("/setup", setupForm("not-the-token", ownerPassword)); refused.Code != http.StatusTooManyRequests {
+		t.Fatalf("a first run over its limit = %d, want 429", refused.Code)
+	}
+}
+
+// A deployment given no token has no first run.
+func TestWithoutATokenTheFirstRunIsNotFound(t *testing.T) {
+	c := newConsoleWith(t, false, "", ratelimit.Never{})
+	if page := c.onConsole(t).get("/setup"); page.Code != http.StatusNotFound {
+		t.Fatalf("the first run with no token = %d, want 404", page.Code)
 	}
 }

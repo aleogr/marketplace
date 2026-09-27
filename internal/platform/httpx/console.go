@@ -3,6 +3,7 @@ package httpx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/aleogr/marketplace/internal/identity"
@@ -27,12 +28,22 @@ const ConsoleVersionPath = "/console/version"
 // enrolPath is where a staff member with no second factor is sent.
 const enrolPath = "/enrol"
 
+// setupPath is the first run's page.
+const setupPath = "/setup"
+
 // ConsoleRoutes is what the console needs besides the identity flows.
 type ConsoleRoutes struct {
 	// Authoriser answers whether a staff member may do something. Until the
 	// roles arrive it is staff.Owners: the owner may do everything, and
 	// nobody else anything (the seam of the F15 plan, PR 1).
 	Authoriser staff.Authoriser
+	// Bootstrap is the first run, which /setup serves while no owner
+	// exists (D2); nil serves none.
+	Bootstrap *staff.Bootstrap
+	// Setup bounds the first run's attempts per client address, wrong
+	// tokens included: the token is long, and this is what makes guessing
+	// it hopeless rather than merely unlikely.
+	Setup ratelimit.Limiter
 }
 
 // WithConsole returns the site serving the console on the console's host. It
@@ -69,6 +80,10 @@ func (s Site) consoleRoutes() *http.ServeMux {
 	limit := func(l ratelimit.Limiter, subject ratelimit.Subject, h http.Handler) http.Handler {
 		return ratelimit.Limit(l, subject, id.Pages.Refused, id.Log)(h)
 	}
+
+	// The first run, while there is no owner (D2).
+	mux.HandleFunc("GET "+setupPath, s.setupForm)
+	mux.Handle("POST "+setupPath, limit(s.console.Setup, byIP, http.HandlerFunc(s.setup)))
 
 	// Signing in: the password, then F14's second step. Staff answer with an
 	// app, a key or a recovery code; the policy refuses them e-mail codes, so
@@ -233,4 +248,77 @@ func (s Site) withConsoleName(r *http.Request) *http.Request {
 func consoleName(ctx context.Context) string {
 	name, _ := ctx.Value(consoleNameKey{}).(string)
 	return name
+}
+
+// setupOpen reports whether the first run is served, answering "not found"
+// when it is not: there is no owner to create any more, or no token to
+// create one with (D2, D8).
+func (s Site) setupOpen(w http.ResponseWriter, r *http.Request) bool {
+	if s.console.Bootstrap == nil {
+		http.NotFound(w, r)
+		return false
+	}
+	open, err := s.console.Bootstrap.Open(r.Context())
+	if err != nil {
+		s.failed(w, r, "the first run could not be looked up", err)
+		return false
+	}
+	if !open {
+		http.NotFound(w, r)
+	}
+	return open
+}
+
+// The field each refusal of the first run's form is about.
+var setupFields = map[string]string{
+	"console.setup.wrong_token":        "token",
+	"identity.error.name_missing":      "name",
+	"identity.error.name_invalid":      "name",
+	"identity.error.email_invalid":     "email",
+	"identity.error.password_short":    "password",
+	"identity.error.password_long":     "password",
+	"identity.error.password_breached": "password",
+}
+
+func (s Site) setupForm(w http.ResponseWriter, r *http.Request) {
+	if !s.setupOpen(w, r) {
+		return
+	}
+	render(w, r, web.Setup(s.page(r, setupPath), newForm()))
+}
+
+// setup creates the owner from the first run's form, signs them in and sends
+// them to add a second factor, which the console asks for before anything
+// else (D4). A wrong token is told so on its field, as a password the rules
+// refuse is on its own; the token itself is never shown back.
+func (s Site) setup(w http.ResponseWriter, r *http.Request) {
+	if !s.setupOpen(w, r) {
+		return
+	}
+	form := newForm()
+	form.Name, form.Email = r.PostFormValue("name"), r.PostFormValue("email")
+	token, err := s.console.Bootstrap.Setup(r.Context(), visit(r), r.PostFormValue("token"),
+		form.Name, form.Email, r.PostFormValue("password"))
+	status := http.StatusUnprocessableEntity
+	switch key, args, shown := formError(err); {
+	case errors.Is(err, staff.ErrSetupClosed):
+		// Another first run got there between the page's check and this
+		// one's claim.
+		http.NotFound(w, r)
+		return
+	case errors.Is(err, staff.ErrTokenWrong):
+		s.identity.Log.WarnContext(r.Context(), "a first run was refused: the token is wrong")
+		form.Error, status = "console.setup.wrong_token", http.StatusUnauthorized
+	case shown:
+		form.Error, form.ErrorArgs = key, args
+	case err != nil:
+		s.failed(w, r, "the first run failed", err)
+		return
+	default:
+		s.openSession(w, r, token)
+		http.Redirect(w, r, "/"+i18n.FromContext(r.Context())+enrolPath, http.StatusSeeOther)
+		return
+	}
+	form.Field = setupFields[form.Error]
+	renderStatus(w, r, status, web.Setup(s.page(r, setupPath), form))
 }

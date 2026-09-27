@@ -174,5 +174,11 @@
   "console.home.welcome": "Welcome, %[1]s.",
   "console.home.intro": "This is the platform's console. The build it runs is shown at the foot of every page.",
   "console.enrol.title": "Add a second factor",
-  "console.enrol.intro": "The console asks for a second factor at every sign-in. Add an authenticator app or a security key before going on; codes by e-mail are not accepted for staff."
+  "console.enrol.intro": "The console asks for a second factor at every sign-in. Add an authenticator app or a security key before going on; codes by e-mail are not accepted for staff.",
+  "console.setup.title": "Create the owner's account",
+  "console.setup.intro": "This page is served once, while the platform has no owner. The owner is the first member of staff, and may do everything in the console.",
+  "console.setup.token": "Bootstrap token",
+  "console.setup.token_hint": "The token in Secret Manager, read with the command in the infrastructure guide.",
+  "console.setup.wrong_token": "This is not the bootstrap token.",
+  "console.setup.submit": "Create the account"
 }
