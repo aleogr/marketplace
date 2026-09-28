@@ -105,7 +105,7 @@ func (s *Service) BeginKey(ctx context.Context, v Visit, session Session) ([]byt
 		return nil, err
 	}
 	var options []byte
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		user, _, err := keysOf(ctx, tx, session.Account)
 		if err != nil {
 			return err
@@ -157,7 +157,7 @@ func (s *Service) ConfirmKey(ctx context.Context, v Visit, session Session, labe
 	}
 	account := session.Account.ID
 	var issued, refused bool
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		now := s.now()
 		e, err := enrolmentOf(ctx, tx, session.ID, MethodKey, now)
 		if err != nil {
@@ -183,7 +183,7 @@ func (s *Service) ConfirmKey(ctx context.Context, v Visit, session Session, labe
 		added, err := tx.Exec(ctx, `
 			INSERT INTO second_factor (account_id, marketplace_id, kind, label, credential_id, public_key,
 			                           sign_count, credential_flags, created_at)
-			VALUES ($1, $2, 'webauthn', $3, $4, $5, $6, $7, $8)
+			VALUES ($1, nullif($2, '')::uuid, 'webauthn', $3, $4, $5, $6, $7, $8)
 			ON CONFLICT (credential_id) DO NOTHING`,
 			account, v.Marketplace, label, credential.ID, credential.PublicKey,
 			int64(credential.Authenticator.SignCount), int16(credential.Flags.ProtocolValue()), now)
@@ -226,7 +226,7 @@ func (s *Service) KeyOptions(ctx context.Context, v Visit, token, sessionID stri
 		return nil, err
 	}
 	var options []byte
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		_, account, err := s.challenge(ctx, tx, token, sessionID)
 		if err != nil {
 			return err

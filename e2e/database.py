@@ -134,3 +134,30 @@ def provision():
             stop_cluster()
 
     return database, remove
+
+
+def _elsewhere(url: str, name: str) -> str:
+    """The same server and credentials as url, on another database."""
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, "/" + name, parts.query, ""))
+
+
+def another(database: Database):
+    """Return another empty database beside ``database``, on the same server
+    and for the same application role, and the function that removes it.
+
+    Most tests share the session's database and keep their fixtures apart by
+    address. What a database holds once — the console's first run, which
+    creates the one owner (F15) — needs a database no other test has touched.
+    """
+    name = "e2e_" + secrets.token_hex(6)
+    server = _elsewhere(database.owner_url, "postgres")
+    with psycopg.connect(server, autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{name}"')
+
+    def remove() -> None:
+        with psycopg.connect(server, autocommit=True) as conn:
+            conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+    return Database(name=name, role=database.role, owner_url=_elsewhere(database.owner_url, name),
+                    app_url=_elsewhere(database.app_url, name)), remove

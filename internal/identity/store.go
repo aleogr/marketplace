@@ -21,6 +21,11 @@ type Account struct {
 
 var errTaken = errors.New("identity: address taken")
 
+// Every row below is written with the marketplace of the transaction's
+// scope, and a scope of "" is the platform's: the rows are written with no
+// marketplace (nullif), which is what the platform's transaction sees
+// (migrations/00016_platform_identity_rows.sql).
+
 func insertAccount(ctx context.Context, tx pgx.Tx, marketplace, email, normalised, name string) (string, error) {
 	var id string
 	err := tx.QueryRow(ctx, `
@@ -34,7 +39,24 @@ func insertAccount(ctx context.Context, tx pgx.Tx, marketplace, email, normalise
 	return id, err
 }
 
-const accountColumns = `id::text, marketplace_id::text, kind, email, name, verified_at`
+// insertStaff creates a staff account, which belongs to no marketplace, with
+// its address confirmed at: a staff account is never created by the person
+// typing an address into a public form, but by whoever holds the bootstrap
+// token or, later, an invitation mailed to that address (F15 spec, D2, D5).
+func insertStaff(ctx context.Context, tx pgx.Tx, email, normalised, name string, at time.Time) (string, error) {
+	var id string
+	err := tx.QueryRow(ctx, `
+		INSERT INTO account (marketplace_id, kind, email, email_normalised, name, verified_at)
+		VALUES (NULL, 'staff', $1, $2, $3, $4)
+		ON CONFLICT ON CONSTRAINT account_email_is_unique DO NOTHING
+		RETURNING id::text`, email, normalised, name, at).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", errTaken
+	}
+	return id, err
+}
+
+const accountColumns = `id::text, coalesce(marketplace_id::text, ''), kind, email, name, verified_at`
 
 func scanAccount(row pgx.Row) (Account, error) {
 	var a Account
@@ -52,7 +74,7 @@ func accountByEmail(ctx context.Context, tx pgx.Tx, normalised string) (Account,
 func setPassword(ctx context.Context, tx pgx.Tx, marketplace, account, secret string) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO credential (account_id, marketplace_id, kind, secret)
-		VALUES ($1, $2, 'password', $3)
+		VALUES ($1, nullif($2, '')::uuid, 'password', $3)
 		ON CONFLICT (account_id, kind) DO UPDATE SET secret = EXCLUDED.secret, updated_at = now()`,
 		account, marketplace, secret)
 	return err
@@ -61,7 +83,7 @@ func setPassword(ctx context.Context, tx pgx.Tx, marketplace, account, secret st
 func insertVerification(ctx context.Context, tx pgx.Tx, marketplace, account string, hash []byte, expires time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO email_verification (token_hash, account_id, marketplace_id, expires_at)
-		VALUES ($1, $2, $3, $4)`, hash, account, marketplace, expires)
+		VALUES ($1, $2, nullif($3, '')::uuid, $4)`, hash, account, marketplace, expires)
 	return err
 }
 
@@ -110,7 +132,7 @@ func passwordStill(ctx context.Context, tx pgx.Tx, account, verified string) (bo
 func insertSession(ctx context.Context, tx pgx.Tx, marketplace, account string, hash []byte, ip, agent string, now time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO session (account_id, marketplace_id, token_hash, ip, user_agent, created_at, last_seen_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $6)`, account, marketplace, hash, ip, agent, now)
+		VALUES ($1, nullif($2, '')::uuid, $3, $4, $5, $6, $6)`, account, marketplace, hash, ip, agent, now)
 	return err
 }
 
@@ -146,16 +168,25 @@ func revokeSession(ctx context.Context, tx pgx.Tx, hash []byte, reason string, n
 	return account, err
 }
 
-// sweepSessions deletes the session rows that can never authenticate again
-// (Task 12b): created more than SessionLifetime ago, unseen for more than
-// SessionIdle, or revoked more than RevokedKept ago. now is the caller's
-// clock, not the database's, like every other check made against a session.
-// Row-level security scopes the DELETE to one marketplace.
-func sweepSessions(ctx context.Context, tx pgx.Tx, now time.Time) (int64, error) {
+// sweepSessions deletes the session rows of scope — a marketplace's id, or
+// "" for the platform's — that can never authenticate again (Task 12b):
+// created more than SessionLifetime ago, unseen for more than SessionIdle, or
+// revoked more than RevokedKept ago. now is the caller's clock, not the
+// database's, like every other check made against a session.
+//
+// Row-level security is what guarantees the scope. The scope is named here
+// as well, as `=` or `IS NULL`, because that is what the index on
+// session.marketplace_id answers, and the policy's IS NOT DISTINCT FROM is
+// not (migrations/00016_platform_identity_rows.sql): without it the DELETE
+// reads every session of every scope.
+func sweepSessions(ctx context.Context, tx pgx.Tx, scope string, now time.Time) (int64, error) {
+	where, args := `marketplace_id IS NULL`, []any{now.Add(-SessionLifetime), now.Add(-SessionIdle), now.Add(-RevokedKept)}
+	if scope != "" {
+		where, args = `marketplace_id = $4`, append(args, scope)
+	}
 	tag, err := tx.Exec(ctx, `
 		DELETE FROM session
-		 WHERE created_at < $1 OR last_seen_at < $2 OR revoked_at < $3`,
-		now.Add(-SessionLifetime), now.Add(-SessionIdle), now.Add(-RevokedKept))
+		 WHERE `+where+` AND (created_at < $1 OR last_seen_at < $2 OR revoked_at < $3)`, args...)
 	if err != nil {
 		return 0, err
 	}

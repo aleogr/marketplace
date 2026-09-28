@@ -7,6 +7,10 @@ environment = "lab"
 # The platform host of the lab (docs/requirements.md, section 7).
 platform_host = "marketplace.lab.aleogr.dev"
 
+# The console's own host (F15 spec, D1). Its DNS record is created by hand, as
+# every host's is (docs/infrastructure.md, "The console's host").
+console_host = "console.marketplace.lab.aleogr.dev"
+
 # Real external providers, which today means one: e-mail
 # (docs/roadmap.md, F11). Every adapter this variable governs reads its
 # credential from Secret Manager, so a provider added later needs its secret

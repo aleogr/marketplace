@@ -52,14 +52,14 @@ func clearChallenge(w http.ResponseWriter, r *http.Request) {
 }
 
 // byChallenge limits the second step by the address its challenge is for, in
-// this marketplace: the same subject byAddress gives the password step, so
+// this marketplace or on the console: the same subject byAddress gives the password step, so
 // the F13 per-address limit covers both steps together.
 func (s Site) byChallenge(r *http.Request) string {
 	token := challengeToken(r)
 	if token == "" {
-		return marketplaceOf(r) + ":"
+		return scopeOf(r) + ":"
 	}
-	return marketplaceOf(r) + ":" + s.identity.Service.ChallengeAddress(r.Context(), visit(r), token)
+	return scopeOf(r) + ":" + s.identity.Service.ChallengeAddress(r.Context(), visit(r), token)
 }
 
 // again is what the sign-in page may say when a second step sent the visitor

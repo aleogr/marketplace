@@ -95,7 +95,7 @@ func insertEmailCode(ctx context.Context, tx pgx.Tx, marketplace, account, purpo
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO email_code (account_id, marketplace_id, purpose, code_hash, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`, account, marketplace, purpose, hash, now.Add(EmailCodeLifetime), now)
+		VALUES ($1, nullif($2, '')::uuid, $3, $4, $5, $6)`, account, marketplace, purpose, hash, now.Add(EmailCodeLifetime), now)
 	return err
 }
 
@@ -184,7 +184,7 @@ func purposeOf(ch challenge) string {
 // none, and the refusal is ErrCodesLocked, so that a page opened before the
 // lock can say why (D8); otherwise ErrNotPermitted.
 func (s *Service) SendChallengeCode(ctx context.Context, v Visit, token, sessionID string) error {
-	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	return s.within(ctx, v, func(tx pgx.Tx) error {
 		ch, account, err := s.challenge(ctx, tx, token, sessionID)
 		if err != nil {
 			return err
@@ -231,7 +231,7 @@ func (s *Service) BeginEmail(ctx context.Context, v Visit, session Session) erro
 	if err := s.canEnrolEmail(session); err != nil {
 		return err
 	}
-	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	return s.within(ctx, v, func(tx pgx.Tx) error {
 		has, err := hasEmailFactor(ctx, tx, session.Account.ID)
 		if err != nil {
 			return err
@@ -251,7 +251,7 @@ func (s *Service) ConfirmEmail(ctx context.Context, v Visit, session Session, co
 	}
 	account := session.Account.ID
 	var wrong bool
-	err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err := s.within(ctx, v, func(tx pgx.Tx) error {
 		if err := lockAccount(ctx, tx, account); err != nil {
 			return err
 		}
@@ -273,7 +273,7 @@ func (s *Service) ConfirmEmail(ctx context.Context, v Visit, session Session, co
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO second_factor (account_id, marketplace_id, kind, label, created_at)
-			VALUES ($1, $2, 'email', '', $3)`, account, v.Marketplace, now); err != nil {
+			VALUES ($1, nullif($2, '')::uuid, 'email', '', $3)`, account, v.Marketplace, now); err != nil {
 			return err
 		}
 		if err := s.recordWith(ctx, tx, v, account, "identity.second_factor_added", map[string]string{"method": string(MethodEmail)}); err != nil {

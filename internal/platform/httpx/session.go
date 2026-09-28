@@ -31,20 +31,27 @@ func sessionCookieName(r *http.Request) string {
 	return sessionCookieInsecure
 }
 
-// Sessions puts the signed-in account in the request's context. A cookie that
-// no longer opens a session is cleared, so the browser stops sending it. A
-// request with no cookie, or on a host that is no marketplace, never reaches
-// the database.
+// Sessions puts the signed-in account in the request's context: a
+// marketplace's account on its host, and a staff member on the console's,
+// where only the platform's accounts exist (F15 spec, D4). A cookie that no
+// longer opens a session is cleared, so the browser stops sending it. A
+// request with no cookie, or on a host that is neither, never reaches the
+// database.
 func Sessions(service *identity.Service, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie(sessionCookieName(r))
-			marketplace := marketplaceOf(r)
-			if err != nil || cookie.Value == "" || marketplace == "" {
+			marketplace, console := marketplaceOf(r), onConsole(r)
+			if err != nil || cookie.Value == "" || (marketplace == "" && !console) {
 				next.ServeHTTP(w, r)
 				return
 			}
-			session, err := service.Authenticate(r.Context(), marketplace, cookie.Value)
+			var session identity.Session
+			if console {
+				session, err = service.AuthenticateStaff(r.Context(), cookie.Value)
+			} else {
+				session, err = service.Authenticate(r.Context(), marketplace, cookie.Value)
+			}
 			switch {
 			case errors.Is(err, identity.ErrSessionInvalid):
 				clearSession(w, r)

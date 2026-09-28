@@ -106,7 +106,7 @@ func countFailure(ctx context.Context, tx pgx.Tx, marketplace, account string, n
 	var failures int
 	err := tx.QueryRow(ctx, `
 		INSERT INTO second_factor_failure (account_id, marketplace_id, failures, updated_at)
-		VALUES ($1, $2, 1, $3)
+		VALUES ($1, nullif($2, '')::uuid, 1, $3)
 		ON CONFLICT (account_id) DO UPDATE
 		   SET failures = second_factor_failure.failures + 1, updated_at = EXCLUDED.updated_at
 		RETURNING failures`, account, marketplace, now).Scan(&failures)

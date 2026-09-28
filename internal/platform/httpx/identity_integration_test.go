@@ -43,6 +43,12 @@ func (s serving) InTxFor(_ context.Context, marketplaceID string, fn func(pgx.Tx
 	return dbtest.Serving(s.t, s.pool, marketplaceID, fn)
 }
 
+// InTx names no marketplace: the platform's transaction, which staff's
+// flows run in (F15 spec, D4).
+func (s serving) InTx(_ context.Context, fn func(pgx.Tx) error) error {
+	return dbtest.Serving(s.t, s.pool, "", fn)
+}
+
 // unaudited is an auditor that keeps nothing: what these tests prove is the
 // pages, and the audit trail of each flow is internal/identity's to test.
 type unaudited struct{}

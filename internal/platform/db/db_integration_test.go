@@ -156,3 +156,37 @@ func versions(t *testing.T, pool *db.Pool) []int64 {
 	}
 	return applied
 }
+
+// A transaction that names no marketplace is the platform's, which is what
+// staff's flows run in (F15 spec, D4): current_marketplace_id() is NULL in
+// it, never the marketplace a transaction before it named on the same pooled
+// connection, since InTxFor's setting is local to its transaction.
+func TestInTxNamesNoMarketplaceAfterOneThatDid(t *testing.T) {
+	pool, settings := open(t)
+	if err := db.Migrate(t.Context(), pool, settings, discard()); err != nil {
+		t.Fatalf("Migrate() = %v, want nil", err)
+	}
+	const marketplace = "11111111-1111-1111-1111-111111111111"
+
+	// More rounds than the pool has connections, so every connection has
+	// served a marketplace before it serves the platform.
+	for round := range 12 {
+		var named *string
+		if err := pool.InTxFor(t.Context(), marketplace, func(tx pgx.Tx) error {
+			return tx.QueryRow(t.Context(), `SELECT current_marketplace_id()::text`).Scan(&named)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if named == nil || *named != marketplace {
+			t.Fatalf("round %d: InTxFor named %v, want %s", round, named, marketplace)
+		}
+		if err := pool.InTx(t.Context(), func(tx pgx.Tx) error {
+			return tx.QueryRow(t.Context(), `SELECT current_marketplace_id()::text`).Scan(&named)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if named != nil {
+			t.Fatalf("round %d: InTx named marketplace %s, want none", round, *named)
+		}
+	}
+}

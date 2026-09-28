@@ -140,6 +140,13 @@ resource "google_cloud_run_v2_service" "marketplace" {
         value = var.platform_host
       }
 
+      # The console's own host, which serves the console and nothing else
+      # (docs/superpowers/specs/2026-09-26-f15-console-design.md, D1).
+      env {
+        name  = "CONSOLE_HOST"
+        value = var.console_host
+      }
+
       # Where the queues are, and who the callbacks are signed as. Declared
       # here rather than discovered at run time: a process that had to ask
       # which project it is in would fail differently in every environment
@@ -217,6 +224,20 @@ resource "google_cloud_run_v2_service" "marketplace" {
         }
       }
 
+      # The console's first-run token. Cloud Run reads the secret and sets the
+      # variable; the service only compares against it, and nothing in this
+      # repository or in a workflow ever holds the value
+      # (infra/terraform/console.tf).
+      env {
+        name = "BOOTSTRAP_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.bootstrap_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+
       # The key that wraps every person's audit key. The service may ask this
       # key to wrap and unwrap and cannot read it, which is what makes a
       # destroyed key final (infra/terraform/audit.tf).
@@ -280,6 +301,9 @@ resource "google_cloud_run_v2_service" "marketplace" {
   }
 
   depends_on = [
+    google_secret_manager_secret_iam_member.service_bootstrap_token,
+    # A revision reading "latest" of a secret with no version is refused.
+    google_secret_manager_secret_version.bootstrap_token,
     google_secret_manager_secret_iam_member.service_mail_webhook_token,
     google_secret_manager_secret_iam_member.service_mail_api_key,
     google_kms_crypto_key_iam_member.service,
@@ -323,6 +347,24 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
 resource "google_cloud_run_domain_mapping" "platform" {
   location = var.region
   name     = var.platform_host
+
+  metadata {
+    namespace = var.project_id
+    labels    = local.labels
+  }
+
+  spec {
+    route_name = google_cloud_run_v2_service.marketplace.name
+  }
+}
+
+# The console's host, mapped like the platform's (F15 spec, D1). The DNS record
+# behind it is created by hand in Cloudflare, as every host's is
+# (docs/infrastructure.md, "The console's host"); until it exists the console
+# is unreachable and nothing else is affected.
+resource "google_cloud_run_domain_mapping" "console" {
+  location = var.region
+  name     = var.console_host
 
   metadata {
     namespace = var.project_id

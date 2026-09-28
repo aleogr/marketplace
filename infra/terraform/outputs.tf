@@ -18,6 +18,11 @@ output "platform_url" {
   value       = "https://${google_cloud_run_domain_mapping.platform.name}"
 }
 
+output "console_url" {
+  description = "The host the console is reached on, once its DNS record exists and its certificate is issued (docs/infrastructure.md)."
+  value       = "https://${google_cloud_run_domain_mapping.console.name}"
+}
+
 output "deployer_service_account" {
   description = "Account the deployment pipeline federates into. Its value belongs in the repository variable GCP_DEPLOYER_SA (docs/infrastructure.md)."
   value       = google_service_account.deployer.email

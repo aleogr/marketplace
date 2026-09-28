@@ -88,7 +88,7 @@ type Security struct {
 // Security reads an account's second factors and recovery codes.
 func (s *Service) Security(ctx context.Context, v Visit, session Session) (Security, error) {
 	var security Security
-	err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err := s.within(ctx, v, func(tx pgx.Tx) error {
 		factors, err := factorsOf(ctx, tx, session.Account.ID)
 		if err != nil {
 			return err
@@ -133,7 +133,7 @@ func (s *Service) BeginApp(ctx context.Context, v Visit, session Session) (AppEn
 	if err != nil {
 		return AppEnrolment{}, err
 	}
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		sealed, err := s.sealer.SealFor(ctx, tx, session.Account.ID, secret)
 		if err != nil {
 			return err
@@ -163,7 +163,7 @@ func (s *Service) PendingApp(ctx context.Context, v Visit, session Session) (App
 		return AppEnrolment{}, errNoSealer
 	}
 	var secret []byte
-	err := s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err := s.within(ctx, v, func(tx pgx.Tx) error {
 		e, err := enrolmentOf(ctx, tx, session.ID, MethodApp, s.now())
 		if err != nil {
 			return err
@@ -202,7 +202,7 @@ func (s *Service) ConfirmApp(ctx context.Context, v Visit, session Session, labe
 	account := session.Account.ID
 	var issued bool
 	var wrong bool
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		now := s.now()
 		e, err := enrolmentOf(ctx, tx, session.ID, MethodApp, now)
 		if err != nil {
@@ -275,7 +275,7 @@ func (s *Service) RemoveFactor(ctx context.Context, v Visit, session Session, id
 		return ErrStepUpNeeded
 	}
 	account := session.Account.ID
-	return s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	return s.within(ctx, v, func(tx pgx.Tx) error {
 		removed, err := deleteFactor(ctx, tx, account, id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrFactorUnknown
@@ -314,7 +314,7 @@ func (s *Service) RegenerateRecoveryCodes(ctx context.Context, v Visit, session 
 		return nil, err
 	}
 	account := session.Account.ID
-	err = s.db.InTxFor(ctx, v.Marketplace, func(tx pgx.Tx) error {
+	err = s.within(ctx, v, func(tx pgx.Tx) error {
 		if err := lockAccount(ctx, tx, account); err != nil {
 			return err
 		}

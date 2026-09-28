@@ -48,10 +48,20 @@ func byIP(r *http.Request) string {
 	return origin.IP
 }
 
-// byAddress limits by the e-mail address a form names, in this marketplace.
+// byAddress limits by the e-mail address a form names, in this marketplace
+// or on the console.
 func byAddress(r *http.Request) string {
 	normalised, _ := identity.NormaliseEmail(r.PostFormValue("email"))
-	return marketplaceOf(r) + ":" + normalised
+	return scopeOf(r) + ":" + normalised
+}
+
+// scopeOf names whose accounts a request's limits count against: the
+// marketplace's, by its id, or the platform's, on the console's host.
+func scopeOf(r *http.Request) string {
+	if onConsole(r) {
+		return "console"
+	}
+	return marketplaceOf(r)
 }
 
 func (s Site) identityRoutes(mux *http.ServeMux) {
@@ -141,6 +151,11 @@ func visit(r *http.Request) identity.Visit {
 	}
 	if resolution, ok := tenancy.FromContext(r.Context()); ok && resolution.Marketplace != nil {
 		v.Marketplace, v.MarketplaceName = resolution.Marketplace.ID, resolution.Marketplace.Name
+	}
+	if onConsole(r) {
+		// A staff member's: the platform's accounts, and nobody else's
+		// (F15 spec, D4).
+		v.Platform, v.MarketplaceName = true, consoleName(r.Context())
 	}
 	return v
 }

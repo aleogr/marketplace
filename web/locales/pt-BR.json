@@ -164,5 +164,22 @@
   "identity.challenge.codes_locked": "Houve respostas erradas demais nesta conta, então códigos de aplicativo autenticador ou por e-mail não funcionam mais. Confirmar com uma chave de segurança ou um código de recuperação, ou alterar a senha, faz com que voltem a funcionar.",
   "identity.challenge.codes_locked_none": "Esta conta não tem chave de segurança nem código de recuperação restante para usar no lugar, então não é possível confirmar por enquanto.",
   "identity.key.unsupported": "Este navegador não consegue usar uma chave de segurança nem a digital, o rosto ou o PIN deste dispositivo. Escolha outro jeito.",
-  "identity.key.enrol_needs_script": "Adicionar uma chave precisa de JavaScript neste navegador."
+  "identity.key.enrol_needs_script": "Adicionar uma chave precisa de JavaScript neste navegador.",
+  "console.title": "Console do marketplace",
+  "console.menu": "Console",
+  "console.menu.home": "Início",
+  "console.menu.security": "Segurança",
+  "console.menu.password": "Senha",
+  "console.build": "Versão: %[1]s",
+  "console.home.title": "Console",
+  "console.home.welcome": "Boas-vindas, %[1]s.",
+  "console.home.intro": "Este é o console da plataforma. A versão em execução aparece no rodapé de cada página.",
+  "console.enrol.title": "Adicione um segundo fator",
+  "console.enrol.intro": "O console pede um segundo fator a cada entrada. Adicione um aplicativo autenticador ou uma chave de segurança antes de continuar; códigos por e-mail não são aceitos para a equipe.",
+  "console.setup.title": "Criar a conta de proprietário",
+  "console.setup.intro": "Esta página existe uma única vez, enquanto a plataforma não tem proprietário. O proprietário é o primeiro membro da equipe e pode fazer tudo no console.",
+  "console.setup.token": "Token de inicialização",
+  "console.setup.token_hint": "O token guardado no Secret Manager, lido com o comando do guia de infraestrutura.",
+  "console.setup.wrong_token": "Este não é o token de inicialização.",
+  "console.setup.submit": "Criar a conta"
 }

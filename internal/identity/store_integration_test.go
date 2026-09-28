@@ -31,6 +31,12 @@ func (s serving) InTxFor(_ context.Context, marketplaceID string, fn func(pgx.Tx
 	return dbtest.Serving(s.t, s.pool, marketplaceID, fn)
 }
 
+// InTx names no marketplace: the platform's transaction, which staff's
+// flows run in (F15 spec, D4).
+func (s serving) InTx(_ context.Context, fn func(pgx.Tx) error) error {
+	return dbtest.Serving(s.t, s.pool, "", fn)
+}
+
 // unique returns a slug no other test has used. The tests of this package
 // share one database (internal/platform/dbtest), so a fixture with a fixed
 // name would find the accounts, mails and sessions an earlier test left.

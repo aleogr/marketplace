@@ -121,9 +121,10 @@ func (p *Pool) Ping(ctx context.Context) error {
 // rolling back otherwise, without naming a marketplace.
 //
 // What it can reach is therefore what belongs to no marketplace — the markets,
-// the schema itself — and, when the connection is the owning role, everything.
+// the schema itself, staff's accounts and sessions (F15) — and, when the
+// connection is the owning role, everything.
 // Tenant data is reached through InTxFor, because row-level security answers a
-// transaction that named no marketplace with no rows at all
+// transaction that named no marketplace with no tenant rows
 // (docs/design.md, section 2.6).
 func (p *Pool) InTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	tx, err := p.Begin(ctx)

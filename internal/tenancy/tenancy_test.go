@@ -10,7 +10,10 @@ import (
 	"github.com/aleogr/marketplace/internal/tenancy"
 )
 
-const platformHost = "marketplace.lab.aleogr.dev"
+const (
+	platformHost = "marketplace.lab.aleogr.dev"
+	consoleHost  = "console.marketplace.lab.aleogr.dev"
+)
 
 var (
 	electronics = &tenancy.Marketplace{
@@ -45,7 +48,7 @@ func resolver() (*tenancy.Resolver, *loader) {
 		"marketplace1." + platformHost: electronics,
 		"marketplace2." + platformHost: unfinished,
 	}}
-	return tenancy.NewResolver(source, platformHost), source
+	return tenancy.NewResolver(source, platformHost).WithConsoleHost(consoleHost), source
 }
 
 func TestResolve(t *testing.T) {
@@ -64,6 +67,16 @@ func TestResolve(t *testing.T) {
 		"the platform host": {
 			host:     platformHost,
 			wantKind: tenancy.PlatformHost,
+		},
+		// The console answers on a host of its own, which is configuration
+		// like the platform's and belongs to no marketplace (F15 spec, D1).
+		"the console host": {
+			host:     consoleHost,
+			wantKind: tenancy.ConsoleHost,
+		},
+		"the console host, spelled otherwise": {
+			host:     "CONSOLE.marketplace.lab.aleogr.dev.:443",
+			wantKind: tenancy.ConsoleHost,
 		},
 		"a host nobody configured": {
 			host:     "someone-elses-domain.example",
@@ -195,6 +208,11 @@ func TestMiddleware(t *testing.T) {
 			path:       "/",
 			wantServed: true,
 		},
+		"the console host is served": {
+			host:       consoleHost,
+			path:       "/",
+			wantServed: true,
+		},
 		"an unknown host is told so": {
 			host:        "someone-elses-domain.example",
 			path:        "/",
@@ -271,5 +289,22 @@ func TestFromContextReportsARequestThatSkippedTheMiddleware(t *testing.T) {
 
 	if _, found := tenancy.FromContext(t.Context()); found {
 		t.Error("a context that never passed the middleware reported a resolution")
+	}
+}
+
+// A resolver that was given no console host has none: an empty name matches
+// no request, not even one that carries no host.
+func TestWithoutAConsoleHostNothingIsTheConsole(t *testing.T) {
+	t.Parallel()
+
+	subject := tenancy.NewResolver(&loader{hosts: map[string]*tenancy.Marketplace{}}, platformHost)
+	for _, host := range []string{"", consoleHost} {
+		got, err := subject.Resolve(t.Context(), host)
+		if err != nil {
+			t.Fatalf("Resolve(%q) = %v, want nil", host, err)
+		}
+		if got.Kind == tenancy.ConsoleHost {
+			t.Errorf("Resolve(%q) = the console, with no console host configured", host)
+		}
 	}
 }

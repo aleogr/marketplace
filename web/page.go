@@ -58,6 +58,16 @@ type Page struct {
 	// Account is the signed-in account's name, empty when signed out.
 	Account string
 
+	// Console is true on the console's host (F15 spec, D1): the page is
+	// served in the console's own layout, whatever page it is.
+	Console bool
+	// Version is the build identifier, which the console's footer shows
+	// (docs/requirements.md, section 27).
+	Version string
+	// Menu is the console's navigation: what the signed-in staff member may
+	// open, and nothing else. Empty signed out, and before a second factor.
+	Menu []MenuItem
+
 	// printer writes this page's language.
 	printer *message.Printer
 	// names the languages by their own name, for the switch: a reader looking
@@ -96,11 +106,14 @@ func (p Page) Languages() []string {
 	return tags
 }
 
-// Title is whose page this is: the marketplace, or the platform when the
-// address belongs to no marketplace.
+// Title is whose page this is: the marketplace, the console on the console's
+// host, or the platform when the address belongs to neither.
 func (p Page) Title() string {
 	if p.Marketplace != "" {
 		return p.Marketplace
+	}
+	if p.Console {
+		return p.T("console.title")
 	}
 	return p.T("page.platform.title")
 }

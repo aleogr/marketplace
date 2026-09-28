@@ -44,6 +44,7 @@ import (
 	"github.com/aleogr/marketplace/internal/platform/seo"
 	"github.com/aleogr/marketplace/internal/platform/tasks"
 	"github.com/aleogr/marketplace/internal/platform/version"
+	"github.com/aleogr/marketplace/internal/staff"
 	"github.com/aleogr/marketplace/internal/tenancy"
 )
 
@@ -170,6 +171,7 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		// a database is a thing somebody must be able to see.
 		"database", databaseMode(cfg.Database),
 		"platform_host", cfg.PlatformHost,
+		"console_host", cfg.ConsoleHost,
 	)
 
 	// The catalogues are read once, at start-up. A catalogue that cannot be
@@ -263,6 +265,20 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		})
 	}
 
+	// The console, on its own host, where staff sign in through the same
+	// identity flows on a platform visit (F15 spec, D1, D4). Until the roles
+	// arrive the owner is the only staff member allowed anything.
+	if identityService != nil && cfg.ConsoleHost != "" {
+		site = site.WithConsole(httpx.ConsoleRoutes{
+			Authoriser: staff.NewOwners(database),
+			// The first run, while no owner exists, guarded by the token
+			// Terraform generated and limited per address like a sign-in
+			// (F15 spec, D2).
+			Bootstrap: staff.NewBootstrap(database, identityService, trail, cfg.BootstrapToken),
+			Setup:     ratelimit.NewDatabase(database, "setup", 10, time.Hour),
+		})
+	}
+
 	handler := site.Handler()
 
 	// The session is read after the marketplace and the language are known,
@@ -279,19 +295,19 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// no adapter yet, which is a working deployment — everyone gets the
 	// official language until they choose otherwise (docs/roadmap.md, F18).
 	//
-	// Six addresses are outside it, and none of them is a page. The health
+	// Seven addresses are outside it, and none of them is a page. The health
 	// check and the language switch are machinery. `robots.txt` is read by a
 	// crawler before it reads anything else and is defined to live at the
 	// root; the link preview is fetched by a scraper that may not follow a
 	// redirect at all; and the callback endpoint is called by Cloud Tasks and
 	// Cloud Scheduler, which do not follow redirects either — a redirect
 	// there is a job that silently never runs. The WebAuthn script is the
-	// same in every language.
+	// same in every language, and so is the console's build identifier.
 	handler = i18n.NewResolver(catalogue, geoip.Nowhere{}).
 		Resolve(httpx.Speaks(catalogue),
 			append([]string{
 				httpx.HealthPath, httpx.LanguagePath, httpx.RobotsPath,
-				httpx.PreviewPath, httpx.TasksPath, httpx.ScriptPath,
+				httpx.PreviewPath, httpx.TasksPath, httpx.ScriptPath, httpx.ConsoleVersionPath,
 			}, callbacks...)...)(handler)
 
 	// Host resolution comes before that, because language, session and every
@@ -299,7 +315,8 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	// It needs the database to know the hosts, so a process running without
 	// one serves every host as before.
 	if database != nil {
-		resolver := tenancy.NewResolver(tenancy.NewRepository(database), cfg.PlatformHost)
+		resolver := tenancy.NewResolver(tenancy.NewRepository(database), cfg.PlatformHost).
+			WithConsoleHost(cfg.ConsoleHost)
 		handler = tenancy.Resolve(resolver, pages, httpx.HealthPath)(handler)
 	}
 

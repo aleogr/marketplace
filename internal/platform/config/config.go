@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 )
 
 // ProvidersMode selects between the real external providers and the fakes used
@@ -68,6 +69,18 @@ type Config struct {
 	// data because it belongs to the deployment and exists before any
 	// marketplace does (docs/requirements.md, section 7).
 	PlatformHost string
+	// ConsoleHost is the host the console answers on, and nothing else does:
+	// the staff's sign-in and the console's pages, on a subdomain of their
+	// own so that the console's cookies are never sent to a store and a
+	// store's never to the console (F15 spec, D1). Configuration for the same
+	// reason PlatformHost is. Empty means this deployment serves no console.
+	ConsoleHost string
+	// BootstrapToken is the first run's one-time token: whoever presents it
+	// on the console's /setup creates the owner. Terraform generates it into
+	// Secret Manager and Cloud Run hands it over; the process only reads it,
+	// never logs it, and records its SHA-256 once it is used (F15 spec, D2).
+	// Empty means this deployment has no first run.
+	BootstrapToken string
 	// ProxyHops is how many entries the infrastructure in front of this
 	// process appends to `X-Forwarded-For`. It decides which entry of that
 	// header is the client's address and which are written by the client
@@ -152,6 +165,12 @@ type Audit struct {
 	// anyone who can read the environment, and the start-up log says so.
 	LocalKey string
 }
+
+// MinBootstrapToken is the shortest first-run token the process accepts.
+// Terraform generates 48 letters and digits, about 285 bits
+// (infra/terraform/console.tf); 32 characters of the same kind are still
+// about 190 bits, far beyond guessing under the setup's rate limit.
+const MinBootstrapToken = 32
 
 // Lookup reports the value of an environment variable and whether it was set.
 // os.LookupEnv satisfies it.
@@ -294,6 +313,20 @@ func Load(lookup Lookup) (Config, error) {
 		return nil
 	})
 
+	read("CONSOLE_HOST", func(value string) error {
+		cfg.ConsoleHost = value
+		return nil
+	})
+
+	read("BOOTSTRAP_TOKEN", func(value string) error {
+		if len(value) < MinBootstrapToken {
+			return fmt.Errorf("is %d characters, fewer than %d; a token that short could be guessed",
+				len(value), MinBootstrapToken)
+		}
+		cfg.BootstrapToken = value
+		return nil
+	})
+
 	read("MAIL_FROM", func(value string) error {
 		cfg.Mail.From = value
 		return nil
@@ -330,6 +363,7 @@ func Load(lookup Lookup) (Config, error) {
 	})
 
 	problems = append(problems, cfg.Database.problems()...)
+	problems = append(problems, cfg.consoleProblems()...)
 	problems = append(problems, cfg.Mail.problems(cfg.ProvidersMode)...)
 	problems = append(problems, cfg.Audit.problems(cfg.ProvidersMode)...)
 
@@ -337,6 +371,26 @@ func Load(lookup Lookup) (Config, error) {
 		return Config{}, fmt.Errorf("invalid configuration: %w", errors.Join(problems...))
 	}
 	return cfg, nil
+}
+
+// consoleProblems reports a first-run token with no console to serve it on,
+// and a console host that is also the platform's. The two hosts are compared
+// as the resolver compares them — case and a final dot aside — because a host
+// declared twice would be answered by whichever kind the resolver happens to
+// check first, and the other would never be served.
+func (c Config) consoleProblems() []error {
+	if c.ConsoleHost == "" {
+		if c.BootstrapToken != "" {
+			return []error{errors.New("BOOTSTRAP_TOKEN is set but CONSOLE_HOST is not; the first run is served on the console")}
+		}
+		return nil
+	}
+	name := func(host string) string { return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".") }
+	if name(c.ConsoleHost) == name(c.PlatformHost) {
+		return []error{fmt.Errorf("CONSOLE_HOST %q is PLATFORM_HOST; the console answers on a host of its own",
+			c.ConsoleHost)}
+	}
+	return nil
 }
 
 // problems reports an audit log that would be protected by nothing.

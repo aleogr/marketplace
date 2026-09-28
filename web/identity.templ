@@ -111,10 +111,14 @@ templ SignIn(page Page, form Form, verified bool) {
 			</label>
 			<button type="submit">{ page.T("identity.signin.submit") }</button>
 		</form>
-		<p>
-			<a href={ templ.SafeURL("/" + page.Language + "/signup") }>{ page.T("identity.link.signup") }</a>
-			<a href={ templ.SafeURL("/" + page.Language + "/verify/resend") }>{ page.T("identity.link.resend") }</a>
-		</p>
+		// Staff never sign up and have their address confirmed when their
+		// account is made, so the console offers neither (F15 spec, D5).
+		if !page.Console {
+			<p>
+				<a href={ templ.SafeURL("/" + page.Language + "/signup") }>{ page.T("identity.link.signup") }</a>
+				<a href={ templ.SafeURL("/" + page.Language + "/verify/resend") }>{ page.T("identity.link.resend") }</a>
+			</p>
+		}
 	}
 }
 
